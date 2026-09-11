@@ -21,6 +21,9 @@ def main() -> int:
     comp.add_argument("-o", "--output", required=True, help="Output GDS/OAS path")
     comp.add_argument("-f", "--format", choices=["gds", "oas"], default="gds")
 
+    # mcp command
+    sub.add_parser("mcp", help="Start Model Context Protocol (MCP) stdio server for AI agents")
+
     args = parser.parse_args()
 
     if args.cmd == "schema":
@@ -41,6 +44,11 @@ def main() -> int:
             export_oas(design, args.output)
 
         print(f"Compiled {design.name} → {args.output}", file=sys.stderr)
+        return 0
+
+    if args.cmd == "mcp":
+        from layout_canvas.mcp.server import run_stdio_server
+        run_stdio_server()
         return 0
 
     return 1
