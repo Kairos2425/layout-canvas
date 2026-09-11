@@ -1,0 +1,6 @@
+"""Package initialization."""
+
+from layout_canvas.blocks import base
+
+__version__ = "0.0.1"
+__all__ = ["base"]

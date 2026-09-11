@@ -1,0 +1,9 @@
+<grain>
+  <name>layout-canvas</name>
+  <version>0.1.0</version>
+  <title>Block Canvas for KLayout</title>
+  <doc>AI-native Block-level IC layout canvas plugin. Provides parametric block palette, live parameter regeneration, Block IR import/export, and DRC/LVS integration.</doc>
+  <author>layout-canvas contributors</author>
+  <license>Apache-2.0</license>
+  <category>Layout</category>
+</grain>

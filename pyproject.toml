@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "layout-canvas"
+version = "0.0.1"
+description = "Block-level, AI-native IC layout canvas: Block IR + parametric Sky130 blocks + KLayout DRC, built on gdsfactory."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [{ name = "layout-canvas contributors" }]
+dependencies = [
+    "gdsfactory>=8.0",
+    "pydantic>=2.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5", "jsonschema>=4"]
+
+[project.scripts]
+layout-canvas = "layout_canvas.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/layout_canvas"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning", "ignore::UserWarning"]
