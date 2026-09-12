@@ -15,9 +15,11 @@ from typing import Any
 
 from layout_canvas.blocks import base
 from layout_canvas.compiler.compile import compile_design
+from layout_canvas.compiler.netlist import compile_netlist
 from layout_canvas.ir.model import Design
 from layout_canvas.mcp.bridge import BridgeClient
 from layout_canvas.tools.drc import run_klayout_drc
+from layout_canvas.tools.lvs import run_lvs
 
 logger = logging.getLogger("layout_canvas.mcp.server")
 
@@ -110,6 +112,42 @@ class LayoutCanvasMCPServer:
                         },
                     },
                     "required": ["gds_path"],
+                },
+            },
+            {
+                "name": "generate_netlist",
+                "description": "Generate a golden SPICE/CDL netlist from a Block IR JSON specification for LVS verification.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "ir_json": {
+                            "type": ["string", "object"],
+                            "description": "Block IR design content as either a JSON string or a JSON object dict.",
+                        },
+                        "output_path": {
+                            "type": "string",
+                            "description": "Optional destination path for the generated SPICE netlist.",
+                        },
+                    },
+                    "required": ["ir_json"],
+                },
+            },
+            {
+                "name": "run_lvs",
+                "description": "Run Layout vs Schematic (LVS) verification comparing layout against SPICE netlist.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "layout_path": {
+                            "type": "string",
+                            "description": "Path to layout file (GDS).",
+                        },
+                        "schematic_path": {
+                            "type": "string",
+                            "description": "Path to golden schematic SPICE netlist.",
+                        },
+                    },
+                    "required": ["layout_path", "schematic_path"],
                 },
             },
             {
@@ -264,7 +302,16 @@ class LayoutCanvasMCPServer:
                 component.write_gds(p)
 
             bbox = component.bbox() if hasattr(component, "bbox") and callable(component.bbox) else getattr(component, "bbox", None)
-            bbox_coords = [list(pt) for pt in bbox] if bbox is not None else None
+            if bbox is not None:
+                if hasattr(bbox, "left"):
+                    bbox_coords = [bbox.left, bbox.bottom, bbox.right, bbox.top]
+                else:
+                    try:
+                        bbox_coords = [list(pt) for pt in bbox]
+                    except Exception:
+                        bbox_coords = str(bbox)
+            else:
+                bbox_coords = None
 
             return {
                 "block": block_name,
@@ -312,6 +359,35 @@ class LayoutCanvasMCPServer:
                 "violations": result.violations,
                 "total_violations": result.total_violations,
                 "report_path": str(result.report_path) if result.report_path else None,
+            }
+
+        elif name == "generate_netlist":
+            raw_ir = args["ir_json"]
+            output_path = args.get("output_path")
+            if isinstance(raw_ir, str):
+                design = Design.model_validate_json(raw_ir)
+            else:
+                design = Design.model_validate(raw_ir)
+            spice_code = compile_netlist(design)
+            if output_path:
+                dest = Path(output_path).resolve()
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(spice_code, encoding="utf-8")
+            return {
+                "design_name": design.name,
+                "spice": spice_code,
+                "output_path": str(output_path) if output_path else None,
+            }
+
+        elif name == "run_lvs":
+            layout_path = Path(args["layout_path"])
+            schematic_path = Path(args["schematic_path"])
+            result = run_lvs(layout_path=layout_path, schematic_path=schematic_path)
+            return {
+                "clean": result.clean,
+                "unmatched_nets": result.unmatched_nets,
+                "unmatched_devices": result.unmatched_devices,
+                "errors": result.errors,
             }
 
         elif name in ("get_active_layout_info", "insert_block_into_layout"):

@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from layout_canvas.compiler.compile import export_gds, export_oas
+from layout_canvas.compiler.netlist import export_spice
 from layout_canvas.ir import json_schema
 from layout_canvas.ir.model import Design
 
@@ -20,6 +21,11 @@ def main() -> int:
     comp.add_argument("input", help="Block IR JSON file")
     comp.add_argument("-o", "--output", required=True, help="Output GDS/OAS path")
     comp.add_argument("-f", "--format", choices=["gds", "oas"], default="gds")
+
+    # netlist command
+    net = sub.add_parser("netlist", help="Compile Block IR to SPICE netlist for LVS")
+    net.add_argument("input", help="Block IR JSON file")
+    net.add_argument("-o", "--output", required=True, help="Output SPICE (.sp / .cir) path")
 
     # mcp command
     sub.add_parser("mcp", help="Start Model Context Protocol (MCP) stdio server for AI agents")
@@ -44,6 +50,15 @@ def main() -> int:
             export_oas(design, args.output)
 
         print(f"Compiled {design.name} → {args.output}", file=sys.stderr)
+        return 0
+
+    if args.cmd == "netlist":
+        with open(args.input) as f:
+            design = Design.from_json(f.read())
+
+        import layout_canvas.blocks.sky130  # noqa: F401
+        export_spice(design, args.output)
+        print(f"Generated SPICE netlist {design.name} → {args.output}", file=sys.stderr)
         return 0
 
     if args.cmd == "mcp":

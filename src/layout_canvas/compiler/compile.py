@@ -8,6 +8,7 @@ from __future__ import annotations
 import gdsfactory as gf
 
 from layout_canvas.blocks import base
+from layout_canvas.compiler.router import route_design_nets
 from layout_canvas.ir.model import Design
 
 
@@ -29,6 +30,10 @@ def compile_design(design: Design) -> gf.Component:
             ref.mirror()
 
         inst_refs[inst.id] = (ref, comp)
+
+    # Route nets if defined in IR
+    if design.nets:
+        route_design_nets(top, design, inst_refs)
 
     # Expose top-level ports
     for port in design.ports:

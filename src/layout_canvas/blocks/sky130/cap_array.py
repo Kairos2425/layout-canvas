@@ -60,7 +60,7 @@ def register_cap_array() -> None:
         tags=["passive", "capacitor", "matching"],
     )
 
-    @register(spec)
+    @register(spec, netlist=_netlist_cap_array)
     def _build(unit_size: float, rows: int, cols: int, spacing: float) -> gf.Component:
         c = gf.Component(name=f"cap_array_{rows}x{cols}_u{unit_size}")
 
@@ -86,6 +86,17 @@ def register_cap_array() -> None:
         rect(c, layers.MET2, -1, -0.5, -0.5, 0.5)  # bot bus
 
         return c
+
+
+def _netlist_cap_array(unit_size: float, rows: int, cols: int, spacing: float) -> str:
+    # Sky130 MIM capacitor unit capacitance ~ 2.0 fF/um^2
+    total_area = (unit_size ** 2) * rows * cols
+    c_femtofarads = total_area * 2.0
+    return f"""* Sky130 MIM Capacitor Array ({rows}x{cols})
+.subckt cap_array top bot
+C1 top bot {c_femtofarads:.3f}f
+.ends
+"""
 
 
 register_cap_array()

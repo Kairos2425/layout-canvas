@@ -79,8 +79,6 @@ _REGISTRY: dict[str, Block] = {}
 
 def register(spec: BlockSpec, netlist: NetlistFn | None = None) -> Callable[[BuildFn], BuildFn]:
     def deco(fn: BuildFn) -> BuildFn:
-        if spec.name in _REGISTRY:
-            raise KeyError(f"block {spec.name} already registered")
         _REGISTRY[spec.name] = Block(spec=spec, build=fn, netlist=netlist)
         return fn
 
