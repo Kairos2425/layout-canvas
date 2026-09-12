@@ -40,11 +40,19 @@ def add_port(
     width: float,
     orientation: int,
 ) -> None:
+    cx, cy = snap(center[0]), snap(center[1])
     c.add_port(
         name=name,
-        center=(snap(center[0]), snap(center[1])),
+        center=(cx, cy),
         width=snap(width, 0.01),
         orientation=orientation,
         layer=layer,
         port_type="electrical",
     )
+    # Add pin label/text on the corresponding pin layer (datatype 16) for LVS extraction
+    try:
+        layer_num = layer[0] if isinstance(layer, (tuple, list)) else getattr(layer, "layer", 68)
+        pin_layer = (layer_num, 16)
+        c.add_label(text=name, position=(cx, cy), layer=pin_layer)
+    except Exception:
+        pass

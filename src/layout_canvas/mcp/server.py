@@ -159,6 +159,27 @@ class LayoutCanvasMCPServer:
                 },
             },
             {
+                "name": "render_preview_svg",
+                "description": "Render a Block IR or parametric block into an SVG string for visual layout inspection and multimodal AI agent preview.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "ir_json": {
+                            "type": ["string", "object"],
+                            "description": "Optional Block IR design to compile and render",
+                        },
+                        "block_name": {
+                            "type": "string",
+                            "description": "Optional block name to render directly (e.g. 'sky130.guard_ring')",
+                        },
+                        "params": {
+                            "type": "object",
+                            "description": "Optional parameters if block_name is specified",
+                        },
+                    },
+                },
+            },
+            {
                 "name": "insert_block_into_layout",
                 "description": "Instantiate and place a parametric block directly into the currently active layout inside the running KLayout GUI instance.",
                 "inputSchema": {
@@ -377,6 +398,41 @@ class LayoutCanvasMCPServer:
                 "design_name": design.name,
                 "spice": spice_code,
                 "output_path": str(output_path) if output_path else None,
+            }
+
+        elif name == "render_preview_svg":
+            if "ir_json" in args and args["ir_json"]:
+                raw_ir = args["ir_json"]
+                design = Design.model_validate_json(raw_ir) if isinstance(raw_ir, str) else Design.model_validate(raw_ir)
+                comp = compile_design(design)
+            elif "block_name" in args and args["block_name"]:
+                b_name = args["block_name"]
+                block = base.get(b_name)
+                comp = block.component(**args.get("params", {}))
+            else:
+                raise ValueError("Must provide either 'ir_json' or 'block_name'")
+
+            bb = comp.bbox()
+            left = float(bb.left) if hasattr(bb, "left") else -10.0
+            bottom = float(bb.bottom) if hasattr(bb, "bottom") else -10.0
+            width = float(bb.width()) if hasattr(bb, "width") else 20.0
+            height = float(bb.height()) if hasattr(bb, "height") else 20.0
+
+            # Generate lightweight geometric SVG preview
+            svg_lines = [
+                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{left - 1.0} {bottom - 1.0} {width + 2.0} {height + 2.0}" width="600" height="600">',
+                f'  <rect x="{left}" y="{bottom}" width="{width}" height="{height}" fill="#1e1e1e" stroke="#555" stroke-width="0.1"/>',
+            ]
+            for p in comp.ports.values():
+                px, py = float(p.center[0]), float(p.center[1])
+                svg_lines.append(f'  <circle cx="{px}" cy="{py}" r="0.2" fill="#ff4444" />')
+                svg_lines.append(f'  <text x="{px + 0.3}" y="{py}" font-size="0.4" fill="#ffffff">{p.name}</text>')
+            svg_lines.append('</svg>')
+
+            return {
+                "format": "svg",
+                "bbox": [left, bottom, left + width, bottom + height],
+                "svg": "\n".join(svg_lines),
             }
 
         elif name == "run_lvs":

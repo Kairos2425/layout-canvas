@@ -61,33 +61,78 @@ def _get_pin_coords(pin_str: str, inst_refs: dict[str, Any]) -> tuple[float, flo
     return (float(p.center[0]), float(p.center[1]))
 
 
+def _get_obstacles(inst_refs: dict[str, Any]) -> list[tuple[float, float, float, float]]:
+    """Gather bounding box obstacles of all placed instances."""
+    obs = []
+    for ref, comp in inst_refs.values():
+        bb = ref.bbox()
+        if hasattr(bb, "left"):
+            obs.append((float(bb.left), float(bb.bottom), float(bb.right), float(bb.top)))
+    return obs
+
+
+def _intersects_obstacle(x0: float, y0: float, x1: float, y1: float, obstacles: list[tuple[float, float, float, float]]) -> bool:
+    """Check if line segment intersects with any obstacle bounding box."""
+    min_x, max_x = min(x0, x1), max(x0, x1)
+    min_y, max_y = min(y0, y1), max(y0, y1)
+    for ox0, oy0, ox1, oy1 in obstacles:
+        # Check box overlap with margin
+        if not (max_x < ox0 or min_x > ox1 or max_y < oy0 or min_y > oy1):
+            return True
+    return False
+
+
 def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any]) -> None:
-    """Perform L-shaped or Z-shaped Manhattan routing between pins."""
+    """Perform Manhattan routing between pins with obstacle-aware channel bypass."""
     coords = [_get_pin_coords(p, inst_refs) for p in net.pins]
     valid_coords = [c for c in coords if c is not None]
     if len(valid_coords) < 2:
         return
+
+    obstacles = _get_obstacles(inst_refs)
 
     # Route consecutively between pin pairs
     for i in range(len(valid_coords) - 1):
         x1, y1 = valid_coords[i]
         x2, y2 = valid_coords[i + 1]
 
-        # Horizontal trunk on MET1, Vertical trunk on MET2
         wire_w = snap(getattr(net, "width", 0.48) or 0.48)
 
-        # 1. Horizontal segment on MET1
-        hx0, hx1 = min(x1, x2), max(x1, x2)
-        if hx1 > hx0:
-            rect(top, layers.MET1, hx0 - wire_w / 2, y1 - wire_w / 2, hx1 + wire_w / 2, y1 + wire_w / 2)
+        # Standard L-route: horizontal on MET1, vertical on MET2
+        # Check if direct L-turn hits obstacle
+        direct_h_blocked = _intersects_obstacle(x1, y1, x2, y1, obstacles)
+        direct_v_blocked = _intersects_obstacle(x2, y1, x2, y2, obstacles)
 
-        # 2. Via1 at corner (x2, y1)
-        rect(top, layers.VIA1, x2 - 0.13, y1 - 0.13, x2 + 0.13, y1 + 0.13)
+        if not (direct_h_blocked or direct_v_blocked):
+            # Clean direct L-route
+            hx0, hx1 = min(x1, x2), max(x1, x2)
+            if hx1 > hx0:
+                rect(top, layers.MET1, hx0 - wire_w / 2, y1 - wire_w / 2, hx1 + wire_w / 2, y1 + wire_w / 2)
+            rect(top, layers.VIA1, x2 - 0.13, y1 - 0.13, x2 + 0.13, y1 + 0.13)
+            vy0, vy1 = min(y1, y2), max(y1, y2)
+            if vy1 > vy0:
+                rect(top, layers.MET2, x2 - wire_w / 2, vy0 - wire_w / 2, x2 + wire_w / 2, vy1 + wire_w / 2)
+        else:
+            # Channel detour (Z-shape): route via intermediate channel Y
+            # Compute safe detour above or below obstacle cluster
+            max_top = max([o[3] for o in obstacles], default=max(y1, y2))
+            detour_y = max_top + 2.0  # 2um routing channel
 
-        # 3. Vertical segment on MET2
-        vy0, vy1 = min(y1, y2), max(y1, y2)
-        if vy1 > vy0:
+            # 1. Vertical escape from (x1, y1) to (x1, detour_y) on MET2
+            rect(top, layers.VIA1, x1 - 0.13, y1 - 0.13, x1 + 0.13, y1 + 0.13)
+            vy0, vy1 = min(y1, detour_y), max(y1, detour_y)
+            rect(top, layers.MET2, x1 - wire_w / 2, vy0 - wire_w / 2, x1 + wire_w / 2, vy1 + wire_w / 2)
+
+            # 2. Horizontal channel trunk on MET1
+            rect(top, layers.VIA1, x1 - 0.13, detour_y - 0.13, x1 + 0.13, detour_y + 0.13)
+            hx0, hx1 = min(x1, x2), max(x1, x2)
+            rect(top, layers.MET1, hx0 - wire_w / 2, detour_y - wire_w / 2, hx1 + wire_w / 2, detour_y + wire_w / 2)
+
+            # 3. Vertical drop from (x2, detour_y) to (x2, y2) on MET2
+            rect(top, layers.VIA1, x2 - 0.13, detour_y - 0.13, x2 + 0.13, detour_y + 0.13)
+            vy0, vy1 = min(detour_y, y2), max(detour_y, y2)
             rect(top, layers.MET2, x2 - wire_w / 2, vy0 - wire_w / 2, x2 + wire_w / 2, vy1 + wire_w / 2)
+            rect(top, layers.VIA1, x2 - 0.13, y2 - 0.13, x2 + 0.13, y2 + 0.13)
 
 
 def route_differential_pair(

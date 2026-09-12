@@ -31,6 +31,14 @@ class Placement(_Strict):
     y: float = 0.0
     rotation: Literal[0, 90, 180, 270] = 0
     mirror: bool = False
+    relative_to: str | None = Field(default=None, description="Target instance ID for relative placement")
+    relation: Literal["right_of", "left_of", "above", "below"] | None = Field(
+        default=None, description="Spatial relation relative to target instance"
+    )
+    align: Literal["bottom", "top", "left", "right", "center_x", "center_y"] | None = Field(
+        default=None, description="Alignment edge relative to target instance"
+    )
+    margin: float = Field(default=0.0, description="Clearance margin in um between instances")
 
 
 class Instance(_Strict):

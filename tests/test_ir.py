@@ -82,3 +82,16 @@ def test_placement_rotations():
 
     with pytest.raises(ValueError):
         Placement(rotation=45)  # Only 0/90/180/270 allowed
+
+
+def test_relative_placement_schema():
+    """Test relative placement attributes in Placement model."""
+    p = Placement(
+        relative_to="inst_a",
+        relation="right_of",
+        align="bottom",
+        margin=2.5,
+    )
+    assert p.relative_to == "inst_a"
+    assert p.relation == "right_of"
+    assert p.margin == 2.5

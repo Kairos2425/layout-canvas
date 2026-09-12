@@ -12,19 +12,105 @@ from layout_canvas.compiler.router import route_design_nets
 from layout_canvas.ir.model import Design
 
 
+def _resolve_relative_placements(design: Design, comp_map: dict[str, gf.Component]) -> dict[str, tuple[float, float]]:
+    """Resolve absolute (x, y) coordinates for all instances, handling relative constraints.
+
+    Supports relation: 'right_of', 'left_of', 'above', 'below'
+    Supports align: 'bottom', 'top', 'left', 'right', 'center_x', 'center_y'
+    """
+    coords: dict[str, tuple[float, float]] = {}
+    remaining = list(design.instances)
+    max_passes = len(remaining) + 1
+
+    # First pass: identify absolute coordinates
+    for _ in range(max_passes):
+        progress = False
+        for inst in list(remaining):
+            pl = inst.placement
+            if pl.relative_to is None:
+                coords[inst.id] = (float(pl.x), float(pl.y))
+                remaining.remove(inst)
+                progress = True
+            elif pl.relative_to in coords:
+                ref_id = pl.relative_to
+                ref_x, ref_y = coords[ref_id]
+                ref_comp = comp_map[ref_id]
+                curr_comp = comp_map[inst.id]
+
+                ref_bb = ref_comp.bbox()
+                curr_bb = curr_comp.bbox()
+
+                ref_w = float(ref_bb.right - ref_bb.left) if hasattr(ref_bb, "right") else 0.0
+                ref_h = float(ref_bb.top - ref_bb.bottom) if hasattr(ref_bb, "top") else 0.0
+                curr_w = float(curr_bb.right - curr_bb.left) if hasattr(curr_bb, "right") else 0.0
+                curr_h = float(curr_bb.top - curr_bb.bottom) if hasattr(curr_bb, "top") else 0.0
+
+                # Compute base (x, y) based on relation
+                calc_x = ref_x
+                calc_y = ref_y
+                m = float(pl.margin)
+
+                if pl.relation == "right_of":
+                    calc_x = ref_x + ref_w + m
+                elif pl.relation == "left_of":
+                    calc_x = ref_x - curr_w - m
+                elif pl.relation == "above":
+                    calc_y = ref_y + ref_h + m
+                elif pl.relation == "below":
+                    calc_y = ref_y - curr_h - m
+
+                # Compute alignment
+                if pl.align == "bottom":
+                    calc_y = ref_y
+                elif pl.align == "top":
+                    calc_y = ref_y + ref_h - curr_h
+                elif pl.align == "left":
+                    calc_x = ref_x
+                elif pl.align == "right":
+                    calc_x = ref_x + ref_w - curr_w
+                elif pl.align == "center_x":
+                    calc_x = ref_x + (ref_w - curr_w) / 2.0
+                elif pl.align == "center_y":
+                    calc_y = ref_y + (ref_h - curr_h) / 2.0
+
+                # Add any manual delta offset
+                calc_x += float(pl.x)
+                calc_y += float(pl.y)
+
+                coords[inst.id] = (calc_x, calc_y)
+                remaining.remove(inst)
+                progress = True
+
+        if not progress or not remaining:
+            break
+
+    # Fallback for circular or unresolvable dependencies
+    for inst in remaining:
+        coords[inst.id] = (float(inst.placement.x), float(inst.placement.y))
+
+    return coords
+
+
 def compile_design(design: Design) -> gf.Component:
     """Compile Block IR Design to a gdsfactory Component."""
     top = gf.Component(name=design.name)
 
-    # Build all instances
-    inst_refs = {}
+    # 1. Pre-generate all components to query bounding boxes
+    comp_map = {}
     for inst in design.instances:
         block = base.get(inst.block)
-        comp = block.component(**inst.params)
+        comp_map[inst.id] = block.component(**inst.params)
 
-        # Apply placement transformation
+    # 2. Resolve relative placement coordinates
+    resolved_coords = _resolve_relative_placements(design, comp_map)
+
+    # 3. Build all instances
+    inst_refs = {}
+    for inst in design.instances:
+        comp = comp_map[inst.id]
         ref = top.add_ref(comp)
-        ref.move((inst.placement.x, inst.placement.y))
+        x, y = resolved_coords[inst.id]
+        ref.move((x, y))
         ref.rotate(inst.placement.rotation)
         if inst.placement.mirror:
             ref.mirror()
@@ -35,13 +121,22 @@ def compile_design(design: Design) -> gf.Component:
     if design.nets:
         route_design_nets(top, design, inst_refs)
 
-    # Expose top-level ports
+    # Expose top-level ports and inject top-level GDS labels for LVS
     for port in design.ports:
         inst_id, _, port_name = port.pin.partition(".")
         if inst_id in inst_refs:
             ref, comp = inst_refs[inst_id]
             if port_name in comp.ports:
-                top.add_port(name=port.name, port=ref.ports[port_name])
+                p = ref.ports[port_name]
+                top.add_port(name=port.name, port=p)
+                # Inject text pin label for LVS netlist extraction
+                try:
+                    p_layer = p.layer
+                    layer_num = p_layer[0] if isinstance(p_layer, (tuple, list)) else getattr(p_layer, "layer", 68)
+                    pin_layer = (layer_num, 16)
+                    top.add_label(text=port.name, position=p.center, layer=pin_layer)
+                except Exception:
+                    pass
 
     return top
 
