@@ -95,3 +95,24 @@ def test_relative_placement_schema():
     assert p.relative_to == "inst_a"
     assert p.relation == "right_of"
     assert p.margin == 2.5
+
+
+def test_constraint_can_name_routing_nets_and_reject_unknown_net():
+    d = Design(
+        name="routing_constraints",
+        pdk="sky130",
+        instances=[
+            Instance(id="A", block="sky130.current_mirror"),
+            Instance(id="B", block="sky130.current_mirror"),
+        ],
+        nets=[Net(name="p", pins=["A.out", "B.in"]), Net(name="n", pins=["A.in", "B.out"])],
+        constraints=[Constraint(type=ConstraintType.symmetric, instances=["A", "B"], nets=["p", "n"])],
+    )
+    assert d.constraints[0].nets == ["p", "n"]
+    with pytest.raises(ValueError, match="unknown net"):
+        Design(
+            name="bad_routing_constraints",
+            pdk="sky130",
+            instances=[Instance(id="A", block="sky130.current_mirror")],
+            constraints=[Constraint(type=ConstraintType.symmetric, instances=["A"], nets=["p", "n"])],
+        )

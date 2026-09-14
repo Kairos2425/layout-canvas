@@ -16,6 +16,7 @@ from typing import Any
 from layout_canvas.blocks import base
 from layout_canvas.compiler.compile import compile_design
 from layout_canvas.compiler.netlist import compile_netlist
+from layout_canvas.compiler.ppa import extract_ppa
 from layout_canvas.ir.model import Design
 from layout_canvas.mcp.bridge import BridgeClient
 from layout_canvas.tools.drc import run_klayout_drc
@@ -110,6 +111,7 @@ class LayoutCanvasMCPServer:
                             "type": "string",
                             "description": "Optional path to custom DRC deck file. Defaults to bundled sky130A.drc.",
                         },
+                        "tech": {"type": "string", "default": "sky130"},
                     },
                     "required": ["gds_path"],
                 },
@@ -146,6 +148,8 @@ class LayoutCanvasMCPServer:
                             "type": "string",
                             "description": "Path to golden schematic SPICE netlist.",
                         },
+                        "cell_name": {"type": "string", "description": "Top cell name (defaults to layout filename stem)."},
+                        "setup_path": {"type": "string", "description": "Netgen setup Tcl file."},
                     },
                     "required": ["layout_path", "schematic_path"],
                 },
@@ -215,6 +219,20 @@ class LayoutCanvasMCPServer:
                         },
                     },
                     "required": ["name"],
+                },
+            },
+            {
+                "name": "inspect_ppa",
+                "description": "Extract PPA (Power, Performance, Area, Wirelength) metrics from a Block IR design or generated layout.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "ir_json": {
+                            "type": ["string", "object"],
+                            "description": "Block IR design JSON",
+                        },
+                    },
+                    "required": ["ir_json"],
                 },
             },
         ]
@@ -374,13 +392,9 @@ class LayoutCanvasMCPServer:
             result = run_klayout_drc(
                 gds_path=Path(gds_path),
                 deck_path=Path(deck_path) if deck_path else None,
+                tech=args.get("tech", "sky130"),
             )
-            return {
-                "clean": result.clean,
-                "violations": result.violations,
-                "total_violations": result.total_violations,
-                "report_path": str(result.report_path) if result.report_path else None,
-            }
+            return result.to_dict()
 
         elif name == "generate_netlist":
             raw_ir = args["ir_json"]
@@ -435,16 +449,22 @@ class LayoutCanvasMCPServer:
                 "svg": "\n".join(svg_lines),
             }
 
+        elif name == "inspect_ppa":
+            raw_ir = args["ir_json"]
+            design = Design.model_validate_json(raw_ir) if isinstance(raw_ir, str) else Design.model_validate(raw_ir)
+            comp = compile_design(design)
+            return extract_ppa(comp, design)
+
         elif name == "run_lvs":
             layout_path = Path(args["layout_path"])
             schematic_path = Path(args["schematic_path"])
-            result = run_lvs(layout_path=layout_path, schematic_path=schematic_path)
-            return {
-                "clean": result.clean,
-                "unmatched_nets": result.unmatched_nets,
-                "unmatched_devices": result.unmatched_devices,
-                "errors": result.errors,
-            }
+            result = run_lvs(
+                layout_path=layout_path,
+                schematic_path=schematic_path,
+                cell_name=args.get("cell_name"),
+                setup_path=args.get("setup_path"),
+            )
+            return result.to_dict()
 
         elif name in ("get_active_layout_info", "insert_block_into_layout"):
             resp = self.bridge_client.send_request(name, args)

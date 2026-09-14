@@ -43,7 +43,14 @@ class Block:
         return out
 
     def component(self, **params: Any) -> gf.Component:
-        return self.build(**self.resolve_params(params))
+        resolved = self.resolve_params(params)
+        key = (self.name, tuple(sorted(resolved.items())))
+        cached = _COMPONENT_CACHE.get(key)
+        if cached is not None:
+            return cached
+        component = self.build(**resolved)
+        _COMPONENT_CACHE[key] = component
+        return component
 
     def spice(self, **params: Any) -> str:
         if self.netlist is None:
@@ -75,6 +82,10 @@ def _coerce(ps: ParamSpec, value: Any, block: str) -> Any:
 
 
 _REGISTRY: dict[str, Block] = {}
+# gdsfactory stores cells in a process-wide KCLayout and rejects duplicate
+# cell names. Repeated compilation in an MCP session must therefore reuse the
+# immutable component for an identical block/parameter tuple.
+_COMPONENT_CACHE: dict[tuple[str, tuple[tuple[str, Any], ...]], gf.Component] = {}
 
 
 def register(spec: BlockSpec, netlist: NetlistFn | None = None) -> Callable[[BuildFn], BuildFn]:
@@ -94,3 +105,9 @@ def get(name: str) -> Block:
 
 def all_blocks() -> dict[str, Block]:
     return dict(_REGISTRY)
+
+
+def clear_component_cache() -> None:
+    """Release cached Python references without invalidating the global layout."""
+
+    _COMPONENT_CACHE.clear()

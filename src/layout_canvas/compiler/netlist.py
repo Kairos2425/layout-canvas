@@ -7,6 +7,9 @@ for closed-loop LVS (Layout Versus Schematic) verification with Netgen and Xyce 
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import json
+import re
 
 from layout_canvas.blocks import base
 from layout_canvas.ir.model import Design
@@ -21,26 +24,33 @@ def compile_netlist(design: Design) -> str:
     ]
 
     # 1. Collect and emit subcircuit definitions for each referenced block type
-    referenced_blocks: dict[str, base.Block] = {}
+    # A block is a *parametric* primitive.  Never emit one global definition
+    # per block name: two instances with different parameters must not silently
+    # share the first instance's geometry/netlist.  The digest is derived from
+    # the resolved parameter values, making names deterministic across runs.
+    variants: dict[tuple[str, tuple[tuple[str, object], ...]], tuple[base.Block, dict[str, object], str]] = {}
     for inst in design.instances:
-        if inst.block not in referenced_blocks:
-            referenced_blocks[inst.block] = base.get(inst.block)
+        block = base.get(inst.block)
+        resolved = block.resolve_params(inst.params)
+        key = (inst.block, tuple(sorted(resolved.items())))
+        if key not in variants:
+            variants[key] = (block, resolved, _variant_name(inst.block, resolved))
 
     lines.append("* --- Primitive Subcircuit Models ---")
-    for block_name, block in referenced_blocks.items():
+    for block, params, subckt_name in variants.values():
         # Get block default netlist or emit subcircuit definition
         defaults = block.defaults()
         try:
-            subckt_code = block.spice(**defaults)
-            lines.append(subckt_code.strip())
+            subckt_code = block.spice(**params)
+            lines.append(_rename_subckt(subckt_code, subckt_name, block))
             lines.append("")
         except NotImplementedError:
             # Fallback black-box subcircuit declaration
             port_names = " ".join([p.name for p in block.spec.ports])
-            subckt_name = block_name.replace(".", "_")
+            port_names = " ".join(p.name for p in block.spec.ports)
             lines.append(f".subckt {subckt_name} {port_names}")
-            lines.append(f"* Blackbox model for {block_name}")
-            lines.append(".ends")
+            lines.append(f"* Blackbox model for {block.name}")
+            lines.append(f".ends {subckt_name}")
             lines.append("")
 
     # 2. Build pin-to-net connectivity map
@@ -57,7 +67,8 @@ def compile_netlist(design: Design) -> str:
 
     for inst in design.instances:
         block = base.get(inst.block)
-        subckt_name = inst.block.replace(".", "_")
+        resolved = block.resolve_params(inst.params)
+        subckt_name = variants[(inst.block, tuple(sorted(resolved.items())))][2]
 
         # Map each port of the block to its connected net name
         conn_nets: list[str] = []
@@ -80,6 +91,40 @@ def compile_netlist(design: Design) -> str:
 
     lines.append(f".ends {design.name}")
     lines.append("")
+    return "\n".join(lines)
+
+
+def _variant_name(block_name: str, params: dict[str, object]) -> str:
+    """Return a SPICE-safe, stable name for one resolved parameter variant."""
+    payload = json.dumps(params, sort_keys=True, separators=(",", ":"), default=str)
+    digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:10]
+    stem = re.sub(r"[^A-Za-z0-9_]", "_", block_name)
+    return f"{stem}__{digest}"
+
+
+def _rename_subckt(source: str, name: str, block: base.Block) -> str:
+    """Normalize an emitter's declaration to the BlockSpec port contract.
+
+    Individual emitters historically used hand-written port lists (and some
+    omitted ``.ends`` names).  The compiler is the contract boundary, so make
+    the declaration and terminator agree with the IR regardless of emitter
+    spelling.  Internal device lines are intentionally left untouched.
+    """
+    ports = " ".join(p.name for p in block.spec.ports)
+    lines = source.strip().splitlines()
+    declaration = f".subckt {name} {ports}".rstrip()
+    for i, line in enumerate(lines):
+        if line.strip().lower().startswith(".subckt"):
+            lines[i] = declaration
+            break
+    else:
+        lines.insert(0, declaration)
+    for i, line in enumerate(lines):
+        if line.strip().lower().startswith(".ends"):
+            lines[i] = f".ends {name}"
+            break
+    else:
+        lines.append(f".ends {name}")
     return "\n".join(lines)
 
 

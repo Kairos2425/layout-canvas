@@ -64,6 +64,10 @@ class ConstraintType(str, Enum):
 class Constraint(_Strict):
     type: ConstraintType
     instances: list[str] = Field(min_length=1)
+    # Optional explicit net pair for routing constraints.  ``instances``
+    # remains the placement/matching scope; keeping the two concepts
+    # separate prevents the router from guessing net names from instance IDs.
+    nets: list[str] | None = Field(default=None, min_length=2)
     axis: Literal["vertical", "horizontal"] | None = None
     edge: Literal["left", "right", "top", "bottom", "center_x", "center_y"] | None = None
     direction: Literal["left_to_right", "bottom_to_top"] | None = None
@@ -141,6 +145,13 @@ class Design(_Strict):
             for i in c.instances:
                 if i not in ids:
                     raise ValueError(f"constraint {c.type}: unknown instance {i!r}")
+            if c.nets is not None:
+                net_names = {n.name for n in self.nets}
+                unknown_nets = set(c.nets) - net_names
+                if unknown_nets:
+                    raise ValueError(
+                        f"constraint {c.type}: unknown net(s) {sorted(unknown_nets)!r}"
+                    )
         return self
 
     def instance(self, inst_id: str) -> Instance:

@@ -24,11 +24,17 @@ def route_design_nets(top: gf.Component, design: Design, inst_refs: dict[str, An
     # 1. Inspect design constraints for differential / symmetric pairs
     diff_pairs: list[tuple[str, str]] = []
     for constraint in design.constraints:
-        if constraint.type in (ConstraintType.SYMMETRIC, ConstraintType.MATCHED):
-            # Check if targets two nets
-            if len(constraint.targets) == 2:
-                net_a, net_b = constraint.targets[0], constraint.targets[1]
-                diff_pairs.append((net_a, net_b))
+        # Routing needs explicit net names.  Older IR revisions only carried
+        # ``instances`` for symmetry/matching constraints; treating those IDs
+        # as net names caused an AttributeError and, worse, silently made the
+        # compiler unusable for otherwise valid designs.  New IR documents can
+        # opt in with ``nets: ["outp", "outn"]``.
+        if (
+            constraint.type in (ConstraintType.symmetric, ConstraintType.match)
+            and constraint.nets is not None
+            and len(constraint.nets) == 2
+        ):
+            diff_pairs.append((constraint.nets[0], constraint.nets[1]))
 
     routed_nets: set[str] = set()
 

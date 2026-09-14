@@ -1,5 +1,3 @@
-"""Example: Simple differential amplifier using Block IR."""
-
 {
     "ir_version": "0.1",
     "name": "simple_diffamp",
