@@ -18,8 +18,14 @@ from layout_canvas.compiler.netlist import compile_netlist
 from layout_canvas.compiler.ppa import extract_ppa
 from layout_canvas.compiler.render import render_svg
 from layout_canvas.derived.connectivity import inspect_connectivity
+from layout_canvas.engine.session import DesignSession
 from layout_canvas.ir.model import Design
 from layout_canvas.web.page import PAGE
+
+# Single-user local canvas: one live session shared by the page. Session-mode
+# edits go through DesignSession.transact — the same boundary the MCP agent
+# uses — so revision locking and diagnostics apply to human clicks too.
+_SESSION: DesignSession | None = None
 
 _SAMPLE: dict[str, Any] = {
     "name": "sample",
@@ -38,8 +44,63 @@ _SAMPLE: dict[str, Any] = {
 }
 
 
+def _instance_bboxes(design: Design, comp: Any) -> dict[str, list[float]]:
+    """Map design instance ids to placed bboxes in the compiled cell.
+
+    compile_design inserts refs in design.instances order, so positional
+    pairing is stable.
+    """
+    boxes: dict[str, list[float]] = {}
+    for inst, ref in zip(design.instances, comp.insts):
+        bb = ref.bbox()
+        boxes[inst.id] = [float(bb.left), float(bb.bottom), float(bb.right), float(bb.top)]
+    return boxes
+
+
+def _session_api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Session-mode actions — human edits through the transactional engine."""
+    global _SESSION
+    if action == "open":
+        raw = payload.get("ir_json")
+        try:
+            design = Design.model_validate_json(raw) if isinstance(raw, str) else Design.model_validate(raw)
+        except Exception as exc:
+            return {"status": "error", "error": f"invalid IR: {exc}"}
+        _SESSION = DesignSession(design)
+        return {"status": "ok", "revision": 0, "data": _SESSION.snapshot().data}
+    if _SESSION is None:
+        return {"status": "error", "error": "no session open"}
+    if action == "state":
+        return {"status": "ok", "revision": _SESSION.revision, "data": _SESSION.snapshot().data}
+    if action == "edit":
+        env = _SESSION.transact(
+            payload.get("edits", []),
+            expected_revision=payload.get("expected_revision"),
+        )
+        return {
+            "status": env.status,
+            "revision": env.revision,
+            "diagnostics": [d.to_dict() for d in env.diagnostics],
+            "data": {"design": _SESSION.design.model_dump()},
+        }
+    if action == "undo":
+        env = _SESSION.undo()
+        return {
+            "status": env.status,
+            "revision": env.revision,
+            "diagnostics": [d.to_dict() for d in env.diagnostics],
+            "data": {"design": _SESSION.design.model_dump()},
+        }
+    if action == "close":
+        _SESSION = None
+        return {"status": "ok"}
+    return {"status": "error", "error": f"unknown session action {action!r}"}
+
+
 def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Handle one API call; errors come back structured, never as a 500."""
+    if action.startswith("session/"):
+        return _session_api(action.split("/", 1)[1], payload)
     raw = payload.get("ir_json")
     try:
         design = Design.model_validate_json(raw) if isinstance(raw, str) else Design.model_validate(raw)
@@ -52,7 +113,9 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             return {"status": "ok", "data": {"spice": compile_netlist(design)}}
         comp = compile_design(design)
         if action == "preview":
-            return {"status": "ok", "data": render_svg(comp)}
+            data = render_svg(comp)
+            data["instances"] = _instance_bboxes(design, comp)
+            return {"status": "ok", "data": data}
         if action == "ppa":
             return {"status": "ok", "data": extract_ppa(comp, design)}
         if action == "abstract":

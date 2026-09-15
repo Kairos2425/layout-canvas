@@ -39,6 +39,11 @@ test alone does not count as end-to-end completion.
       round-trip → register_cell → close.
 - [x] Web review canvas: all `/api/*` endpoints exercised over HTTP
       (preview/ppa/connectivity/netlist/abstract/sample/blocks).
+- [x] Web canvas polish: `render_svg` now draws real per-layer polygons
+      (y-flipped, deterministic layer palette, polygon budget), and the
+      page has session mode — click selects an instance (hit-test on
+      per-instance bboxes), second click commits `set_placement` through
+      `session/edit` (revision-locked, undoable). Verified over HTTP.
 - [ ] KLayout DRC / Netgen LVS: binaries absent on this host; download
       attempt throttled by network. Runners are fail-closed and light up
       automatically via PATH or `LAYOUT_CANVAS_KLAYOUT`/`_NETGEN`.
@@ -55,8 +60,6 @@ test alone does not count as end-to-end completion.
       Cell sim stays fail-closed (blackbox for LVS, refused for ngspice).
 - [x] KLayout Salt packaging: `pymacros/block_canvas.lym` autorun wrapper
       added next to `grain.xml`; real install still needs a KLayout host.
-- [ ] Web canvas polish: layer-colored polygon rendering (currently port
-      markers only), human click-to-edit feeding `transact`.
 - [ ] Flattened hierarchical simulation (cells currently refuse by design).
 
 ## Acceptance bar
