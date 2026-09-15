@@ -25,10 +25,28 @@ test alone does not count as end-to-end completion.
       save_project/load_project.
 - [x] ADRs 0001–0006 freeze the new contracts; 69/69 tests pass.
 
+## Verified real-tool status (2026-09-15, this host)
+
+- [x] Real ngspice `.op` on all three decks: illustrative level-1,
+      bundled **real SkyWater BSIM4 TT** (`examples/models/sky130/
+      sky130_tt.lib`, upstream files verbatim), and **real IHP SG13G2
+      PSP 103.6** via `pre_osdi` (see EXTERNAL_TOOLS.md recipe).
+- [x] `blocks/ihp_sg13g2/` — second PDK generator library (diff_pair,
+      current_mirror, ota_5t, guard_ring) on the verified SG13G2 layer map.
+- [x] MCP full-loop e2e over real stdio JSON-RPC
+      (`tests/test_mcp_e2e.py`): open → connectivity → transact →
+      PPA → compile → netlist → real sim → abstract → project
+      round-trip → register_cell → close.
+- [x] Web review canvas: all `/api/*` endpoints exercised over HTTP
+      (preview/ppa/connectivity/netlist/abstract/sample/blocks).
+- [ ] KLayout DRC / Netgen LVS: binaries absent on this host; download
+      attempt throttled by network. Runners are fail-closed and light up
+      automatically via PATH or `LAYOUT_CANVAS_KLAYOUT`/`_NETGEN`.
+- [ ] Remaining Sky130 corner/device coverage beyond nfet_01v8+pfet_01v8
+      (lvt, 3v3, 5V, caps/resistors — fetch on demand).
+
 ## Remaining (next targets)
 
-- [ ] Real ngspice smoke: needs ngspice binary + sky130 model deck on the
-      host; verify `refused`/`unavailable` vs a real `.op` run.
 - [ ] Real Sky130 DRC/LVS golden flow: same external-tool blocker.
 - [x] Optimizer ↔ session integration: `engine/optimize.py` commits each
       iteration through `transact` — revisioned and undoable.
