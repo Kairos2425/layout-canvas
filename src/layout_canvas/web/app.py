@@ -1,0 +1,113 @@
+"""Local-first layout review canvas — zero-dependency stdlib web app.
+
+Serves a single page where a human (or an agent driving HTTP) can paste a
+Block IR document and review the compiled layout preview, PPA metrics,
+connectivity projection, and generated netlist. Local-first: no accounts,
+no cloud, loopback only by default.
+"""
+
+from __future__ import annotations
+
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
+
+from layout_canvas.blocks import base
+from layout_canvas.compiler.compile import compile_design
+from layout_canvas.compiler.netlist import compile_netlist
+from layout_canvas.compiler.ppa import extract_ppa
+from layout_canvas.compiler.render import render_svg
+from layout_canvas.derived.connectivity import inspect_connectivity
+from layout_canvas.ir.model import Design
+from layout_canvas.web.page import PAGE
+
+_SAMPLE: dict[str, Any] = {
+    "name": "sample",
+    "pdk": "sky130",
+    "instances": [
+        {"id": "dp", "block": "sky130.diff_pair", "params": {}},
+        {
+            "id": "cm",
+            "block": "sky130.current_mirror",
+            "params": {},
+            "placement": {"relative_to": "dp", "relation": "right_of", "margin": 2.0},
+        },
+    ],
+    "nets": [{"name": "tail", "pins": ["dp.tail", "cm.in"]}],
+    "ports": [{"name": "TAIL", "pin": "dp.tail", "direction": "input"}],
+}
+
+
+def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Handle one API call; errors come back structured, never as a 500."""
+    raw = payload.get("ir_json")
+    try:
+        design = Design.model_validate_json(raw) if isinstance(raw, str) else Design.model_validate(raw)
+    except Exception as exc:
+        return {"status": "error", "error": f"invalid IR: {exc}"}
+    try:
+        if action == "connectivity":
+            return {"status": "ok", "data": inspect_connectivity(design)}
+        if action == "netlist":
+            return {"status": "ok", "data": {"spice": compile_netlist(design)}}
+        comp = compile_design(design)
+        if action == "preview":
+            return {"status": "ok", "data": render_svg(comp)}
+        if action == "ppa":
+            return {"status": "ok", "data": extract_ppa(comp, design)}
+        if action == "abstract":
+            from layout_canvas.compiler.hierarchy import cell_abstract
+
+            return {"status": "ok", "data": cell_abstract(design, comp)}
+        return {"status": "error", "error": f"unknown action {action!r}"}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+class _Handler(BaseHTTPRequestHandler):
+    def log_message(self, *_args: Any) -> None:  # quiet per-request logging
+        pass
+
+    def _send(self, code: int, body: bytes, content_type: str) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        if self.path in ("/", "/index.html"):
+            self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path == "/api/sample":
+            self._send(200, json.dumps(_SAMPLE).encode(), "application/json")
+        elif self.path == "/api/blocks":
+            blocks = [b.spec.model_dump() for b in base.all_blocks().values()]
+            self._send(200, json.dumps(blocks).encode(), "application/json")
+        else:
+            self._send(404, b'{"error": "not found"}', "application/json")
+
+    def do_POST(self) -> None:
+        if not self.path.startswith("/api/"):
+            self._send(404, b'{"error": "not found"}', "application/json")
+            return
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        try:
+            payload = json.loads(self.rfile.read(length) or b"{}")
+        except json.JSONDecodeError as exc:
+            self._send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
+            return
+        result = _api(self.path.removeprefix("/api/"), payload)
+        self._send(200, json.dumps(result).encode(), "application/json")
+
+
+def run(host: str = "127.0.0.1", port: int = 8080) -> None:
+    import layout_canvas.blocks.sky130  # noqa: F401  populate block registry
+
+    server = ThreadingHTTPServer((host, port), _Handler)
+    print(f"layout-canvas web canvas: http://{host}:{port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()

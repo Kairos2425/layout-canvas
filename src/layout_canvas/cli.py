@@ -30,6 +30,11 @@ def main() -> int:
     # mcp command
     sub.add_parser("mcp", help="Start Model Context Protocol (MCP) stdio server for AI agents")
 
+    # web command
+    web = sub.add_parser("web", help="Start the local-first layout review canvas")
+    web.add_argument("--host", default="127.0.0.1")
+    web.add_argument("--port", type=int, default=8080)
+
     args = parser.parse_args()
 
     if args.cmd == "schema":
@@ -64,6 +69,11 @@ def main() -> int:
     if args.cmd == "mcp":
         from layout_canvas.mcp.server import run_stdio_server
         run_stdio_server()
+        return 0
+
+    if args.cmd == "web":
+        from layout_canvas.web import run
+        run(host=args.host, port=args.port)
         return 0
 
     return 1

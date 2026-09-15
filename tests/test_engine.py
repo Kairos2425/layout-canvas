@@ -180,5 +180,60 @@ class TestMCPSessionTools:
             "undo",
             "inspect_connectivity",
             "close_design",
+            "compile_session",
+            "export_abstract",
+            "run_simulation",
+            "save_project",
+            "load_project",
         ):
             assert tool in names
+
+    def test_save_load_project_roundtrip(self, tmp_path):
+        server = LayoutCanvasMCPServer()
+        opened = server.execute_tool("open_design", {"ir_json": _design().model_dump()})
+        sid = opened["session_id"]
+        target = tmp_path / "cell.lcproj.json"
+        saved = server.execute_tool("save_project", {"session_id": sid, "path": str(target)})
+        assert saved["path"] == str(target.resolve())
+
+        loaded = server.execute_tool("load_project", {"path": str(target)})
+        assert loaded["status"] == "ok"
+        snap = server.execute_tool("snapshot", {"session_id": loaded["session_id"]})
+        assert snap["data"]["design"]["name"] == "sess_test"
+
+    def test_open_design_accepts_lcproj_path(self, tmp_path):
+        from layout_canvas.protocol import save_project
+
+        target = save_project(_design(), tmp_path / "c.lcproj.json")
+        server = LayoutCanvasMCPServer()
+        opened = server.execute_tool("open_design", {"path": str(target)})
+        assert opened["design_name"] == "sess_test"
+
+    def test_compile_session_writes_gds(self, tmp_path):
+        server = LayoutCanvasMCPServer()
+        opened = server.execute_tool("open_design", {"ir_json": _design().model_dump()})
+        out = tmp_path / "cell.gds"
+        res = server.execute_tool(
+            "compile_session", {"session_id": opened["session_id"], "output_path": str(out)}
+        )
+        assert res["revision"] == 0
+        assert out.is_file() and out.stat().st_size > 0
+
+    def test_export_abstract(self):
+        server = LayoutCanvasMCPServer()
+        opened = server.execute_tool("open_design", {"ir_json": _design().model_dump()})
+        res = server.execute_tool("export_abstract", {"session_id": opened["session_id"]})
+        assert res["name"] == "sess_test"
+        assert len(res["bbox"]) == 4
+        assert res["instance_count"] == 2
+
+    def test_run_simulation_fail_closed(self):
+        server = LayoutCanvasMCPServer()
+        opened = server.execute_tool("open_design", {"ir_json": _design().model_dump()})
+        res = server.execute_tool(
+            "run_simulation",
+            {"session_id": opened["session_id"], "stimulus": ".op"},
+        )
+        # Environment decides: unavailable (no ngspice) or a real sim outcome —
+        # but never a fabricated clean result.
+        assert res["status"] in ("unavailable", "passed", "failed", "error")

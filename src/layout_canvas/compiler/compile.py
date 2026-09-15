@@ -10,6 +10,7 @@ import gdsfactory as gf
 from layout_canvas.blocks import base
 from layout_canvas.compiler.router import route_design_nets
 from layout_canvas.ir.model import Design
+from layout_canvas.pdk import get_pdk
 
 
 def _resolve_relative_placements(design: Design, comp_map: dict[str, gf.Component]) -> dict[str, tuple[float, float]]:
@@ -91,9 +92,28 @@ def _resolve_relative_placements(design: Design, comp_map: dict[str, gf.Componen
     return coords
 
 
+def _fresh_top(name: str) -> gf.Component:
+    """Create the top component, replacing any stale same-named cell.
+
+    kfactory rejects duplicate cell names in the process-wide KCLayout, so
+    repeated compiles of one design (preview → ppa → export) must retire the
+    previous top cell first.
+    """
+    import kfactory as kf
+
+    existing = kf.kcl.layout_cell(name)
+    if existing is not None:
+        kf.kcl.delete_cell(existing.cell_index())
+    return gf.Component(name=name)
+
+
 def compile_design(design: Design) -> gf.Component:
     """Compile Block IR Design to a gdsfactory Component."""
-    top = gf.Component(name=design.name)
+    top = _fresh_top(design.name)
+    try:
+        pdk = get_pdk(design.pdk)
+    except KeyError:
+        pdk = None
 
     # 1. Pre-generate all components to query bounding boxes
     comp_map = {}
@@ -132,8 +152,11 @@ def compile_design(design: Design) -> gf.Component:
                 # Inject text pin label for LVS netlist extraction
                 try:
                     p_layer = p.layer
-                    layer_num = p_layer[0] if isinstance(p_layer, (tuple, list)) else getattr(p_layer, "layer", 68)
-                    pin_layer = (layer_num, 16)
+                    if pdk is not None:
+                        pin_layer = pdk.pin_label_layer(p_layer)
+                    else:
+                        layer_num = p_layer[0] if isinstance(p_layer, (tuple, list)) else getattr(p_layer, "layer", 68)
+                        pin_layer = (layer_num, 16)
                     top.add_label(text=port.name, position=p.center, layer=pin_layer)
                 except Exception:
                     pass

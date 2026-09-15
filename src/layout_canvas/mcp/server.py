@@ -18,12 +18,15 @@ from layout_canvas.blocks import base
 from layout_canvas.compiler.compile import compile_design
 from layout_canvas.compiler.netlist import compile_netlist
 from layout_canvas.compiler.ppa import extract_ppa
+from layout_canvas.compiler.render import render_svg
 from layout_canvas.derived.connectivity import inspect_connectivity
 from layout_canvas.engine.session import DesignSession
 from layout_canvas.ir.model import Design
 from layout_canvas.mcp.bridge import BridgeClient
+from layout_canvas.protocol.project import load_project, save_project
 from layout_canvas.tools.drc import run_klayout_drc
 from layout_canvas.tools.lvs import run_lvs
+from layout_canvas.tools.sim import run_netlist, simulate_design
 
 logger = logging.getLogger("layout_canvas.mcp.server")
 
@@ -315,6 +318,76 @@ class LayoutCanvasMCPServer:
                 },
             },
             {
+                "name": "compile_session",
+                "description": "Compile a session's current design to a GDS/OASIS file at output_path.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "output_path": {"type": "string"},
+                    },
+                    "required": ["session_id", "output_path"],
+                },
+            },
+            {
+                "name": "export_abstract",
+                "description": "Export the hierarchical cell abstract (bbox, pin positions, per-layer polygon counts) of a session design or ad-hoc ir_json.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "ir_json": {"type": ["string", "object"]},
+                    },
+                },
+            },
+            {
+                "name": "run_simulation",
+                "description": "Simulate a design with ngspice (fail-closed). Provide session_id or ir_json plus 'stimulus' (sources, top X instantiation, analyses) and optional 'includes' model decks. Blocks without transistor-level emitters cause a named refusal.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "ir_json": {"type": ["string", "object"]},
+                        "stimulus": {
+                            "type": "string",
+                            "description": "SPICE lines appended after the compiled netlist: sources, X top instance, .op/.tran/.ac etc.",
+                        },
+                        "includes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Model deck paths to .include (e.g. sky130 device models).",
+                        },
+                        "deck": {
+                            "type": "string",
+                            "description": "Run a complete caller-provided SPICE deck verbatim instead of compiling a design.",
+                        },
+                    },
+                },
+            },
+            {
+                "name": "save_project",
+                "description": "Save a session's design as a versioned .lcproj.json project file.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "path": {"type": "string"},
+                    },
+                    "required": ["session_id", "path"],
+                },
+            },
+            {
+                "name": "load_project",
+                "description": "Load a .lcproj.json (or bare Block IR JSON) into a new session. Returns session_id, load status and diagnostics.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "text": {"type": "string", "description": "Raw project JSON content."},
+                    },
+                },
+            },
+            {
                 "name": "inspect_ppa",
                 "description": "Extract PPA (Power, Performance, Area, Wirelength) metrics from a Block IR design or generated layout.",
                 "inputSchema": {
@@ -413,7 +486,13 @@ class LayoutCanvasMCPServer:
         """Execute the specified tool logic."""
         if name == "open_design":
             if args.get("path"):
-                design = Design.from_json(Path(args["path"]).read_text(encoding="utf-8"))
+                result = load_project(Path(args["path"]))
+                if not result.ok or result.design is None:
+                    raise ValueError(
+                        "cannot load design: "
+                        + "; ".join(d.message for d in result.diagnostics)
+                    )
+                design = result.design
             elif args.get("ir_json") is not None:
                 design = self._parse_design(args["ir_json"])
             else:
@@ -456,6 +535,63 @@ class LayoutCanvasMCPServer:
             self._get_session(session_id)
             del self.sessions[session_id]
             return {"closed": session_id}
+
+        elif name == "compile_session":
+            session = self._get_session(args.get("session_id"))
+            dest = Path(args["output_path"]).resolve()
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            top = compile_design(session.design)
+            if dest.suffix.lower() == ".oas":
+                top.write_oas(dest)
+            else:
+                top.write_gds(dest)
+            return {
+                "output_path": str(dest),
+                "revision": session.revision,
+                "design_name": session.design.name,
+            }
+
+        elif name == "export_abstract":
+            from layout_canvas.compiler.hierarchy import cell_abstract
+
+            if args.get("session_id"):
+                session = self._get_session(args["session_id"])
+                return cell_abstract(session.design)
+            if args.get("ir_json") is not None:
+                return cell_abstract(self._parse_design(args["ir_json"]))
+            raise ValueError("export_abstract needs 'session_id' or 'ir_json'")
+
+        elif name == "run_simulation":
+            if args.get("deck"):
+                return run_netlist(args["deck"]).to_dict()
+            if args.get("session_id"):
+                design = self._get_session(args["session_id"]).design
+            elif args.get("ir_json") is not None:
+                design = self._parse_design(args["ir_json"])
+            else:
+                raise ValueError("run_simulation needs 'session_id', 'ir_json', or 'deck'")
+            return simulate_design(
+                design,
+                stimulus=args.get("stimulus", ""),
+                includes=args.get("includes"),
+            ).to_dict()
+
+        elif name == "save_project":
+            session = self._get_session(args.get("session_id"))
+            p = save_project(session.design, args["path"])
+            return {"path": str(p), "revision": session.revision}
+
+        elif name == "load_project":
+            source: Any = args.get("path") if args.get("path") else args.get("text")
+            if source is None:
+                raise ValueError("load_project needs 'path' or 'text'")
+            result = load_project(Path(source) if args.get("path") else str(source))
+            out = result.to_dict()
+            if result.ok and result.design is not None:
+                session_id = uuid.uuid4().hex[:12]
+                self.sessions[session_id] = DesignSession(result.design)
+                out["session_id"] = session_id
+            return out
 
         elif name == "list_blocks":
             pdk_filter = args.get("pdk")
@@ -574,28 +710,7 @@ class LayoutCanvasMCPServer:
             else:
                 raise ValueError("Must provide either 'ir_json' or 'block_name'")
 
-            bb = comp.bbox()
-            left = float(bb.left) if hasattr(bb, "left") else -10.0
-            bottom = float(bb.bottom) if hasattr(bb, "bottom") else -10.0
-            width = float(bb.width()) if hasattr(bb, "width") else 20.0
-            height = float(bb.height()) if hasattr(bb, "height") else 20.0
-
-            # Generate lightweight geometric SVG preview
-            svg_lines = [
-                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{left - 1.0} {bottom - 1.0} {width + 2.0} {height + 2.0}" width="600" height="600">',
-                f'  <rect x="{left}" y="{bottom}" width="{width}" height="{height}" fill="#1e1e1e" stroke="#555" stroke-width="0.1"/>',
-            ]
-            for p in comp.ports.values():
-                px, py = float(p.center[0]), float(p.center[1])
-                svg_lines.append(f'  <circle cx="{px}" cy="{py}" r="0.2" fill="#ff4444" />')
-                svg_lines.append(f'  <text x="{px + 0.3}" y="{py}" font-size="0.4" fill="#ffffff">{p.name}</text>')
-            svg_lines.append('</svg>')
-
-            return {
-                "format": "svg",
-                "bbox": [left, bottom, left + width, bottom + height],
-                "svg": "\n".join(svg_lines),
-            }
+            return render_svg(comp)
 
         elif name == "inspect_ppa":
             raw_ir = args["ir_json"]
