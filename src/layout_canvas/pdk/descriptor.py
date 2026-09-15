@@ -20,6 +20,7 @@ class PDK:
     layers: dict[str, Layer]
     pin_purpose: int = 16
     rules: dict[str, Any] = field(default_factory=dict)
+    model_libs: dict[str, str] = field(default_factory=dict)
 
     def layer(self, name: str) -> Layer:
         try:
@@ -92,4 +93,46 @@ def _build_sky130() -> PDK:
     )
 
 
+def _build_ihp_sg13g2() -> PDK:
+    # Layer map verified against libs.tech/klayout/tech/sg13g2.lyt symbols.
+    return PDK(
+        name="ihp_sg13g2",
+        layers={
+            "activ": (1, 0),
+            "gatpoly": (5, 0),
+            "cont": (6, 0),
+            "metal1": (8, 0),
+            "via1": (19, 0),
+            "metal2": (10, 0),
+            "via2": (29, 0),
+            "metal3": (30, 0),
+            "via3": (49, 0),
+            "metal4": (50, 0),
+            "via4": (66, 0),
+            "metal5": (67, 0),
+            "topvia1": (125, 0),
+            "topmetal1": (126, 0),
+            "topvia2": (133, 0),
+            "topmetal2": (134, 0),
+            "salblock": (28, 0),
+            "nwell": (31, 0),
+        },
+        pin_purpose=2,
+        rules={
+            "grid_um": 0.005,
+            "default_routing_layer": "metal2",
+        },
+        model_libs={
+            # ngspice corner decks ship inside the open PDK.
+            "ngspice_dir": "libs.tech/ngspice/models",
+            "mos_corner": "cornerMOSlv.lib",
+            "cap_corner": "cornerCAP.lib",
+            "res_corner": "cornerRES.lib",
+            "dio_corner": "cornerDIO.lib",
+            "hbt_corner": "cornerHBT.lib",
+        },
+    )
+
+
 register_pdk(_build_sky130())
+register_pdk(_build_ihp_sg13g2())

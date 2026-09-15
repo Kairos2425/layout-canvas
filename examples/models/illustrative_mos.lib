@@ -1,0 +1,6 @@
+* ILLUSTRATIVE level-1 MOS models — NOT foundry silicon data.
+* Purpose: interface smoke tests of the ngspice pipeline only.
+* Replace with the real PDK deck (e.g. sky130_fd_pr or IHP cornerMOSlv.lib)
+* via run_simulation(includes=[<real model lib>]) for any serious run.
+.model nfet_01v8 nmos level=1 vto=0.4  kp=200u lambda=0.02 gamma=0.4 phi=0.7
+.model pfet_01v8 pmos level=1 vto=-0.4 kp=80u  lambda=0.02 gamma=0.4 phi=0.7

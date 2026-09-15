@@ -1,6 +1,12 @@
 """Tests for the fail-closed ngspice runner."""
 
+import os
+import re
+import shutil
+from pathlib import Path
+
 import gdsfactory as gf
+import pytest
 
 from layout_canvas.blocks import base
 from layout_canvas.blocks.base import Block
@@ -52,6 +58,49 @@ def test_error_scanner_catches_ngspice_failures(tmp_path):
     log = "some output\nError: no such model nfet_01v8\nmore output"
     assert _find_errors(log) == ["Error: no such model nfet_01v8"]
     assert _find_errors("all good") == []
+
+
+def _ngspice_binary() -> str | None:
+    return os.environ.get("LAYOUT_CANVAS_NGSPICE") or shutil.which("ngspice")
+
+
+@pytest.mark.skipif(_ngspice_binary() is None, reason="ngspice not installed")
+def test_real_ngspice_op_smoke(tmp_path):
+    """End-to-end: compile a diff_pair, bias it, solve the DC op for real."""
+    import layout_canvas.blocks.sky130  # noqa: F401
+    from layout_canvas.compiler.netlist import compile_netlist
+
+    design = Design.model_validate(
+        {
+            "name": "ngspice_smoke",
+            "pdk": "sky130",
+            "instances": [{"id": "dp", "block": "sky130.diff_pair", "params": {}}],
+        }
+    )
+    variant = re.search(r"\.subckt (sky130_diff_pair__\w+)", compile_netlist(design)).group(1)
+    lib = Path(__file__).parent.parent / "examples" / "models" / "illustrative_mos.lib"
+    stimulus = f"""
+VDD vdd 0 1.8
+VSS vss 0 0
+VINP inp 0 0.95
+VINN inn 0 0.9
+IT tail vss 10u
+RDP vdd outp 10k
+RDN vdd outn 10k
+X1 inp inn outp outn tail {variant}
+.op
+"""
+    result = simulate_design(
+        design,
+        stimulus,
+        includes=[str(lib)],
+        executable=_ngspice_binary(),
+        workdir=tmp_path,
+    )
+    # Illustrative level-1 models, real ngspice — asserts the interface works;
+    # says nothing about silicon (per ADR 0005 / illustrative-model rule).
+    assert result.status == "passed", result.errors
+    assert result.log_path and result.log_path.is_file()
 
 
 def test_deck_builder_includes_stimulus_and_end():

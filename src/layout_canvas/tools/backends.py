@@ -39,6 +39,11 @@ class ToolAdapter:
     notes: str = ""
 
     def find_binary(self) -> str | None:
+        import os
+
+        override = os.environ.get(f"LAYOUT_CANVAS_{self.name.upper()}")
+        if override and Path(override).is_file():
+            return str(Path(override).resolve())
         for exe in self.executables:
             found = shutil.which(exe)
             if found:

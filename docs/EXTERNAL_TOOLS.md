@@ -42,9 +42,29 @@ to force it. Blocks lacking transistor-level emitters → `refused` (named).
 - **LVS setup**: netgen `sky130A_setup.tcl` — `setup_path` or
   `NETGEN_SETUP` / `SKY130_NETGEN_SETUP` env vars.
 
-## Current host status (probed 2026-09-15)
+## Binary overrides
 
-All 10 adapters report `unavailable` — no EDA tools on PATH. The interface
-layer is fully wired and tested fail-closed; installing any of the FOSS
-tools (ngspice, KLayout, Netgen) immediately lights up the corresponding
-loop with zero code changes.
+Adapters check `LAYOUT_CANVAS_<TOOL>` env vars before PATH, e.g.
+`LAYOUT_CANVAS_NGSPICE=E:\...\ngspice.exe`. Use this for tools that are
+installed but not on PATH.
+
+## Current host status (verified 2026-09-15)
+
+- **ngspice-47**: `E:\Reliability-PINN-Lab\.tmp\ngspice47\Spice64\bin\ngspice.exe`
+  (not on PATH — set `LAYOUT_CANVAS_NGSPICE` or add `...\bin` to PATH).
+  Real `.op` smoke verified end-to-end: diff_pair compiled → illustrative
+  model deck → ngspice batch → DC solution (`tests/test_sim.py::
+  test_real_ngspice_op_smoke`, auto-skips when no binary).
+- **IHP SG13G2 open PDK**: `E:\Agentic TCAD\PDK\official_sources\IHP-Open-PDK\
+  ihp-sg13g2` — real ngspice corner decks (`libs.tech/ngspice/models/
+  cornerMOSlv.lib` etc.), KLayout tech, netgen and magic setups. Registered
+  as PDK descriptor `ihp_sg13g2` with verified layer map.
+- **Sky130 PDK repo**: `E:\Agentic TCAD\PDK\official_sources\skywater-pdk`
+  exists but library submodules are empty — run `git submodule update --init`
+  there (or install open_pdks) to get real nfet_01v8 models.
+- **Commercial PDKs on disk** (Spectre `.scs` decks, need license + Spectre):
+  SMIC 0.18 (`PDK\installed\smic018mmrf`, `smic18eeprom`), TSMC 0.18
+  (`PDK\TSMC180\...\tsmc18_models\models\spectre\`).
+- **Still missing**: KLayout, Netgen, Magic binaries; Spectre/HSPICE/Eldo/
+  Calibre installs (license-gated — adapters will report them the moment
+  they exist).
