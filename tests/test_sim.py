@@ -103,6 +103,50 @@ X1 inp inn outp outn tail {variant}
     assert result.log_path and result.log_path.is_file()
 
 
+_SKY130_TT_LIB = (
+    Path(__file__).parent.parent / "examples" / "models" / "sky130" / "sky130_tt.lib"
+)
+
+
+@pytest.mark.skipif(
+    _ngspice_binary() is None or not _SKY130_TT_LIB.is_file(),
+    reason="ngspice or bundled sky130 TT models not present",
+)
+def test_real_sky130_tt_op_smoke(tmp_path):
+    """Real SkyWater BSIM4 TT models + real ngspice: DC op of a diff pair."""
+    import layout_canvas.blocks.sky130  # noqa: F401
+    from layout_canvas.compiler.netlist import compile_netlist
+
+    design = Design.model_validate(
+        {
+            "name": "sky130_tt_smoke",
+            "pdk": "sky130",
+            "instances": [{"id": "dp", "block": "sky130.diff_pair", "params": {}}],
+        }
+    )
+    variant = re.search(r"\.subckt (sky130_diff_pair__\w+)", compile_netlist(design)).group(1)
+    stimulus = f"""
+VDD vdd 0 1.8
+VSS vss 0 0
+VINP inp 0 0.95
+VINN inn 0 0.9
+IT tail vss 10u
+RDP vdd outp 10k
+RDN vdd outn 10k
+X1 inp inn outp outn tail {variant}
+.op
+"""
+    result = simulate_design(
+        design,
+        stimulus,
+        includes=[str(_SKY130_TT_LIB)],
+        executable=_ngspice_binary(),
+        workdir=tmp_path,
+    )
+    assert result.status == "passed", result.errors
+    assert result.log_path and result.log_path.is_file()
+
+
 def test_deck_builder_includes_stimulus_and_end():
     from layout_canvas.tools.sim import _build_deck
 

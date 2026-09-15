@@ -89,9 +89,15 @@ pre_osdi E:/Reliability-PINN-Lab/.tmp/ngspice47/Spice64/lib/ngspice/psp103_nqs.o
 
 Test: `tests/test_ihp_sg13g2.py::test_real_ihp_psp_op_smoke` (skips when
 binary/models absent).
-- **Sky130 PDK repo**: `E:\Agentic TCAD\PDK\official_sources\skywater-pdk`
-  exists but library submodules are empty — run `git submodule update --init`
-  there (or install open_pdks) to get real nfet_01v8 models.
+- **Sky130 models**: bundled under `examples/models/sky130/` — upstream
+  `skywater-pdk-libs-sky130_fd_pr` files verbatim (Apache-2.0): TT corner
+  bins + pm3 model cards for `nfet_01v8`/`pfet_01v8` plus the `invariant`/
+  `lod` parameter sets, wired by `sky130_tt.lib`. Block emitters
+  instantiate the canonical `sky130_fd_pr__nfet_01v8`/`pfet_01v8` subckts
+  (X-cards, `nf=` fingers). **Real foundry BSIM4 `.op` verified**
+  (`tests/test_sim.py::test_real_sky130_tt_op_smoke`, VDD current = tail
+  current as expected). The on-disk `skywater-pdk` repo has empty library
+  submodules; the bundled files remove that dependency for MOS decks.
 - **Commercial PDKs on disk** (Spectre `.scs` decks, need license + Spectre):
   SMIC 0.18 (`PDK\installed\smic018mmrf`, `smic18eeprom`), TSMC 0.18
   (`PDK\TSMC180\...\tsmc18_models\models\spectre\`).

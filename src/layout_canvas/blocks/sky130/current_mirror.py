@@ -91,6 +91,9 @@ def register_current_mirror() -> None:
 
 
 def _netlist_current_mirror(fingers: int, width: float, length: float, type: str) -> str:
-    model = "nfet_01v8" if type == "nmos" else "pfet_01v8"
-    w_total = width * fingers
-    return f".subckt current_mirror in out gate\nM1 out gate in in {model} w={w_total}u l={length}u m=1\n.ends"
+    model = "sky130_fd_pr__nfet_01v8" if type == "nmos" else "sky130_fd_pr__pfet_01v8"
+    return (
+        f".subckt current_mirror in out gate\n"
+        f"X1 out gate in in {model} w={width}u l={length}u nf={fingers}\n"
+        f".ends"
+    )

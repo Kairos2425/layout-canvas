@@ -102,9 +102,9 @@ def register_diff_pair() -> None:
 
 
 def _netlist_diff_pair(fingers: int, width: float, length: float, tail_width: float) -> str:
-    w_in = width * fingers
+    # Canonical SkyWater cell: X-instantiated sky130_fd_pr__nfet_01v8 subckt.
     return f""".subckt diff_pair inp inn outp outn tail vdd vss
-M1 outp inp tail vss nfet_01v8 w={w_in}u l={length}u m=1
-M2 outn inn tail vss nfet_01v8 w={w_in}u l={length}u m=1
-M3 tail tail vss vss nfet_01v8 w={tail_width}u l={length}u m=1
+X1 outp inp tail vss sky130_fd_pr__nfet_01v8 w={width}u l={length}u nf={fingers}
+X2 outn inn tail vss sky130_fd_pr__nfet_01v8 w={width}u l={length}u nf={fingers}
+X3 tail tail vss vss sky130_fd_pr__nfet_01v8 w={tail_width}u l={length}u
 .ends"""

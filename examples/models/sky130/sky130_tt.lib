@@ -1,0 +1,10 @@
+* SkyWater SKY130 TT-corner MOS bundle for ngspice — assembled from
+* google/skywater-pdk-libs-sky130_fd_pr (Apache-2.0). Files are upstream
+* verbatim; this file only wires the include order:
+*   invariant (statistical slope/diff params) + lod (stress diffs)
+*   -> per-device corner (bin diffs) -> pm3 (binned BSIM4 model cards).
+* Devices: X<name> d g s b sky130_fd_pr__nfet_01v8 / sky130_fd_pr__pfet_01v8
+.include "sky130_fd_pr__parameters__invariant.spice"
+.include "sky130_fd_pr__parameters__lod.spice"
+.include "sky130_fd_pr__nfet_01v8__tt.corner.spice"
+.include "sky130_fd_pr__pfet_01v8__tt.corner.spice"

@@ -77,18 +77,17 @@ def register_strongarm() -> None:
 
 
 def _netlist_strongarm(fingers: int, width: float) -> str:
-    w = width * fingers
     return f""".subckt strongarm inp inn outp outn clk vdd
 * Input pair
-M1 d1 inp tail vss nfet_01v8 w={w}u l=0.15u
-M2 d2 inn tail vss nfet_01v8 w={w}u l=0.15u
+X1 d1 inp tail vss sky130_fd_pr__nfet_01v8 w={width}u l=0.15u nf={fingers}
+X2 d2 inn tail vss sky130_fd_pr__nfet_01v8 w={width}u l=0.15u nf={fingers}
 * Tail switch
-M3 tail clk vss vss nfet_01v8 w={w*2}u l=0.15u
+X3 tail clk vss vss sky130_fd_pr__nfet_01v8 w={width * 2}u l=0.15u
 * Cross-coupled latch
-M4 outn outp vdd vdd pfet_01v8 w={w}u l=0.15u
-M5 outp outn vdd vdd pfet_01v8 w={w}u l=0.15u
-M6 outn d1 vss vss nfet_01v8 w={w}u l=0.15u
-M7 outp d2 vss vss nfet_01v8 w={w}u l=0.15u
+X4 outn outp vdd vdd sky130_fd_pr__pfet_01v8 w={width}u l=0.15u nf={fingers}
+X5 outp outn vdd vdd sky130_fd_pr__pfet_01v8 w={width}u l=0.15u nf={fingers}
+X6 outn d1 vss vss sky130_fd_pr__nfet_01v8 w={width}u l=0.15u nf={fingers}
+X7 outp d2 vss vss sky130_fd_pr__nfet_01v8 w={width}u l=0.15u nf={fingers}
 .ends"""
 
 

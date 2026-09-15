@@ -86,17 +86,15 @@ def register_ota_5t() -> None:
 
 
 def _netlist_ota_5t(diff_fingers: int, load_fingers: int, width: float) -> str:
-    w_diff = width * diff_fingers
-    w_load = width * load_fingers
     return f""".subckt ota_5t inp inn out vdd vss
 * Diff pair
-M1 out1 inp tail vss nfet_01v8 w={w_diff}u l=0.5u
-M2 out inn tail vss nfet_01v8 w={w_diff}u l=0.5u
+X1 out1 inp tail vss sky130_fd_pr__nfet_01v8 w={width}u l=0.5u nf={diff_fingers}
+X2 out inn tail vss sky130_fd_pr__nfet_01v8 w={width}u l=0.5u nf={diff_fingers}
 * Tail
-M3 tail vbias vss vss nfet_01v8 w={w_diff*2}u l=0.5u
+X3 tail vbias vss vss sky130_fd_pr__nfet_01v8 w={width * 2}u l=0.5u
 * Active load
-M4 out1 out1 vdd vdd pfet_01v8 w={w_load}u l=0.5u
-M5 out out1 vdd vdd pfet_01v8 w={w_load}u l=0.5u
+X4 out1 out1 vdd vdd sky130_fd_pr__pfet_01v8 w={width}u l=0.5u nf={load_fingers}
+X5 out out1 vdd vdd sky130_fd_pr__pfet_01v8 w={width}u l=0.5u nf={load_fingers}
 .ends"""
 
 
