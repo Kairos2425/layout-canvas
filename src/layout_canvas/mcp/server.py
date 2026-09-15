@@ -361,6 +361,11 @@ class LayoutCanvasMCPServer:
                             "type": "string",
                             "description": "Run a complete caller-provided SPICE deck verbatim instead of compiling a design.",
                         },
+                        "simulator": {
+                            "type": "string",
+                            "default": "auto",
+                            "description": "Backend: auto | ngspice | xyce | ltspice | spectre | hspice | eldo. 'auto' picks the first probed-available simulator.",
+                        },
                     },
                 },
             },
@@ -392,6 +397,14 @@ class LayoutCanvasMCPServer:
                         "path": {"type": "string"},
                     },
                     "required": ["alias"],
+                },
+            },
+            {
+                "name": "probe_environment",
+                "description": "Probe the host for EDA tools: simulators (ngspice/Xyce/LTspice/Spectre/HSPICE/Eldo), DRC (KLayout/Magic/Calibre), LVS (Netgen). Returns availability, version, and license gating per tool — all detection, no verdicts.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
                 },
             },
             {
@@ -593,7 +606,9 @@ class LayoutCanvasMCPServer:
 
         elif name == "run_simulation":
             if args.get("deck"):
-                return run_netlist(args["deck"]).to_dict()
+                return run_netlist(
+                    args["deck"], simulator=args.get("simulator", "auto")
+                ).to_dict()
             if args.get("session_id"):
                 design = self._get_session(args["session_id"]).design
             elif args.get("ir_json") is not None:
@@ -604,7 +619,13 @@ class LayoutCanvasMCPServer:
                 design,
                 stimulus=args.get("stimulus", ""),
                 includes=args.get("includes"),
+                simulator=args.get("simulator", "auto"),
             ).to_dict()
+
+        elif name == "probe_environment":
+            from layout_canvas.tools.backends import probe_environment
+
+            return probe_environment()
 
         elif name == "optimize":
             from layout_canvas.engine.optimize import optimize_session
