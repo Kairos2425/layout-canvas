@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Block Canvas — AI-native parametric layout palette, MCP bridge and IR import/export.</description>
+ <version/>
+ <category>pymacro</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>false</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text># Salt autorun entry: put the package's python/ dir on sys.path, then
+# import the plugin (its module-level guard installs the menu + dock).
+import os
+import sys
+
+_pkg_dir = None
+try:
+    _pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+except NameError:
+    # __file__ is not guaranteed inside .lym execution; fall back to the
+    # env var or the tech-search path used by KLayout salt installs.
+    _pkg_dir = os.environ.get("LAYOUT_CANVAS_SALT_HOME")
+
+if _pkg_dir is None:
+    try:
+        import pya
+        for _p in pya.Technology.technology_names() or []:
+            pass
+    except Exception:
+        pass
+
+if _pkg_dir:
+    _py_dir = os.path.join(_pkg_dir, "python")
+    if os.path.isdir(_py_dir) and _py_dir not in sys.path:
+        sys.path.insert(0, _py_dir)
+
+try:
+    import block_canvas_plugin  # noqa: F401  self-installs under KLayout
+except Exception as exc:
+    try:
+        import pya
+        pya.MessageBox.warning(
+            "Block Canvas",
+            "Plugin failed to load:\n%s" % exc,
+            pya.MessageBox.Ok,
+        )
+    except Exception:
+        sys.stderr.write("block_canvas plugin failed: %s\n" % exc)
+</text>
+</klayout-macro>

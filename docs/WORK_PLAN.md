@@ -30,13 +30,16 @@ test alone does not count as end-to-end completion.
 - [ ] Real ngspice smoke: needs ngspice binary + sky130 model deck on the
       host; verify `refused`/`unavailable` vs a real `.op` run.
 - [ ] Real Sky130 DRC/LVS golden flow: same external-tool blocker.
-- [ ] Optimizer ↔ session integration: run `optimizer` iterations through
-      `transact` so each step is revisioned and undoable.
-- [ ] Hierarchy consumption: let an instance reference a compiled abstract
-      (`block: "cell:<path>"`) in the placer/router.
-- [ ] KLayout Salt packaging of the bridge dock widget (B3).
+- [x] Optimizer ↔ session integration: `engine/optimize.py` commits each
+      iteration through `transact` — revisioned and undoable.
+- [x] Hierarchy consumption: `blocks/cells.register_design_cell` +
+      MCP `register_cell`; parents instantiate via `block: "<alias>"`.
+      Cell sim stays fail-closed (blackbox for LVS, refused for ngspice).
+- [x] KLayout Salt packaging: `pymacros/block_canvas.lym` autorun wrapper
+      added next to `grain.xml`; real install still needs a KLayout host.
 - [ ] Web canvas polish: layer-colored polygon rendering (currently port
       markers only), human click-to-edit feeding `transact`.
+- [ ] Flattened hierarchical simulation (cells currently refuse by design).
 
 ## Acceptance bar
 

@@ -365,6 +365,36 @@ class LayoutCanvasMCPServer:
                 },
             },
             {
+                "name": "optimize",
+                "description": "Run PPA-driven margin optimization on a session design. Each iteration is committed through transact (revisioned, undoable).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "target_aspect_ratio": {"type": "number", "default": 1.0},
+                        "min_clearance": {"type": "number", "default": 0.5},
+                        "max_iterations": {"type": "integer", "default": 5},
+                    },
+                    "required": ["session_id"],
+                },
+            },
+            {
+                "name": "register_cell",
+                "description": "Register a compiled design as a reusable cell block under 'alias'. Afterwards parent IR may instantiate it via block='<alias>'. Source: session_id or a .lcproj/IR file path.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "alias": {
+                            "type": "string",
+                            "description": "Block name parents will reference, e.g. 'cells.ota_v1'",
+                        },
+                        "session_id": {"type": "string"},
+                        "path": {"type": "string"},
+                    },
+                    "required": ["alias"],
+                },
+            },
+            {
                 "name": "save_project",
                 "description": "Save a session's design as a versioned .lcproj.json project file.",
                 "inputSchema": {
@@ -575,6 +605,40 @@ class LayoutCanvasMCPServer:
                 stimulus=args.get("stimulus", ""),
                 includes=args.get("includes"),
             ).to_dict()
+
+        elif name == "optimize":
+            from layout_canvas.engine.optimize import optimize_session
+
+            session = self._get_session(args.get("session_id"))
+            return optimize_session(
+                session,
+                target_aspect_ratio=float(args.get("target_aspect_ratio", 1.0)),
+                min_clearance=float(args.get("min_clearance", 0.5)),
+                max_iterations=int(args.get("max_iterations", 5)),
+            ).to_dict()
+
+        elif name == "register_cell":
+            from layout_canvas.blocks.cells import register_design_cell
+
+            alias = args["alias"]
+            if args.get("session_id"):
+                source = self._get_session(args["session_id"]).design
+            elif args.get("path"):
+                result = load_project(Path(args["path"]))
+                if not result.ok or result.design is None:
+                    raise ValueError(
+                        "cannot load cell source: "
+                        + "; ".join(d.message for d in result.diagnostics)
+                    )
+                source = result.design
+            else:
+                raise ValueError("register_cell needs 'session_id' or 'path'")
+            block = register_design_cell(alias, source)
+            return {
+                "alias": alias,
+                "ports": [p.name for p in block.spec.ports],
+                "pdk": block.spec.pdk,
+            }
 
         elif name == "save_project":
             session = self._get_session(args.get("session_id"))
