@@ -58,7 +58,37 @@ installed but not on PATH.
 - **IHP SG13G2 open PDK**: `E:\Agentic TCAD\PDK\official_sources\IHP-Open-PDK\
   ihp-sg13g2` — real ngspice corner decks (`libs.tech/ngspice/models/
   cornerMOSlv.lib` etc.), KLayout tech, netgen and magic setups. Registered
-  as PDK descriptor `ihp_sg13g2` with verified layer map.
+  as PDK descriptor `ihp_sg13g2` with verified layer map, plus a real block
+  package (`blocks/ihp_sg13g2/`: diff_pair, current_mirror, ota_5t,
+  guard_ring) emitting `X`-instantiated `sg13_lv_nmos/pmos` PSP wrappers.
+  **Real foundry-model `.op` verified end-to-end** (see recipe below).
+
+## IHP SG13G2 simulation recipe (verified)
+
+SG13G2 MOS devices are PSP 103.6 subckt wrappers, not BSIM models. A working
+deck needs all of the following — verified 2026-09-15 against ngspice-47:
+
+```spice
+.control
+pre_osdi E:/Reliability-PINN-Lab/.tmp/ngspice47/Spice64/lib/ngspice/psp103.osdi
+pre_osdi E:/Reliability-PINN-Lab/.tmp/ngspice47/Spice64/lib/ngspice/psp103_nqs.osdi
+.endc
+.lib "E:/Agentic TCAD/PDK/.../ngspice/models/cornerMOSlv.lib" mos_tt
+.param pre_layout=1
+```
+
+- `pre_osdi` loads the PSP Verilog-A binaries shipped inside ngspice
+  (`lib/ngspice/*.osdi`). Without them ngspice reports
+  `Unknown model type psp103va`. Use **forward slashes, no quotes** —
+  backslashes are stripped and quotes leak into the filename.
+- `.lib ... mos_tt` pulls the corner's global `.param`s (e.g.
+  `sg13g2_lv_nmos_vfbo`); including `sg13g2_moslv_mod.lib` alone fails with
+  `Undefined parameter`.
+- `.param pre_layout=1` is required — the wrappers `.if`-branch on it.
+- `.include` paths with spaces must be quoted (the runner does this now).
+
+Test: `tests/test_ihp_sg13g2.py::test_real_ihp_psp_op_smoke` (skips when
+binary/models absent).
 - **Sky130 PDK repo**: `E:\Agentic TCAD\PDK\official_sources\skywater-pdk`
   exists but library submodules are empty — run `git submodule update --init`
   there (or install open_pdks) to get real nfet_01v8 models.

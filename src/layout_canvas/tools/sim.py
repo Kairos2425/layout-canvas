@@ -234,7 +234,8 @@ def _read_log(log_path: Path | None) -> str:
 def _build_deck(netlist: str, stimulus: str, includes: list[str]) -> str:
     lines = ["* layout-canvas simulation deck", ""]
     for inc in includes:
-        lines.append(f".include {inc}")
+        # Quote paths — SPICE treats whitespace as a delimiter.
+        lines.append(f'.include "{inc}"')
     if includes:
         lines.append("")
     lines.append(netlist.rstrip())

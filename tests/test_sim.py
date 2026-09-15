@@ -107,5 +107,5 @@ def test_deck_builder_includes_stimulus_and_end():
     from layout_canvas.tools.sim import _build_deck
 
     deck = _build_deck(".subckt a x\n.ends", "X1 x a\n.op", ["/models/sky130.lib"])
-    assert ".include /models/sky130.lib" in deck
+    assert '.include "/models/sky130.lib"' in deck
     assert deck.rstrip().endswith(".end")
