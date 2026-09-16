@@ -83,35 +83,101 @@ class TestCellBlocks:
         finally:
             del base._REGISTRY["cells.child"]
 
-    def test_cell_blackbox_in_netlist_and_refused_in_sim(self):
+    def test_cell_netlist_flattens_into_parent(self):
+        """A registered cell inlines its child's whole hierarchy into the deck."""
+        import re
+
         from layout_canvas.compiler.netlist import compile_netlist
-        from layout_canvas.tools.sim import simulate_design
 
         child = Design.model_validate(
             {
-                "name": "child_bb",
+                "name": "child_flat",
                 "pdk": "sky130",
-                "instances": [{"id": "g", "block": "sky130.guard_ring", "params": {}}],
-                "ports": [{"name": "TAP", "pin": "g.tap", "direction": "inout"}],
+                "instances": [{"id": "dp", "block": "sky130.diff_pair", "params": {}}],
+                "ports": [{"name": "INP", "pin": "dp.inp", "direction": "input"}],
             }
         )
-        register_design_cell("cells.bb", child)
+        register_design_cell("cells.flat", child)
         try:
             parent = Design.model_validate(
                 {
-                    "name": "parent_bb",
+                    "name": "parent_flat",
                     "pdk": "sky130",
-                    "instances": [{"id": "u1", "block": "cells.bb", "params": {}}],
+                    "instances": [{"id": "u1", "block": "cells.flat", "params": {}}],
                 }
             )
             spice = compile_netlist(parent)
-            assert ".subckt cells_bb__" in spice or "Blackbox" in spice
-
-            res = simulate_design(parent, ".op")
-            assert res.status == "refused"
-            assert "cells.bb" in res.unresolved_blocks
+            # Child primitives are inlined: the diff_pair variant subckt and
+            # its real devices appear inside the cell variant's subckt block.
+            cell_variant = re.search(r"\.subckt (cells_flat__\w+) INP", spice)
+            assert cell_variant, spice
+            assert "sky130_diff_pair__" in spice
+            assert "sky130_fd_pr__nfet_01v8" in spice
+            assert "Blackbox" not in spice
         finally:
-            del base._REGISTRY["cells.bb"]
+            del base._REGISTRY["cells.flat"]
+
+    def test_cell_flattened_real_simulation(self, tmp_path):
+        """Flattened cell sim runs real ngspice when the binary is present."""
+        import os
+        import shutil
+        from pathlib import Path
+
+        from layout_canvas.tools.sim import simulate_design
+
+        ngspice = os.environ.get("LAYOUT_CANVAS_NGSPICE") or shutil.which("ngspice")
+        lib = Path(__file__).parent.parent / "examples" / "models" / "sky130" / "sky130_tt.lib"
+        if ngspice is None or not lib.is_file():
+            import pytest
+
+            pytest.skip("ngspice or bundled sky130 TT models not present")
+
+        child = Design.model_validate(
+            {
+                "name": "child_sim",
+                "pdk": "sky130",
+                "instances": [{"id": "dp", "block": "sky130.diff_pair", "params": {}}],
+                "ports": [
+                    {"name": "INP", "pin": "dp.inp", "direction": "input"},
+                    {"name": "INN", "pin": "dp.inn", "direction": "input"},
+                    {"name": "OUTP", "pin": "dp.outp", "direction": "output"},
+                    {"name": "OUTN", "pin": "dp.outn", "direction": "output"},
+                    {"name": "TAIL", "pin": "dp.tail", "direction": "inout"},
+                ],
+            }
+        )
+        register_design_cell("cells.sim", child)
+        try:
+            parent = Design.model_validate(
+                {
+                    "name": "parent_sim",
+                    "pdk": "sky130",
+                    "instances": [{"id": "u1", "block": "cells.sim", "params": {}}],
+                    "ports": [
+                        {"name": "INP", "pin": "u1.INP", "direction": "input"},
+                        {"name": "INN", "pin": "u1.INN", "direction": "input"},
+                        {"name": "OUTP", "pin": "u1.OUTP", "direction": "output"},
+                        {"name": "OUTN", "pin": "u1.OUTN", "direction": "output"},
+                        {"name": "TAIL", "pin": "u1.TAIL", "direction": "inout"},
+                    ],
+                }
+            )
+            stimulus = """
+VDD vdd 0 1.8
+VINP inp 0 0.95
+VINN inn 0 0.9
+IT tail 0 10u
+RDP vdd outp 10k
+RDN vdd outn 10k
+Xtop inp inn outp outn tail parent_sim
+.op
+"""
+            res = simulate_design(
+                parent, stimulus, includes=[str(lib)], executable=ngspice, workdir=tmp_path
+            )
+            assert res.status == "passed", res.errors
+        finally:
+            del base._REGISTRY["cells.sim"]
 
 
 class TestMCPNewTools:

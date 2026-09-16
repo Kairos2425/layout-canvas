@@ -109,19 +109,35 @@ def _rename_subckt(source: str, name: str, block: base.Block) -> str:
     omitted ``.ends`` names).  The compiler is the contract boundary, so make
     the declaration and terminator agree with the IR regardless of emitter
     spelling.  Internal device lines are intentionally left untouched.
+
+    Emitters may return several ``.subckt`` blocks (a flattened cell brings
+    its whole child hierarchy).  The subckt to rename is the one whose name
+    matches ``block.name`` — the emitter's self-declared top — falling back
+    to the first declaration for single-subckt primitives.
     """
     ports = " ".join(p.name for p in block.spec.ports)
     lines = source.strip().splitlines()
     declaration = f".subckt {name} {ports}".rstrip()
+
+    decl_idx: int | None = None
     for i, line in enumerate(lines):
-        if line.strip().lower().startswith(".subckt"):
-            lines[i] = declaration
-            break
-    else:
+        tok = line.strip().split()
+        if tok and tok[0].lower() == ".subckt":
+            if len(tok) > 1 and tok[1] == block.name:
+                decl_idx = i
+                break
+            if decl_idx is None:
+                decl_idx = i
+    if decl_idx is None:
         lines.insert(0, declaration)
-    for i, line in enumerate(lines):
-        if line.strip().lower().startswith(".ends"):
-            lines[i] = f".ends {name}"
+        decl_idx = 0
+    else:
+        lines[decl_idx] = declaration
+    # SPICE subckts cannot nest: the first .ends at or after the declaration
+    # closes it.
+    for j in range(decl_idx + 1, len(lines)):
+        if lines[j].strip().lower().startswith(".ends"):
+            lines[j] = f".ends {name}"
             break
     else:
         lines.append(f".ends {name}")

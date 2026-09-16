@@ -60,7 +60,9 @@ test alone does not count as end-to-end completion.
       Cell sim stays fail-closed (blackbox for LVS, refused for ngspice).
 - [x] KLayout Salt packaging: `pymacros/block_canvas.lym` autorun wrapper
       added next to `grain.xml`; real install still needs a KLayout host.
-- [ ] Flattened hierarchical simulation (cells currently refuse by design).
+- [x] Flattened hierarchical simulation: cell netlist emitters inline the
+      child's full hierarchy (ADR 0007 amended); verified with real ngspice
+      + sky130 BSIM4 in `test_cell_flattened_real_simulation`.
 
 ## Acceptance bar
 
