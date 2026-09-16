@@ -216,8 +216,16 @@ def adapters(kind: ToolKind | None = None) -> list[ToolAdapter]:
 def probe_environment(timeout: int = 10) -> dict[str, Any]:
     """Probe every registered tool; the report is data, not verdicts."""
     reports = [a.probe(timeout) for a in _REGISTRY.values()]
+    pya = _probe_pya()
+    verification = [
+        r["name"] for r in reports
+        if r["kind"] in ("drc", "lvs") and r["status"] == "available" and r["can_run"]
+    ]
+    if pya["status"] == "available":
+        verification.append("klayout-pya")
     return {
         "tools": reports,
+        "in_process_engines": [pya],
         "simulators": {
             "available": [r["name"] for r in reports
                           if r["kind"] == "spice_simulator" and r["status"] == "available" and r["can_run"]],
@@ -226,7 +234,42 @@ def probe_environment(timeout: int = 10) -> dict[str, Any]:
                                        and r["status"] == "available"],
         },
         "verification": {
-            "available": [r["name"] for r in reports
-                          if r["kind"] in ("drc", "lvs") and r["status"] == "available" and r["can_run"]],
+            "available": verification,
         },
     }
+
+
+def _probe_pya() -> dict[str, Any]:
+    """The klayout pip module exposes the same LVS/DRC engine in-process."""
+    try:
+        import klayout.db as db
+        ok = all(
+            hasattr(db, name)
+            for name in ("LayoutToNetlist", "DeviceExtractorMOS4Transistor",
+                         "NetlistComparer", "Region")
+        )
+        ver = None
+        try:
+            import importlib.metadata as md
+            ver = md.version("klayout")
+        except Exception:
+            pass
+        return {
+            "name": "klayout-pya",
+            "kind": "drc+lvs",
+            "status": "available" if ok else "unavailable",
+            "version": ver,
+            "license_required": False,
+            "can_run": ok,
+            "notes": "in-process engine: Region geometry checks + LayoutToNetlist extraction + NetlistComparer",
+        }
+    except ImportError:
+        return {
+            "name": "klayout-pya",
+            "kind": "drc+lvs",
+            "status": "unavailable",
+            "version": None,
+            "license_required": False,
+            "can_run": False,
+            "notes": "klayout python module not installed (pip install klayout)",
+        }

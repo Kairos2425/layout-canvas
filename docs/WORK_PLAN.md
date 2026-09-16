@@ -44,15 +44,27 @@ test alone does not count as end-to-end completion.
       page has session mode — click selects an instance (hit-test on
       per-instance bboxes), second click commits `set_placement` through
       `session/edit` (revision-locked, undoable). Verified over HTTP.
-- [ ] KLayout DRC / Netgen LVS: binaries absent on this host; download
-      attempt throttled by network. Runners are fail-closed and light up
-      automatically via PATH or `LAYOUT_CANVAS_KLAYOUT`/`_NETGEN`.
+- [x] In-process KLayout engine (`klayout-pya`, pip `klayout` in `.venv`):
+      real verification with no external binary — `tools/extract.py`
+      (LayoutToNetlist device extraction, official-deck recipe), pya DRC
+      subset (real width/space checks + violation bboxes), pya LVS
+      (extraction + NetlistComparer topology compare). Verified in
+      `tests/test_pya_verification.py` on compiled GDS.
+- [ ] LVS-clean generators: extracted layouts reveal our blocks have no
+      internal wiring (terminals float) — schematic-vs-layout mismatches are
+      honest findings until blocks emit contacts/metal for S/D and gates.
+- [ ] Foundry-deck DRC/LVS: full `sky130A.drc` / `sg13g2.lvs` coverage still
+      needs the klayout app binary (Ruby DSL, not in the pip module); IHP PDK
+      ships decks + golden testcases on disk for when a binary exists.
 - [ ] Remaining Sky130 corner/device coverage beyond nfet_01v8+pfet_01v8
       (lvt, 3v3, 5V, caps/resistors — fetch on demand).
 
 ## Remaining (next targets)
 
-- [ ] Real Sky130 DRC/LVS golden flow: same external-tool blocker.
+- [ ] Block internal wiring (licon/li1/met1) so extracted topology can
+      match schematic — the gate to a real LVS `passed` result.
+- [ ] Real Sky130 DRC/LVS golden flow: needs klayout/netgen binaries;
+      in-process engine covers the subset meanwhile.
 - [x] Optimizer ↔ session integration: `engine/optimize.py` commits each
       iteration through `transact` — revisioned and undoable.
 - [x] Hierarchy consumption: `blocks/cells.register_design_cell` +

@@ -27,8 +27,101 @@ class DRCResult:
         return value
 
 
-def run_drc(gds_path: str, tech: str = "sky130", deck_path: str | None = None) -> DRCResult:
-    return run_klayout_drc(Path(gds_path), Path(deck_path) if deck_path else None, tech=tech)
+def run_drc(gds_path: str, tech: str = "sky130", deck_path: str | None = None,
+            engine: str = "auto") -> DRCResult:
+    gds = Path(gds_path)
+    if engine == "pya" or (
+        engine == "auto" and deck_path is None
+        and shutil.which("klayout") is None and not Path("klayout").is_file()
+    ):
+        return run_pya_drc(gds, tech)
+    return run_klayout_drc(gds, Path(deck_path) if deck_path else None, tech=tech)
+
+
+def run_pya_drc(gds_path: Path, tech: str = "sky130") -> DRCResult:
+    """In-process DRC via the KLayout engine's Region checks.
+
+    Runs a representative min-width / min-spacing subset per tech — real
+    geometry checks on the same engine foundry .drc decks use, but NOT a
+    substitute for the full foundry deck (that still needs the klayout
+    executable). Violations list each offending edge-pair bbox.
+    """
+    try:
+        import klayout.db as db
+    except ImportError:
+        return _unavailable(gds_path.with_suffix(".drc.txt"),
+                            "klayout python module not installed")
+    rules = _PYA_RULES.get(tech)
+    report = gds_path.with_suffix(".drc.txt")
+    if rules is None:
+        return _unavailable(report, f"no pya DRC rule subset for tech {tech!r}")
+    gds = Path(gds_path)
+    if not gds.is_file():
+        return _unavailable(report, f"GDS not found: {gds}")
+
+    ly = db.Layout()
+    ly.read(str(gds))
+    tops = list(ly.top_cells())
+    if not tops:
+        return DRCResult("error", None, [], None, None, "", "", None,
+                         ["GDS has no top cell"])
+    top = tops[0]
+    violations: list[dict[str, Any]] = []
+    for (layer, dt), checks in rules.items():
+        li = ly.layer(layer, dt)
+        shapes = db.RecursiveShapeIterator(ly, top, [li])
+        region = db.Region(shapes)
+        if region.count() == 0:
+            continue
+        name = f"{layer}/{dt}"
+        for kind, value in checks:
+            if value <= 0:
+                continue
+            dbu_value = int(round(value / ly.dbu))
+            if kind == "width":
+                pairs = region.width_check(dbu_value)
+            else:
+                pairs = region.space_check(dbu_value)
+            for ep in pairs.each():
+                bb = ep.bbox()
+                violations.append({
+                    "rule": f"{name}.{'w' if kind == 'width' else 's'}",
+                    "check": f"min_{kind} < {value}um",
+                    "bbox": [bb.left * ly.dbu, bb.bottom * ly.dbu,
+                             bb.right * ly.dbu, bb.top * ly.dbu],
+                })
+    total = len(violations)
+    report.write_text(
+        f"DRC (klayout-pya engine, {tech} subset): "
+        f"{total} violation(s)\n"
+        + "\n".join(f"{v['rule']} {v['check']} bbox={v['bbox']}"
+                    for v in violations[:200]),
+        encoding="utf-8",
+    )
+    if total:
+        return DRCResult("failed", False, violations, total, report,
+                         errors=["DRC violations reported"])
+    return DRCResult("passed", True, [], 0, report, errors=[])
+
+
+# Representative min-width/min-spacing subset (um). Values are the commonly
+# published headline rules per layer — the full foundry deck covers far more
+# rule classes and remains the authority for tapeout.
+_PYA_RULES: dict[str, dict[tuple[int, int], list[tuple[str, float]]]] = {
+    "sky130": {
+        (64, 20): [("width", 0.84), ("space", 1.27)],   # nwell
+        (65, 20): [("width", 0.15), ("space", 0.27)],   # diff
+        (66, 20): [("width", 0.15), ("space", 0.21)],   # poly
+        (67, 20): [("width", 0.17), ("space", 0.17)],   # li1
+        (68, 20): [("width", 0.14), ("space", 0.14)],   # met1
+        (69, 20): [("width", 0.14), ("space", 0.14)],   # met2
+        (70, 20): [("width", 0.30), ("space", 0.30)],   # met3
+        (71, 20): [("width", 0.30), ("space", 0.30)],   # met4
+        (72, 20): [("width", 0.36), ("space", 0.34)],   # met5
+        (93, 44): [("width", 0.38), ("space", 0.38)],   # nsdm
+        (94, 20): [("width", 0.38), ("space", 0.38)],   # psdm
+    },
+}
 
 
 def run_klayout_drc(gds_path: Path, deck_path: Path | None = None, *, tech: str = "sky130",

@@ -29,10 +29,38 @@ to force it. Blocks lacking transistor-level emitters → `refused` (named).
 
 | Tool | Kind | License | Status |
 |---|---|---|---|
-| KLayout | DRC | free/open | ✅ runner (`tools/drc.py`) |
+| **klayout-pya** (pip `klayout` module) | DRC + LVS | free/open | ✅ **in-process engine, verified on real GDS** (`tools/extract.py`, `tools/drc.py::run_pya_drc`, `tools/lvs.py::engine="pya"`) |
+| KLayout (app binary) | DRC | free/open | ✅ runner (`tools/drc.py`) — needed for full foundry .drc/.lvs decks |
 | Netgen | LVS | free/open | ✅ runner (`tools/lvs.py`) |
 | Magic | DRC/extract | free/open | probe only — runner not wired |
 | Calibre | sign-off DRC/LVS | Siemens license | probe only — reserved |
+
+### In-process KLayout engine (`klayout-pya`)
+
+The pip `klayout` package exposes the same geometry/netlist engine the
+application runs — `Region` boolean/check ops, `LayoutToNetlist` device
+extraction, `NetlistComparer` — with no external binary:
+
+- `tools/extract.py::extract_netlist(gds, tech)` — real netlist extraction:
+  MOS4 device recognition (official IHP-deck recipe: active−gate SD regions,
+  `tS/tD/tG` terminal annotation layers, derived regions registered into
+  connectivity), labels → net names, hierarchy preserved. Truthful: unwired
+  layouts extract floating terminals as separate nets.
+- `run_drc(engine="pya")` — representative min-width/min-spacing subset per
+  tech (`_PYA_RULES`), real `width_check`/`space_check` with violation bboxes.
+  **Not** a foundry-deck substitute — the app binary is still required for
+  the full `sky130A.drc` / `sg13g2.drc` rule coverage.
+- `run_lvs(engine="pya")` — extraction + SPICE round-trip + `NetlistComparer`
+  topology compare. Reference netlists get auto-generated device-abstract
+  wrappers (`lvs_device_wrappers`) so leaf X-cards resolve to single MOS4
+  devices. A `failed` result is a real topology mismatch — current generated
+  blocks have no internal wiring, so schematic-vs-layout mismatches are
+  honest findings (wiring blocks is the roadmap item for LVS-clean layouts).
+- `engine="auto"`: prefers external binaries when present, falls back to the
+  in-process engine. `probe_environment` reports it under
+  `in_process_engines` + `verification.available`.
+- Official `.drc`/`.lvs` Ruby decks still need the `klayout` executable —
+  the pip module has no DSL interpreter.
 
 ## PDK / model decks (data, not tools)
 
@@ -101,6 +129,10 @@ binary/models absent).
 - **Commercial PDKs on disk** (Spectre `.scs` decks, need license + Spectre):
   SMIC 0.18 (`PDK\installed\smic018mmrf`, `smic18eeprom`), TSMC 0.18
   (`PDK\TSMC180\...\tsmc18_models\models\spectre\`).
-- **Still missing**: KLayout, Netgen, Magic binaries; Spectre/HSPICE/Eldo/
-  Calibre installs (license-gated — adapters will report them the moment
-  they exist).
+- **In-process verification**: `klayout==0.30.12` (pip, in `.venv`) gives real
+  DRC/LVS without external binaries — device extraction, geometry checks and
+  `NetlistComparer` all verified on compiled GDS
+  (`tests/test_pya_verification.py`, 6 tests).
+- **Still missing**: KLayout/Netgen/Magic binaries (needed for official
+  foundry .drc/.lvs decks); Spectre/HSPICE/Eldo/Calibre installs
+  (license-gated — adapters will report them the moment they exist).

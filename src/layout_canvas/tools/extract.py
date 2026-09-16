@@ -1,0 +1,224 @@
+"""In-process layout netlist extraction via the KLayout engine (klayout.db).
+
+Uses ``LayoutToNetlist`` + ``DeviceExtractorMOS4Transistor`` — the same
+geometry/netlist engine the ``klayout -b -r *.lvs`` application runs, driven
+directly through the Python API so no external binary is needed.
+
+Layer connectivity recipes follow the official PDK LVS decks (IHP SG13G2
+``rule_decks/*.lvs``) adapted to the layers our generators emit. Extraction is
+truthful: if a generated layout has no internal wiring, terminals float on
+separate nets — that is a real finding, not a tool error.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+@dataclass
+class ExtractionResult:
+    status: str  # ok | unavailable | error
+    netlist_text: str = ""
+    devices: int = 0
+    nets: int = 0
+    circuits: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    netlist_object: Any = None  # klayout.db.Netlist, for LVS comparison
+    _owners: tuple = ()  # keeps LayoutToNetlist/Layout alive (netlist depends on them)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "devices": self.devices,
+            "nets": self.nets,
+            "circuits": self.circuits,
+            "errors": self.errors,
+            "netlist_text": self.netlist_text,
+        }
+
+
+# Per-PDK extraction recipe. Layers are (gds_layer, datatype).
+_RECIPES: dict[str, dict[str, Any]] = {
+    "sky130": {
+        "well_n": (64, 20), "diff": (65, 20), "tap": (65, 44),
+        "poly": (66, 20), "licon": (66, 44), "li1": (67, 20),
+        "mcon": (67, 44), "met1": (68, 20), "via1": (68, 44),
+        "met2": (69, 20), "via2": (69, 44), "met3": (70, 20),
+        "via3": (70, 44), "met4": (71, 20), "via4": (71, 44), "met5": (72, 20),
+        "nsdm": (93, 44), "psdm": (94, 20),
+        "text_datatypes": (16,),
+    },
+    "ihp_sg13g2": {
+        "well_n": (31, 0), "diff": (1, 0), "tap": None,
+        "poly": (5, 0), "licon": (6, 0), "li1": (8, 0),
+        "mcon": (19, 0), "met1": (10, 0), "via1": (29, 0),
+        "met2": (30, 0), "via2": (49, 0), "met3": (50, 0),
+        "via3": (66, 0), "met4": (67, 0), "via4": (125, 0), "met5": (126, 0),
+        "nsdm": (7, 0), "psdm": (14, 0),
+        "text_datatypes": (2,),
+    },
+}
+
+# Leaf subcircuit name -> (device class name, polarity) used both by the
+# extractor and by the generated LVS reference wrappers.
+LEAF_DEVICES: dict[str, dict[str, tuple[str, str]]] = {
+    "sky130": {
+        "sky130_fd_pr__nfet_01v8": ("nfet_01v8", "nmos"),
+        "sky130_fd_pr__pfet_01v8": ("pfet_01v8", "pmos"),
+    },
+    "ihp_sg13g2": {
+        "sg13_lv_nmos": ("sg13_lv_nmos_dev", "nmos"),
+        "sg13_lv_pmos": ("sg13_lv_pmos_dev", "pmos"),
+    },
+}
+
+
+def lvs_device_wrappers(tech: str) -> str:
+    """SPICE device-abstract wrappers for the reference side of LVS.
+
+    Each leaf ``X``-card in a generated netlist resolves to a single MOS4
+    device, so the flattened reference matches the extracted device-level
+    netlist. These describe connectivity shape only — not electrical models.
+    """
+    out = []
+    for subckt, (model, pol) in LEAF_DEVICES.get(tech, {}).items():
+        out.append(
+            f".subckt {subckt} d g s b w=1u l=1u nf=1 mult=1\n"
+            f"m1 d g s b {model} w='w*nf*mult' l=l\n"
+            f".model {model} {pol}\n"
+            f".ends {subckt}"
+        )
+    return "\n".join(out)
+
+
+def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionResult:
+    """Extract a device-level netlist from GDS using the KLayout engine."""
+    try:
+        import klayout.db as db
+    except ImportError:
+        return ExtractionResult(
+            "unavailable", errors=["klayout python module not installed"]
+        )
+    recipe = _RECIPES.get(tech)
+    if recipe is None:
+        return ExtractionResult("unavailable", errors=[f"no extraction recipe for tech {tech!r}"])
+    gds = Path(gds_path)
+    if not gds.is_file():
+        return ExtractionResult("unavailable", errors=[f"GDS not found: {gds}"])
+
+    ly = db.Layout()
+    ly.read(str(gds))
+    tops = list(ly.top_cells())
+    if not tops:
+        return ExtractionResult("error", errors=["GDS has no top cell"])
+    top = tops[0]
+
+    def L(key: str):
+        spec = recipe[key]
+        return ly.layer(spec[0], spec[1]) if spec else None
+
+    l2n = db.LayoutToNetlist(db.RecursiveShapeIterator(ly, top, []))
+    rnwell = l2n.make_layer(L("well_n"), "nwell")
+    rdiff = l2n.make_layer(L("diff"), "diff")
+    rtap = l2n.make_layer(L("tap"), "tap") if recipe["tap"] else None
+    rpoly = l2n.make_layer(L("poly"), "poly")
+    layers = {
+        k: (l2n.make_layer(L(k), k) if L(k) else None)
+        for k in ("licon", "li1", "mcon", "met1", "via1", "met2", "via2",
+                  "met3", "via3", "met4", "via4", "met5", "nsdm", "psdm")
+    }
+    # text layers for pin names (every layer carrying texts with the PDK's
+    # label datatype)
+    text_layers = []
+    for li in ly.layer_indexes():
+        info = ly.get_info(li)
+        if info.datatype not in recipe["text_datatypes"]:
+            continue
+        has_text = any(
+            any(True for _ in cell.shapes(li).each(db.Shapes.STexts))
+            for cell in ly.each_cell()
+        )
+        if has_text:
+            text_layers.append(
+                l2n.make_text_layer(li, f"texts_{info.layer}_{info.datatype}")
+            )
+
+    # interconnect stack: diff/tap/poly -> contact -> li1 -> via -> metals
+    l2n.connect(rdiff, layers["licon"])
+    l2n.connect(rpoly, layers["licon"])
+    if rtap is not None:
+        l2n.connect(rtap, layers["licon"])
+    l2n.connect(layers["licon"], layers["li1"])
+    l2n.connect(layers["li1"], layers["mcon"])
+    l2n.connect(layers["mcon"], layers["met1"])
+    stack = [("met1", "via1"), ("via1", "met2"), ("met2", "via2"),
+             ("via2", "met3"), ("met3", "via3"), ("via3", "met4"),
+             ("met4", "via4"), ("via4", "met5")]
+    for a, b in stack:
+        if layers[a] is not None and layers[b] is not None:
+            l2n.connect(layers[a], layers[b])
+    conductors = [rdiff, rpoly, layers["licon"], layers["li1"], layers["mcon"],
+                  layers["met1"], layers["met2"], layers["met3"],
+                  layers["met4"], layers["met5"]]
+    if rtap is not None:
+        conductors.append(rtap)
+    for tl in text_layers:
+        for pl in conductors:
+            if pl is not None:
+                l2n.connect(pl, tl)
+
+    # device derivations (official-deck recipe: active & implant, minus gate)
+    # implant masks are optional in our generated blocks — fall back to the
+    # diff/well split when they carry no shapes.
+    rnsdm = layers["nsdm"] if layers["nsdm"] is not None and layers["nsdm"].count() > 0 else rdiff
+    rpsdm = layers["psdm"] if layers["psdm"] is not None and layers["psdm"].count() > 0 else rdiff
+    rpactive = rdiff & rnwell & rpsdm
+    rpgate = rpactive & rpoly
+    rpsd = rpactive - rpgate
+    rnactive = (rdiff & rnsdm) - rnwell
+    rngate = rnactive & rpoly
+    rnsd = rnactive - rngate
+    # bulk ties: n-well taps for pmos, p-sub taps for nmos
+    rntap = (rtap & rnwell) if rtap is not None else rnwell
+    rptap = (rtap - rnwell) if rtap is not None else (rdiff - rnwell)
+    for name, reg in (("psd", rpsd), ("pgate", rpgate), ("nsd", rnsd),
+                      ("ngate", rngate), ("ntap_d", rntap), ("ptap_d", rptap)):
+        l2n.register(reg, name)
+    # derived terminal layers join connectivity through the contact stack
+    for reg in (rnsd, rpsd, rngate, rpgate, rptap, rntap):
+        l2n.connect(reg, layers["licon"])
+    l2n.connect(rnwell, rntap)
+
+    n_model, p_model = (
+        LEAF_DEVICES[tech]["sg13_lv_nmos"][0] if tech == "ihp_sg13g2" else "nfet_01v8",
+        LEAF_DEVICES[tech]["sg13_lv_pmos"][0] if tech == "ihp_sg13g2" else "pfet_01v8",
+    )
+    l2n.extract_devices(
+        db.DeviceExtractorMOS4Transistor(p_model),
+        {"SD": rpsd, "G": rpgate, "tS": rpsd, "tD": rpsd, "tG": rpoly, "W": rnwell},
+    )
+    l2n.extract_devices(
+        db.DeviceExtractorMOS4Transistor(n_model),
+        {"SD": rnsd, "G": rngate, "tS": rnsd, "tD": rnsd, "tG": rpoly, "W": rptap},
+    )
+    l2n.extract_netlist()
+    nl = l2n.netlist()
+    errors = [e.description for e in l2n.each_error()]
+
+    import tempfile
+    sp = Path(tempfile.mkdtemp()) / "extracted.cir"
+    writer = db.NetlistSpiceWriter()
+    writer.use_net_names = True
+    nl.write(str(sp), writer)
+    return ExtractionResult(
+        "ok",
+        netlist_text=sp.read_text(),
+        devices=sum(len(list(c.each_device())) for c in nl.each_circuit()),
+        nets=sum(len(list(c.each_net())) for c in nl.each_circuit()),
+        circuits=[c.name for c in nl.each_circuit()],
+        errors=errors,
+        netlist_object=nl,
+        _owners=(l2n, ly),
+    )

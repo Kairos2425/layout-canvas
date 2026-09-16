@@ -46,6 +46,7 @@ def run_lvs(
     schematic_path: str | Path | None = None,
     setup_path: str | Path | None = None,
     executable: str = "netgen",
+    engine: str = "auto",  # auto | netgen | pya
     timeout: int = 300,
 ) -> LVSResult:
     """Compare GDS and SPICE. ``layout_path``/``schematic_path`` are MCP aliases."""
@@ -56,6 +57,8 @@ def run_lvs(
         return _unavailable(report, f"GDS/layout not found: {gds}")
     if spice is None or not spice.is_file():
         return _unavailable(report, f"SPICE/schematic not found: {spice}")
+    if engine == "pya" or (engine == "auto" and not _has_executable(executable)):
+        return _run_pya_lvs(gds, spice, cell_name, tech, report)
     if shutil.which(executable) is None and not Path(executable).is_file():
         return _unavailable(report, f"Netgen executable not found: {executable}")
     setup = Path(setup_path) if setup_path else _default_setup(tech)
@@ -83,6 +86,102 @@ def run_lvs(
         return LVSResult("failed", False, report, cell, setup, proc.stdout, proc.stderr,
                          proc.returncode, ["LVS mismatch" if not match else "Netgen exited non-zero"])
     return LVSResult("passed", True, report, cell, setup, proc.stdout, proc.stderr, proc.returncode, [])
+
+
+def _has_executable(exe: str) -> bool:
+    return shutil.which(exe) is not None or Path(exe).is_file()
+
+
+def _run_pya_lvs(
+    gds: Path, spice: Path, cell_name: str | None, tech: str, report: Path | None
+) -> LVSResult:
+    """In-process LVS: KLayout engine extraction + NetlistComparer.
+
+    The reference SPICE is augmented with device-abstract wrappers so leaf
+    X-cards resolve to single MOS4 devices, matching extraction granularity.
+    Comparison is topology-level (device parameters cleared); a ``failed``
+    result means the extracted connectivity genuinely differs — e.g. a layout
+    with no internal wiring will not match, and that is a real finding.
+    """
+    try:
+        import klayout.db as db
+    except ImportError:
+        return _unavailable(report, "klayout python module not installed")
+    from .extract import extract_netlist, lvs_device_wrappers
+
+    ext = extract_netlist(gds, tech)
+    if ext.status != "ok":
+        return _unavailable(report, "; ".join(ext.errors) or "extraction failed")
+    # The in-memory extracted netlist keeps implicit (unlinked) terminals;
+    # round-tripping through the SPICE file materializes real net objects
+    # the NetlistComparer can traverse.
+    ext_path = gds.with_suffix(".extracted.cir")
+    ext_path.write_text(ext.netlist_text, encoding="utf-8")
+    nl_a = db.Netlist()
+    nl_a.read(str(ext_path), db.NetlistSpiceReader())
+
+    ref_text = spice.read_text(encoding="utf-8", errors="replace")
+    wrappers = lvs_device_wrappers(tech)
+    ref_path = spice.with_suffix(".lvs.ref.spice")
+    ref_path.write_text(ref_text + "\n" + wrappers + "\n", encoding="utf-8")
+    nl_b = db.Netlist()
+    try:
+        nl_b.read(str(ref_path), db.NetlistSpiceReader())
+    except RuntimeError as exc:
+        return LVSResult("error", None, None, cell_name, None,
+                         "", "", None, [f"reference netlist parse failed: {exc}"])
+
+    def _flatten_to_top(nl, top_name):
+        while True:
+            subs = [c for c in nl.each_circuit()
+                    if c.name.upper() != top_name.upper()]
+            if not subs:
+                break
+            nl.flatten_circuit(subs[0])
+        return next((c for c in nl.each_circuit()
+                     if c.name.upper() == top_name.upper()), None)
+
+    top_name = cell_name or _top_circuit_name(nl_a)
+    ext_top = _flatten_to_top(nl_a, top_name) if top_name else None
+    ref_name = cell_name or _top_circuit_name(nl_b)
+    ref_top = _flatten_to_top(nl_b, ref_name) if ref_name else None
+    if ext_top is None or ref_top is None:
+        return LVSResult("error", None, None, cell_name, None, "", "", None,
+                         [f"top circuit not found (ext={top_name} ref={ref_name})"])
+
+    nl_a.combine_devices()
+    for nl in (nl_a, nl_b):
+        for dc in nl.each_device_class():
+            dc.clear_parameters()
+
+    cmp = db.NetlistComparer()
+    cmp.same_circuits(ext_top, ref_top)
+    match = cmp.compare(nl_a, nl_b)
+
+    if report:
+        ext_count = len(list(ext_top.each_device()))
+        ref_count = len(list(ref_top.each_device()))
+        report.write_text(
+            f"LVS (klayout-pya engine): {'MATCH' if match else 'MISMATCH'}\n"
+            f"extracted devices: {ext_count}, reference devices: {ref_count}\n"
+            f"extraction errors: {ext.errors}\n",
+            encoding="utf-8",
+        )
+    status = "passed" if match else "failed"
+    return LVSResult(
+        status, match, report if report and report.exists() else None,
+        ext_top.name, None,
+        errors=[] if match else ["netlist topology mismatch"],
+    )
+
+
+def _top_circuit_name(nl) -> str | None:
+    referenced = set()
+    for c in nl.each_circuit():
+        for sc in c.each_subcircuit():
+            referenced.add(sc.circuit_ref().name)
+    tops = [c.name for c in nl.each_circuit() if c.name not in referenced]
+    return tops[0] if len(tops) == 1 else None
 
 
 def _default_setup(tech: str) -> Path | None:

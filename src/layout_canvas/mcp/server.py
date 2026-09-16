@@ -24,7 +24,7 @@ from layout_canvas.engine.session import DesignSession
 from layout_canvas.ir.model import Design
 from layout_canvas.mcp.bridge import BridgeClient
 from layout_canvas.protocol.project import load_project, save_project
-from layout_canvas.tools.drc import run_klayout_drc
+from layout_canvas.tools.drc import run_drc
 from layout_canvas.tools.lvs import run_lvs
 from layout_canvas.tools.sim import run_netlist, simulate_design
 
@@ -106,7 +106,7 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "run_drc",
-                "description": "Run Sky130 Design Rule Checking (DRC) on a layout file using KLayout's DRC engine.",
+                "description": "Run Design Rule Checking on a layout file. Engine 'pya' runs an in-process KLayout geometry-check subset (no external binary needed); engine 'klayout' runs a full foundry .drc deck via the KLayout executable.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -116,9 +116,23 @@ class LayoutCanvasMCPServer:
                         },
                         "deck_path": {
                             "type": "string",
-                            "description": "Optional path to custom DRC deck file. Defaults to bundled sky130A.drc.",
+                            "description": "Optional path to custom DRC deck file (requires engine 'klayout').",
                         },
                         "tech": {"type": "string", "default": "sky130"},
+                        "engine": {"type": "string", "enum": ["auto", "pya", "klayout"], "default": "auto"},
+                    },
+                    "required": ["gds_path"],
+                },
+            },
+            {
+                "name": "extract_netlist",
+                "description": "Extract a device-level SPICE netlist from a GDS layout using the in-process KLayout engine (LayoutToNetlist). Reports real extraction: device count, named nets, hierarchy, and extraction errors.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "gds_path": {"type": "string", "description": "Path to the GDS layout file."},
+                        "tech": {"type": "string", "enum": ["sky130", "ihp_sg13g2"], "default": "sky130"},
+                        "output_path": {"type": "string", "description": "Optional path to write the extracted SPICE."},
                     },
                     "required": ["gds_path"],
                 },
@@ -157,6 +171,9 @@ class LayoutCanvasMCPServer:
                         },
                         "cell_name": {"type": "string", "description": "Top cell name (defaults to layout filename stem)."},
                         "setup_path": {"type": "string", "description": "Netgen setup Tcl file."},
+                        "tech": {"type": "string", "default": "sky130"},
+                        "engine": {"type": "string", "enum": ["auto", "netgen", "pya"], "default": "auto",
+                                   "description": "'pya' runs in-process KLayout extraction + NetlistComparer; 'netgen' uses the external binary."},
                     },
                     "required": ["layout_path", "schematic_path"],
                 },
@@ -758,11 +775,19 @@ class LayoutCanvasMCPServer:
         elif name == "run_drc":
             gds_path = args["gds_path"]
             deck_path = args.get("deck_path")
-            result = run_klayout_drc(
-                gds_path=Path(gds_path),
-                deck_path=Path(deck_path) if deck_path else None,
+            result = run_drc(
+                gds_path,
                 tech=args.get("tech", "sky130"),
+                deck_path=deck_path,
+                engine=args.get("engine", "auto"),
             )
+            return result.to_dict()
+
+        elif name == "extract_netlist":
+            from layout_canvas.tools.extract import extract_netlist
+            result = extract_netlist(args["gds_path"], tech=args.get("tech", "sky130"))
+            if result.status == "ok" and args.get("output_path"):
+                Path(args["output_path"]).write_text(result.netlist_text, encoding="utf-8")
             return result.to_dict()
 
         elif name == "generate_netlist":
@@ -811,6 +836,8 @@ class LayoutCanvasMCPServer:
                 schematic_path=schematic_path,
                 cell_name=args.get("cell_name"),
                 setup_path=args.get("setup_path"),
+                tech=args.get("tech", "sky130"),
+                engine=args.get("engine", "auto"),
             )
             return result.to_dict()
 
