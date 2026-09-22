@@ -151,6 +151,18 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             return {"status": "ok", "data": inspect_connectivity(design)}
         if action == "netlist":
             return {"status": "ok", "data": {"spice": compile_netlist(design)}}
+        if action == "simulate":
+            from layout_canvas.tools.sim import simulate_auto
+            exe = os.environ.get("LAYOUT_CANVAS_NGSPICE")
+            res = simulate_auto(
+                design,
+                analysis=str(payload.get("analysis", "op")),
+                vdd=float(payload.get("vdd", 1.8)),
+                simulator="ngspice", executable=exe)
+            for k in ("log_path", "deck_path"):
+                if res.get(k):
+                    res[k] = str(res[k])
+            return {"status": "ok", "data": res}
         comp = compile_design(design)
         if action == "preview":
             data = render_svg(comp)
@@ -162,6 +174,17 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             from layout_canvas.compiler.hierarchy import cell_abstract
 
             return {"status": "ok", "data": cell_abstract(design, comp)}
+        if action == "drc":
+            import tempfile
+            from layout_canvas.tools.drc import run_drc
+            gds = Path(tempfile.mkdtemp()) / f"{design.name}.gds"
+            comp.write_gds(str(gds))
+            res = run_drc(str(gds), tech=design.pdk, engine="pya")
+            data = res.to_dict() if hasattr(res, "to_dict") else res.__dict__
+            for k, v in list(data.items()):
+                if isinstance(v, Path):
+                    data[k] = str(v)
+            return {"status": "ok", "data": data}
         if action == "virtuoso":
             import tempfile
             from layout_canvas.compiler.virtuoso import export_skill, export_spectre

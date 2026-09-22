@@ -20,6 +20,7 @@ Two entry modes:
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import tempfile
@@ -223,6 +224,188 @@ _SIM_RUNNERS: dict[str, Callable[[str, Path, Path], tuple[list[str], Path]]] = {
     "hspice": _run_hspice,
     "eldo": _run_eldo,
 }
+
+
+def default_model_prelude(pdk: str) -> str:
+    """Deck preamble (before the netlist): model includes, corner libs and
+    required .param lines for the PDK. Empty string when the PDK has no
+    resolvable local models — the caller decides whether that is fatal."""
+    repo = Path(__file__).resolve().parents[3]
+    if pdk == "sky130":
+        lib = repo / "examples" / "models" / "sky130" / "sky130_tt.lib"
+        if lib.is_file():
+            return f'.include "{lib.as_posix()}"'
+        return ""
+    if pdk == "ihp_sg13g2":
+        models = Path(os.environ.get(
+            "LAYOUT_CANVAS_IHP_MODELS",
+            r"E:\Agentic TCAD\PDK\official_sources\IHP-Open-PDK"
+            r"\ihp-sg13g2\libs.tech\ngspice\models"))
+        mos = models / "cornerMOSlv.lib"
+        if not mos.is_file():
+            return ""
+        return (f'.lib "{mos.as_posix()}" mos_tt\n'
+                ".param pre_layout=1")
+    return ""
+
+
+def default_control_prelude(pdk: str) -> list[str]:
+    """.control lines that must run before the analysis (OSDI loads etc.)."""
+    if pdk == "ihp_sg13g2":
+        osdi_dirs = ([Path(os.environ["LAYOUT_CANVAS_OSDI_DIR"])]
+                     if os.environ.get("LAYOUT_CANVAS_OSDI_DIR")
+                     else [Path(r"E:\Reliability-PINN-Lab\.tmp\ngspice47"
+                                r"\Spice64\lib\ngspice")])
+        lines = []
+        for d in osdi_dirs:
+            for name in ("psp103.osdi", "psp103_nqs.osdi"):
+                f = d / name
+                if f.is_file():
+                    lines.append(f"pre_osdi {f.as_posix()}")
+        return lines
+    return []
+
+
+def _bias_line(name: str, vdd: float) -> str:
+    """Port-name heuristics -> DC bias statement. Honest defaults: a port we
+    cannot classify gets a weak pull to mid-rail so .op still converges."""
+    n = name.lower()
+    if any(k in n for k in ("vdd", "vcc", "supply")):
+        return f"V_{name} {name} 0 {vdd}"
+    if any(k in n for k in ("vss", "gnd", "vsub", "vbb")):
+        return f"V_{name} {name} 0 0"
+    if any(k in n for k in ("tail", "bias", "ibias")):
+        return f"I_{name} {name} vss 10u"
+    if n.startswith(("in", "vip", "vin")):
+        return f"V_{name} {name} 0 {vdd / 2:g}"
+    # Outputs and unknowns: 10k pull to supply + 1Meg to gnd — generic load.
+    return f"R_{name}_u vdd {name} 10k\nR_{name}_d {name} vss 1Meg"
+
+
+def default_stimulus(
+    design: Design,
+    *,
+    vdd: float = 1.8,
+    analysis: str = "op",
+    tran_stop: str = "5u",
+    tran_step: str = "10n",
+    out_file: str = "waves.dat",
+) -> str:
+    """Auto-generated stimulus for the canvas Simulate button: instantiate
+    the compiled top, bias every port by name heuristics, run .op or .tran,
+    and wrdata every port voltage for the UI to plot."""
+    nl = compile_netlist(design)
+    m = re.search(
+        rf"^\s*\.subckt\s+{re.escape(design.name)}\s+(?P<ports>.+?)\s*$",
+        nl, re.MULTILINE)
+    ports = m.group("ports").split() if m else [p.name for p in design.ports]
+    lines = [_bias_line(p, vdd) for p in ports]
+    # The bias network references implicit rail nodes vdd/vss; if the design
+    # doesn't expose them as ports, source them so nothing floats.
+    if not any(p.lower() in ("vdd", "vcc") for p in ports):
+        lines.insert(0, f"V_VDD vdd 0 {vdd}")
+    if not any(p.lower() in ("vss", "gnd") for p in ports):
+        lines.insert(0, "V_VSS vss 0 0")
+    lines.append(f"X1 {' '.join(ports)} {design.name}")
+    vectors = " ".join(f"v({p})" for p in ports)
+    run = "op" if analysis == "op" else f"tran {tran_step} {tran_stop}"
+    lines.append(".control")
+    lines.extend(default_control_prelude(design.pdk))
+    lines.append(run)
+    lines.append(f"wrdata {out_file} {vectors}")
+    lines.append(".endc")
+    return "\n".join(lines)
+
+
+def simulate_auto(
+    design: Design,
+    *,
+    analysis: str = "op",
+    vdd: float = 1.8,
+    tran_stop: str = "5u",
+    tran_step: str = "10n",
+    simulator: str = "auto",
+    executable: str | None = None,
+    timeout: int = 120,
+    workdir: str | Path | None = None,
+) -> dict[str, Any]:
+    """One-click simulation for the canvas: model prelude + auto stimulus +
+    backend run + waveform extraction. Returns the SimResult fields plus
+    ``ports`` (bias vector order) and ``waves`` (parsed wrdata columns).
+    """
+    root = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="lc_sim_"))
+    root.mkdir(parents=True, exist_ok=True)
+    prelude = default_model_prelude(design.pdk)
+    stimulus = default_stimulus(
+        design, vdd=vdd, analysis=analysis,
+        tran_stop=tran_stop, tran_step=tran_step, out_file="waves.dat")
+    netlist = compile_netlist(design)
+    deck_parts = ["* layout-canvas auto deck", ""]
+    if prelude:
+        deck_parts += [prelude, ""]
+    deck_parts += [netlist.rstrip(), "", stimulus.rstrip(), "", ".end"]
+
+    unresolved = sorted(
+        inst.block for inst in design.instances
+        if _emitter_missing(inst.block))
+    if unresolved:
+        return {"status": "refused",
+                "errors": ["blocks without transistor-level emitters: "
+                           + ", ".join(unresolved)],
+                "unresolved_blocks": unresolved}
+    if design.pdk in ("sky130", "ihp_sg13g2") and not prelude:
+        return {"status": "unavailable",
+                "errors": [f"no local model deck resolved for pdk {design.pdk!r}"]}
+
+    result = run_netlist(
+        "\n".join(deck_parts), simulator=simulator,
+        executable=executable, timeout=timeout, workdir=root)
+    m = re.search(
+        rf"^\s*\.subckt\s+{re.escape(design.name)}\s+(?P<ports>.+?)\s*$",
+        netlist, re.MULTILINE)
+    ports = m.group("ports").split() if m else [p.name for p in design.ports]
+    waves_raw = parse_wrdata(root / "waves.dat")
+    # v0 is the sweep column; v1..vN map positionally onto `ports`.
+    waves = {ports[i - 1]: waves_raw[f"v{i}"]
+             for i in range(1, len(ports) + 1) if f"v{i}" in waves_raw}
+    out = result.to_dict()
+    out["ports"] = ports
+    out["sweep"] = waves_raw.get("v0", [])
+    out["waves"] = waves
+    return out
+
+
+def _emitter_missing(block_name: str) -> bool:
+    try:
+        return base.get(block_name).netlist is None
+    except KeyError:
+        return True
+
+
+def parse_wrdata(path: Path) -> dict[str, list[float]]:
+    """ngspice `wrdata` output: first column is the sweep, then each vector
+    is written as an interleaved (real, imag) column pair — DC/tran data has
+    zero imaginary parts. Returns {v0: sweep, v1..vN: real samples} mapped
+    positionally; wrdata does not embed vector names."""
+    if not path.is_file():
+        return {}
+    rows: list[list[float]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        try:
+            vals = [float(x) for x in parts]
+        except ValueError:
+            continue
+        rows.append(vals)
+    if not rows:
+        return {}
+    width = max(len(r) for r in rows)
+    out: dict[str, list[float]] = {"v0": [r[0] for r in rows]}
+    for i in range(1, width, 2):
+        out[f"v{(i + 1) // 2}"] = [r[i] if i < len(r) else 0.0 for r in rows]
+    return out
 
 
 def _read_log(log_path: Path | None) -> str:
