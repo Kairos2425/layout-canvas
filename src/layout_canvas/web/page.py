@@ -44,6 +44,7 @@ PAGE = """<!doctype html>
     <button onclick="call('connectivity')">Connectivity</button>
     <button onclick="call('abstract')">Abstract</button>
     <button onclick="call('netlist')">Netlist</button>
+    <button onclick="call('virtuoso')">Virtuoso</button>
   </div>
   <div id="bar">
     <button id="btnEdit" onclick="sessionOpen()">Edit mode</button>
@@ -51,11 +52,17 @@ PAGE = """<!doctype html>
     <button id="btnEnd" onclick="sessionClose()" disabled>End session</button>
     <span id="rev" style="font-size:11px;align-self:center;opacity:.7"></span>
   </div>
+  <div id="bar">
+    <button onclick="publish()">Publish</button>
+    <button onclick="listGallery()">Gallery</button>
+  </div>
 </div>
 <div id="right">
   <h2>Layout preview</h2>
   <div id="canvas">Press Preview</div>
   <div id="legend"></div>
+  <h2>Gallery</h2>
+  <div id="gallery" style="font-size:12px"></div>
   <h2>Result</h2>
   <pre id="out">—</pre>
 </div>
@@ -147,6 +154,48 @@ canvas.addEventListener('click', async (ev) => {
     setSessionUI(true, revision);
   }
 });
+
+async function publish() {
+  const meta = {author: 'local', description: '', tags: []};
+  const r = await fetch('/api/gallery/publish', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ir_json: JSON.parse(irBox.value), meta: meta})
+  });
+  const res = await r.json();
+  if (res.status !== 'ok') { out.innerHTML = '<span class="err">' + res.error + '</span>'; return; }
+  out.textContent = 'published as ' + res.data.id;
+  listGallery();
+}
+
+async function listGallery() {
+  const r = await fetch('/api/gallery/list', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+  const res = await r.json();
+  const g = document.getElementById('gallery');
+  if (res.status !== 'ok' || !res.data.entries.length) {
+    g.innerHTML = '<span style="opacity:.6">empty — publish a design to share it</span>';
+    return;
+  }
+  g.innerHTML = res.data.entries.map(e =>
+    '<div style="border:1px solid #333;padding:6px 8px;margin:4px 0;border-radius:4px">' +
+    '<b>' + e.name + '</b> <span style="opacity:.6">' + e.pdk + ' · ' +
+    e.instances + ' inst · ' + e.created.slice(0,10) + '</span> ' +
+    '<button onclick="openEntry(\'' + e.id + '\')" style="float:right">Open</button>' +
+    '</div>').join('');
+}
+
+async function openEntry(id) {
+  const r = await fetch('/api/gallery/fork', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: id})});
+  const res = await r.json();
+  if (res.status !== 'ok') { out.innerHTML = '<span class="err">' + res.error + '</span>'; return; }
+  irBox.value = JSON.stringify(res.data.design, null, 2);
+  selInst = null;
+  setSessionUI(true, res.revision);
+  out.textContent = 'opened ' + res.data.meta.name + ' from gallery';
+  call('preview');
+}
 
 async function loadSample() {
   const r = await fetch('/api/sample');

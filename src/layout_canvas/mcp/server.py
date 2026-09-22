@@ -358,6 +358,21 @@ class LayoutCanvasMCPServer:
                 },
             },
             {
+                "name": "export_virtuoso",
+                "description": "Export a session design or ad-hoc ir_json for Cadence Virtuoso: a SKILL replay script that rebuilds the layout hierarchy in OA (dbCreateRect/Polygon/Label/Inst) plus a Spectre .scs design netlist.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "ir_json": {"type": ["string", "object"]},
+                        "library": {"type": "string", "default": "canvas_lib",
+                                    "description": "Target OA library name in Virtuoso."},
+                        "output_dir": {"type": "string",
+                                       "description": "Optional dir to write cell.il and design.scs."},
+                    },
+                },
+            },
+            {
                 "name": "run_simulation",
                 "description": "Simulate a design with ngspice (fail-closed). Provide session_id or ir_json plus 'stimulus' (sources, top X instantiation, analyses) and optional 'includes' model decks. Blocks without transistor-level emitters cause a named refusal.",
                 "inputSchema": {
@@ -620,6 +635,31 @@ class LayoutCanvasMCPServer:
             if args.get("ir_json") is not None:
                 return cell_abstract(self._parse_design(args["ir_json"]))
             raise ValueError("export_abstract needs 'session_id' or 'ir_json'")
+
+        elif name == "export_virtuoso":
+            import tempfile
+
+            from layout_canvas.compiler.virtuoso import (
+                export_skill, export_spectre)
+            if args.get("session_id"):
+                design = self._get_session(args["session_id"]).design
+            elif args.get("ir_json") is not None:
+                design = self._parse_design(args["ir_json"])
+            else:
+                raise ValueError("export_virtuoso needs 'session_id' or 'ir_json'")
+            comp = compile_design(design)
+            out_dir = Path(args.get("output_dir") or tempfile.mkdtemp())
+            out_dir.mkdir(parents=True, exist_ok=True)
+            gds = out_dir / f"{design.name}.gds"
+            comp.write_gds(str(gds))
+            skill = export_skill(gds, args.get("library", "canvas_lib"), design.pdk)
+            spectre = export_spectre(compile_netlist(design))
+            (out_dir / f"{design.name}.il").write_text(skill, encoding="utf-8")
+            (out_dir / f"{design.name}.scs").write_text(spectre, encoding="utf-8")
+            return {"output_dir": str(out_dir), "gds": str(gds),
+                    "skill_path": str(out_dir / f"{design.name}.il"),
+                    "spectre_path": str(out_dir / f"{design.name}.scs"),
+                    "skill": skill, "spectre": spectre}
 
         elif name == "run_simulation":
             if args.get("deck"):

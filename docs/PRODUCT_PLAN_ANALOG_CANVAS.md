@@ -105,7 +105,36 @@ layout-canvas 占据 **"Agent 原生的版图编译器"** 这个空位，PPA 量
 
 ---
 
-## 5. 参考锚点（读代码/文档的入口）
+## 5. 上游跟进：Virtuoso 桥接 + 社区画廊（2026-09-22 实装）
+
+上游 analog-canvas 近期打通了 **canvas ↔ Virtuoso** 转换。拆解其实现
+（`packages/netlist` + `apps/editor/features/netlist-export`）：
+
+- **Spectre `.scs` 方言打印机**——`subckt name ( pins )` + `name ( nodes )
+  model params` 语法，Virtuoso/Spectre 原生可读；
+- **工艺 profile 预设**——sky130/tsmc28/tsmc180 的器件 target 表（`nfet_01v8`、
+  `nch_mac` 等），符号绑定到具体 PDK master；
+- **Cadence 往返**——net 命名 codec（scoped/global、`_bar` overbar、bang
+  全局），保证 netlist 导出再导回电气语义不变。
+
+layout-canvas 侧的内化等价物（本轮已落地）：
+
+| 上游概念 | 我们的实现 | 文件 |
+|---|---|---|
+| Spectre 方言打印机 | `export_spectre()`：SPICE→`.scs` 方言转换器（subckt/X/M/R/C/model/param/global 全覆盖） | `compiler/virtuoso.py` |
+| canvas→OA cellview | `export_skill()`：GDS → SKILL 重放脚本（`ddCreateLib`/`dbOpenCellViewByType`/`dbCreateRect`/`dbCreatePolygon`/`dbCreateLabel`/`dbCreateInst`），层次子 cell 先建后引，层名映射到 OA 层名 | `compiler/virtuoso.py` |
+| Gallery（社区上传） | 本地优先画廊：`gallery/publish|list|get|fork` 端点 + 纯文件存储（`design.json`+`meta.json`+`preview.svg`），共享目录/git/远端同步可换底 | `web/gallery.py` |
+
+**社区平台路径**：当前画廊是纯文件存储的 local-first 实现——已经支持
+发布、浏览、fork 回编辑器（fork 走 DesignSession，和 Agent 编辑同一边界）。
+要变成真正的共建平台，下一步是把 `gallery_root` 换成同步层（git remote
+或 CF Worker/Durable Objects——上游同款架构），存储格式不变。
+
+**Virtuoso 侧验收待办**：`load("<cell>.il")` 在真实 Virtuoso 里跑一遍，
+核对 OA cellview 层次/几何/label 是否正确重建（本机无 Virtuoso，SKILL
+文本结构已单测）。Spectre `.scs` 同理需在 Spectre 里 `include` 验证。
+
+## 6. 参考锚点（读代码/文档的入口）
 
 - 变更边界设计：`E:\analog-canvas-review-20260905\packages\edit-engine\`
 - Agent 协议：`docs\specs\agent-api.md`、`docs\agent\workflow.md`（8 步 layout loop）

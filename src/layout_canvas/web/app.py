@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 from layout_canvas.blocks import base
@@ -97,10 +98,46 @@ def _session_api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {"status": "error", "error": f"unknown session action {action!r}"}
 
 
+def _gallery_api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Community gallery — publish / browse / open shared designs."""
+    global _SESSION
+    from layout_canvas.web import gallery
+    if action == "list":
+        return {"status": "ok", "data": {"entries": gallery.list_entries()}}
+    if action == "publish":
+        if _SESSION is not None:
+            design = _SESSION.design
+        else:
+            raw = payload.get("ir_json")
+            try:
+                design = (Design.model_validate_json(raw) if isinstance(raw, str)
+                          else Design.model_validate(raw))
+            except Exception as exc:
+                return {"status": "error", "error": f"invalid IR: {exc}"}
+        try:
+            info = gallery.publish(design, payload.get("meta"))
+        except Exception as exc:
+            return {"status": "error", "error": str(exc)}
+        return {"status": "ok", "data": info}
+    if action in ("get", "fork"):
+        entry = gallery.get_entry(str(payload.get("id", "")))
+        if entry is None:
+            return {"status": "error", "error": "gallery entry not found"}
+        if action == "fork":
+            _SESSION = DesignSession(Design.model_validate(entry["design"]))
+            return {"status": "ok", "revision": 0,
+                    "data": {"design": _SESSION.design.model_dump(),
+                             "meta": entry["meta"]}}
+        return {"status": "ok", "data": entry}
+    return {"status": "error", "error": f"unknown gallery action {action!r}"}
+
+
 def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Handle one API call; errors come back structured, never as a 500."""
     if action.startswith("session/"):
         return _session_api(action.split("/", 1)[1], payload)
+    if action.startswith("gallery/"):
+        return _gallery_api(action.split("/", 1)[1], payload)
     raw = payload.get("ir_json")
     try:
         design = Design.model_validate_json(raw) if isinstance(raw, str) else Design.model_validate(raw)
@@ -122,6 +159,17 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             from layout_canvas.compiler.hierarchy import cell_abstract
 
             return {"status": "ok", "data": cell_abstract(design, comp)}
+        if action == "virtuoso":
+            import tempfile
+            from layout_canvas.compiler.virtuoso import export_skill, export_spectre
+
+            gds = Path(tempfile.mkdtemp()) / f"{design.name}.gds"
+            comp.write_gds(str(gds))
+            return {"status": "ok", "data": {
+                "skill": export_skill(gds, payload.get("library", "canvas_lib"),
+                                      design.pdk),
+                "spectre": export_spectre(compile_netlist(design)),
+            }}
         return {"status": "error", "error": f"unknown action {action!r}"}
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
