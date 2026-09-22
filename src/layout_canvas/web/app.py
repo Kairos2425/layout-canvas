@@ -9,6 +9,7 @@ no cloud, loopback only by default.
 from __future__ import annotations
 
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -119,6 +120,8 @@ def _gallery_api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             return {"status": "error", "error": str(exc)}
         return {"status": "ok", "data": info}
+    if action == "sync":
+        return {"status": "ok", "data": gallery.sync(payload.get("remote"))}
     if action in ("get", "fork"):
         entry = gallery.get_entry(str(payload.get("id", "")))
         if entry is None:
@@ -189,6 +192,23 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path in ("/", "/index.html"):
             self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path == "/api/health":
+            self._send(200, json.dumps({"status": "ok"}).encode(), "application/json")
+        elif self.path == "/api/version":
+            self._send(200, json.dumps(_version()).encode(), "application/json")
+        elif self.path == "/manifest.json":
+            self._send(200, json.dumps({
+                "name": "Layout Canvas",
+                "short_name": "LayoutCanvas",
+                "start_url": "/",
+                "display": "standalone",
+                "background_color": "#1e1e28",
+                "theme_color": "#2d6cdf",
+                "description": "Block-level, AI-native analog layout canvas.",
+                "icons": [],
+            }).encode(), "application/manifest+json")
+        elif self.path == "/sw.js":
+            self._send(200, _SW.encode("utf-8"), "application/javascript; charset=utf-8")
         elif self.path == "/api/sample":
             self._send(200, json.dumps(_SAMPLE).encode(), "application/json")
         elif self.path == "/api/blocks":
@@ -211,8 +231,50 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(200, json.dumps(result).encode(), "application/json")
 
 
+def _version() -> dict[str, Any]:
+    """Deployment verification surface — the served bytes must answer with
+    the commit they were built from (SOURCE_COMMIT file or git checkout)."""
+    import subprocess
+    root = Path(__file__).resolve().parents[2]
+    src_commit = root / "SOURCE_COMMIT"
+    if src_commit.is_file():
+        return {"version": src_commit.read_text(encoding="utf-8").strip()}
+    try:
+        sha = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=True).stdout.strip()
+        return {"version": sha}
+    except Exception:
+        return {"version": "dev"}
+
+
+_SW = """\
+const CACHE = "layout-canvas-v1";
+self.addEventListener("install", (e) => {
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/"])));
+  self.skipWaiting();
+});
+self.addEventListener("activate", (e) => {
+  e.waitUntil(clients.claim());
+});
+self.addEventListener("fetch", (e) => {
+  if (e.request.method !== "GET" || e.request.url.includes("/api/")) return;
+  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+});
+"""
+
+
 def run(host: str = "127.0.0.1", port: int = 8080) -> None:
     import layout_canvas.blocks.sky130  # noqa: F401  populate block registry
+    try:
+        import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
+    except Exception:
+        pass
+
+    remote = os.environ.get("LAYOUT_CANVAS_GALLERY_REMOTE")
+    if remote:
+        from layout_canvas.web import gallery
+        print(f"gallery sync target: {remote} -> {gallery.sync(remote)['status']}")
 
     server = ThreadingHTTPServer((host, port), _Handler)
     print(f"layout-canvas web canvas: http://{host}:{port}")

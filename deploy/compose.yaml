@@ -1,0 +1,35 @@
+name: layout-canvas
+
+services:
+  canvas:
+    image: layout-canvas:${LAYOUT_CANVAS_IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: layout-canvas
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: 2.0
+    mem_limit: 2g
+    ports:
+      - "${LAYOUT_CANVAS_PORT:-8080}:8080"
+    environment:
+      # Point at a git remote (or leave unset for local-only publishing).
+      # GitHub/GitLab URL, LAN share, or bare repo path all work.
+      LAYOUT_CANVAS_GALLERY_REMOTE: ${LAYOUT_CANVAS_GALLERY_REMOTE:-}
+    volumes:
+      - gallery-data:/data/gallery
+      # ngspice/git scratch files need a writable /tmp under read_only.
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 268435456
+
+volumes:
+  gallery-data:
+    name: layout-canvas-gallery

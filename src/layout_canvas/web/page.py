@@ -6,6 +6,8 @@ PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Layout Canvas — Review</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2d6cdf">
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; font-family: system-ui, sans-serif; background: #171a18; color: #e8e4d8;
@@ -55,6 +57,7 @@ PAGE = """<!doctype html>
   <div id="bar">
     <button onclick="publish()">Publish</button>
     <button onclick="listGallery()">Gallery</button>
+    <button onclick="syncGallery()">Sync</button>
   </div>
 </div>
 <div id="right">
@@ -197,6 +200,17 @@ async function openEntry(id) {
   call('preview');
 }
 
+async function syncGallery() {
+  const remote = prompt('Gallery remote (git URL or path; blank = existing origin):', '');
+  if (remote === null) return;
+  const r = await fetch('/api/gallery/sync', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(remote ? {remote: remote} : {})});
+  const res = await r.json();
+  out.textContent = 'sync: ' + JSON.stringify(res.data || res, null, 2);
+  listGallery();
+}
+
 async function loadSample() {
   const r = await fetch('/api/sample');
   irBox.value = JSON.stringify(await r.json(), null, 2);
@@ -227,6 +241,7 @@ async function call(action) {
 }
 
 loadSample();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 </script>
 </body>
 </html>

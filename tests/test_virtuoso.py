@@ -81,6 +81,51 @@ def test_gallery_publish_list_fork(tmp_path: Path, monkeypatch):
     assert res["status"] == "error"
 
 
+def test_gallery_git_sync_two_users(tmp_path: Path, monkeypatch):
+    """Real co-building: two gallery roots sharing a bare remote exchange
+    published designs via pull/push — no mocks, actual git."""
+    import shutil
+    import subprocess
+    if shutil.which("git") is None:
+        pytest.skip("git not on PATH")
+
+    import layout_canvas.web.gallery as gallery
+
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+
+    # User A publishes and pushes.
+    a = tmp_path / "alice"
+    monkeypatch.setenv("LAYOUT_CANVAS_GALLERY", str(a))
+    info = gallery.publish(_design(), {"author": "alice"})
+    res = gallery.sync(str(remote))
+    assert res["status"] == "ok", res
+
+    # User B pulls and sees Alice's design — a real clone-free exchange.
+    b = tmp_path / "bob"
+    monkeypatch.setenv("LAYOUT_CANVAS_GALLERY", str(b))
+    res = gallery.sync(str(remote))
+    assert res["status"] == "ok", res
+    entries = gallery.list_entries()
+    assert any(e["id"] == info["id"] and e["author"] == "alice"
+               for e in entries)
+
+    # Bob forks it, publishes his own variant, Alice pulls it back.
+    b_design = _design().model_copy(update={"name": "vt_test_bob"})
+    info_b = gallery.publish(b_design, {"author": "bob"})
+    res = gallery.sync(str(remote))
+    assert res["status"] == "ok", res
+    monkeypatch.setenv("LAYOUT_CANVAS_GALLERY", str(a))
+    res = gallery.sync(str(remote))
+    assert res["status"] == "ok", res
+    assert any(e["id"] == info_b["id"] for e in gallery.list_entries())
+
+
+def test_web_health_and_version():
+    from layout_canvas.web.app import _version
+    assert _version()["version"]  # SOURCE_COMMIT or git sha or "dev"
+
+
 def test_web_virtuoso_action(tmp_path: Path):
     from layout_canvas.web.app import _api
     res = _api("virtuoso", {"ir_json": _design().model_dump(),
