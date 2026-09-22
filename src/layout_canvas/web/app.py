@@ -59,6 +59,22 @@ def _instance_bboxes(design: Design, comp: Any) -> dict[str, list[float]]:
     return boxes
 
 
+def _instance_pins(design: Design, comp: Any) -> dict[str, dict[str, list[float]]]:
+    """Instance pin coordinates in top-cell space — the click targets for the
+    wiring gesture. {inst_id: {pin_name: [x, y]}}."""
+    pins: dict[str, dict[str, list[float]]] = {}
+    for inst, ref in zip(design.instances, comp.insts):
+        inst_pins: dict[str, list[float]] = {}
+        try:
+            for p in ref.ports:
+                inst_pins[p.name] = [round(float(p.center[0]), 4),
+                                     round(float(p.center[1]), 4)]
+        except Exception:
+            pass
+        pins[inst.id] = inst_pins
+    return pins
+
+
 def _session_api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Session-mode actions — human edits through the transactional engine."""
     global _SESSION
@@ -167,6 +183,9 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         if action == "preview":
             data = render_svg(comp)
             data["instances"] = _instance_bboxes(design, comp)
+            data["pins"] = _instance_pins(design, comp)
+            data["nets"] = [{"name": n.name, "pins": n.pins}
+                            for n in design.nets]
             return {"status": "ok", "data": data}
         if action == "ppa":
             return {"status": "ok", "data": extract_ppa(comp, design)}

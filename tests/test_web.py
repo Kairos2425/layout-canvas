@@ -114,3 +114,27 @@ def test_preview_reports_instance_bboxes():
     assert res["status"] == "ok"
     box = res["data"]["instances"]["dp"]
     assert len(box) == 4 and box[2] > box[0] and box[3] > box[1]
+
+
+def test_preview_reports_pin_positions():
+    """Pin coordinates are the click targets for the wiring gesture."""
+    res = _api("preview", {"ir_json": _ir()})
+    assert res["status"] == "ok"
+    pins = res["data"]["pins"]["dp"]
+    # diff_pair exposes the five formal pins in top-cell coordinates
+    for name in ("inp", "inn", "outp", "outn", "tail"):
+        assert name in pins
+        x, y = pins[name]
+        box = res["data"]["instances"]["dp"]
+        assert box[0] - 1 <= x <= box[2] + 1
+        assert box[1] - 1 <= y <= box[3] + 1
+    assert res["data"]["nets"] == []
+
+
+def test_simulate_auto_runs_or_reports_unavailable():
+    """The canvas Simulate button goes through simulate_auto: real ngspice
+    when present, fail-closed unavailable/refused otherwise."""
+    res = _api("simulate", {"ir_json": _ir(), "analysis": "op"})
+    assert res["status"] == "ok"
+    assert res["data"]["status"] in ("passed", "failed", "unavailable",
+                                     "refused", "error")

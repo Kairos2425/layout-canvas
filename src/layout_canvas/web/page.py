@@ -132,7 +132,7 @@ PAGE = """<!doctype html>
 <div id="stage">
   <div id="canvas"></div>
   <div id="legend"></div>
-  <div id="hint">click a block to select · click empty space to move it · wheel to zoom</div>
+  <div id="hint">click pin ○ → pin ○ to wire a net · P exports pending pin as a port · click block to select/move · wheel to zoom</div>
 </div>
 
 <aside id="right">
@@ -231,8 +231,96 @@ async function refresh() {
   const svg = canvas.querySelector('svg');
   if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height');
              if (!view) view = svg.viewBox.baseVal; }
+  drawOverlay();
   highlightSel();
 }
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+let pendingPin = null;  // 'inst.pin' waiting for a second click to wire
+
+function pinXY(pinRef) {
+  const [iid, pn] = pinRef.split('.');
+  const xy = (lastData.pins || {})[iid] ? lastData.pins[iid][pn] : null;
+  return xy ? {x: xy[0], y: xy[1]} : null;
+}
+
+// Pins as clickable circles + nets as dashed polylines, overlaid on the
+// polygon render in top-cell coordinates (y flipped back into SVG space).
+function drawOverlay() {
+  const svg = canvas.querySelector('svg');
+  if (!svg || !lastData) return;
+  const H = lastData.bbox ? lastData.bbox[3] : 0;
+  for (const net of lastData.nets || []) {
+    const pts = net.pins.map(pinXY).filter(Boolean);
+    if (pts.length >= 2) {
+      const pl = document.createElementNS(SVGNS, 'polyline');
+      pl.setAttribute('points', pts.map(p => p.x + ',' + (H - p.y)).join(' '));
+      pl.setAttribute('fill', 'none');
+      pl.setAttribute('stroke', '#c94f8f');
+      pl.setAttribute('stroke-width', '0.09');
+      pl.setAttribute('stroke-dasharray', '0.25 0.12');
+      svg.appendChild(pl);
+    }
+  }
+  for (const [iid, pins] of Object.entries(lastData.pins || {})) {
+    for (const [pn, xy] of Object.entries(pins)) {
+      const c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('cx', xy[0]); c.setAttribute('cy', H - xy[1]);
+      c.setAttribute('r', '0.22');
+      c.setAttribute('fill', pendingPin === iid + '.' + pn ? '#d94f4f' : '#fff');
+      c.setAttribute('stroke', '#2d6cdf'); c.setAttribute('stroke-width', '0.07');
+      c.setAttribute('data-pin', iid + '.' + pn);
+      svg.appendChild(c);
+      const t = document.createElementNS(SVGNS, 'text');
+      t.setAttribute('x', xy[0] + 0.3); t.setAttribute('y', H - xy[1] + 0.15);
+      t.setAttribute('font-size', '0.45'); t.setAttribute('fill', '#2d6cdf');
+      t.textContent = pn;
+      svg.appendChild(t);
+    }
+  }
+}
+
+async function wirePin(pinRef) {
+  if (!pendingPin) {
+    pendingPin = pinRef;
+    document.getElementById('hint').textContent =
+      'wiring from ' + pinRef + ' — click another pin, or press P to export as a top-level port';
+    refresh();
+    return;
+  }
+  if (pendingPin === pinRef) { pendingPin = null; refresh(); return; }
+  const nets = ir().nets || [];
+  const n1 = nets.find(n => n.pins.includes(pendingPin));
+  const n2 = nets.find(n => n.pins.includes(pinRef));
+  let edit;
+  if (n1 && n2 && n1.name === n2.name) {
+    pendingPin = null; refresh();
+    document.getElementById('hint').textContent = 'already on net ' + n1.name;
+    return;
+  } else if (n1) {
+    edit = {op: 'set_net_pins', net: n1.name, pins: [...n1.pins, pinRef]};
+  } else if (n2) {
+    edit = {op: 'set_net_pins', net: n2.name, pins: [pendingPin, ...n2.pins]};
+  } else {
+    edit = {op: 'add_net',
+            net: {name: 'net_' + (nets.length + 1), pins: [pendingPin, pinRef]}};
+  }
+  pendingPin = null;
+  await sessionEdit([edit]);
+}
+
+// Press P while a pin is pending to promote it to a top-level port.
+window.addEventListener('keydown', async (ev) => {
+  if (ev.key !== 'p' && ev.key !== 'P') return;
+  if (!pendingPin || ev.target.tagName === 'INPUT' ||
+      ev.target.tagName === 'TEXTAREA') return;
+  const name = prompt('Top-level port name for ' + pendingPin + ':',
+                      pendingPin.split('.').pop().toUpperCase());
+  if (!name) return;
+  const pin = pendingPin; pendingPin = null;
+  await sessionEdit([{op: 'add_port',
+    port: {name: name, pin: pin, direction: 'input'}}]);
+});
 
 function svgPt(ev) {
   const svg = canvas.querySelector('svg');
@@ -301,6 +389,10 @@ canvas.addEventListener('wheel', (ev) => {
 
 canvas.addEventListener('click', async (ev) => {
   if (!lastData) return;
+  // Pin markers take priority — a pin click is a wiring gesture, never a move.
+  const pinRef = ev.target.getAttribute && ev.target.getAttribute('data-pin');
+  if (pinRef) { await wirePin(pinRef); return; }
+  if (pendingPin) { pendingPin = null; refresh(); return; }
   const p = svgPt(ev); if (!p) return;
   const hit = hitInst(p.x, p.y);
   if (hit) { selInst = hit; setRev(); highlightSel(); renderInspector(); }
