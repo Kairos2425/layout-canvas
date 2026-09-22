@@ -133,6 +133,15 @@ PAGE = """<!doctype html>
   <div id="canvas"></div>
   <div id="legend"></div>
   <div id="hint">click pin ○ → pin ○ to wire a net · P exports pending pin as a port · click block to select/move · wheel to zoom</div>
+  <div id="askbox" style="display:none;position:absolute;left:50%;top:12px;
+       transform:translateX(-50%);background:var(--panel);border:1px solid var(--acc);
+       border-radius:7px;padding:8px 10px;z-index:20;box-shadow:0 4px 18px rgba(30,40,60,.2)">
+    <span id="asklabel" style="font-size:11px;color:var(--mut)"></span>
+    <input id="askval" style="border:1px solid var(--line);border-radius:5px;
+           padding:4px 7px;font:12px ui-monospace;margin:0 6px;min-width:180px">
+    <button class="btn primary" id="askok">OK</button>
+    <button class="btn" id="askcancel">Cancel</button>
+  </div>
 </div>
 
 <aside id="right">
@@ -309,17 +318,45 @@ async function wirePin(pinRef) {
   await sessionEdit([edit]);
 }
 
+// Non-modal inline ask box — native prompt()/alert() pauses embedded
+// previews ("paused due to notification"), so dialogs live in the DOM.
+let askCb = null;
+function askValue(label, initial, cb) {
+  const box = document.getElementById('askbox');
+  document.getElementById('asklabel').textContent = label;
+  const inp = document.getElementById('askval');
+  inp.value = initial || '';
+  askCb = cb;
+  box.style.display = 'block';
+  inp.focus(); inp.select();
+}
+function askDone(ok) {
+  document.getElementById('askbox').style.display = 'none';
+  const v = document.getElementById('askval').value.trim();
+  const cb = askCb; askCb = null;
+  if (ok && cb) cb(v);
+}
+document.getElementById('askok').onclick = () => askDone(true);
+document.getElementById('askcancel').onclick = () => askDone(false);
+document.getElementById('askval').addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') askDone(true);
+  if (ev.key === 'Escape') askDone(false);
+  ev.stopPropagation();
+});
+
 // Press P while a pin is pending to promote it to a top-level port.
-window.addEventListener('keydown', async (ev) => {
+window.addEventListener('keydown', (ev) => {
   if (ev.key !== 'p' && ev.key !== 'P') return;
   if (!pendingPin || ev.target.tagName === 'INPUT' ||
       ev.target.tagName === 'TEXTAREA') return;
-  const name = prompt('Top-level port name for ' + pendingPin + ':',
-                      pendingPin.split('.').pop().toUpperCase());
-  if (!name) return;
-  const pin = pendingPin; pendingPin = null;
-  await sessionEdit([{op: 'add_port',
-    port: {name: name, pin: pin, direction: 'input'}}]);
+  const pin = pendingPin;
+  askValue('Top-level port name for ' + pin + ':',
+           pin.split('.').pop().toUpperCase(), async (name) => {
+    if (!name) return;
+    pendingPin = null;
+    await sessionEdit([{op: 'add_port',
+      port: {name: name, pin: pin, direction: 'input'}}]);
+  });
 });
 
 function svgPt(ev) {
@@ -583,14 +620,15 @@ async function openEntry(id) {
   refresh(); renderInspector();
 }
 
-async function syncGallery() {
-  const remote = prompt('Gallery remote (git URL or path; blank = existing):', '');
-  if (remote === null) return;
-  const res = await api('gallery/sync', remote ? {remote: remote} : {});
-  const o = JSON.stringify(res.data || res, null, 2);
-  tab('output');
-  document.getElementById('out').textContent = 'sync: ' + o;
-  listGallery();
+function syncGallery() {
+  askValue('Gallery remote (git URL or path; blank = existing):', '',
+           async (remote) => {
+    const res = await api('gallery/sync', remote ? {remote: remote} : {});
+    const o = JSON.stringify(res.data || res, null, 2);
+    tab('output');
+    document.getElementById('out').textContent = 'sync: ' + o;
+    listGallery();
+  });
 }
 
 // ---------- boot ----------
