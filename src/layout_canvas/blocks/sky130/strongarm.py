@@ -163,12 +163,12 @@ def register_strongarm() -> None:
                      cx + 0.15, tail_y0 + tail_h / 2)
         clk_strap_y = tail_y0 - 0.45
         for fx in tail_fx:
-            rect(c, layers.POLY, fx - 0.2, clk_strap_y + 0.55,
-                 fx + 0.2, tail_y0)
-            rect(c, layers.LICON, fx - 0.085, clk_strap_y + 0.5,
-                 fx + 0.085, clk_strap_y + 0.67)
+            rect(c, layers.POLY, fx - 0.2, clk_strap_y,
+                 fx + 0.2, tail_y0 - 0.01)
+            rect(c, layers.LICON, fx - 0.085, clk_strap_y + 0.2,
+                 fx + 0.085, clk_strap_y + 0.37)
             rect(c, layers.LI, fx - 0.15, clk_strap_y,
-                 fx + 0.15, clk_strap_y + 0.7)
+                 fx + 0.15, clk_strap_y + 0.42)
         clk_px = tail_x0 + tail_pitch
         rect(c, layers.LI, tail_fx[0] - 0.15, clk_strap_y,
              tail_fx[1] + 0.15, clk_strap_y + 0.35)
@@ -326,6 +326,14 @@ def register_strongarm() -> None:
                 x = snap(cand + dx)
                 if lo <= x <= hi and not any(abs(x - a) < clear for a in avoid):
                     return x
+            # fine sweep near the preferred x — never silently drop the
+            # clearance (f4 fallback merged two met2 risers 0.12 apart)
+            n = max(1, int((hi - lo) / 0.05) + 1)
+            idx = sorted(range(n), key=lambda i: abs(snap(lo + i * 0.05) - cand))
+            for i in idx:
+                x = snap(lo + i * 0.05)
+                if lo <= x <= hi and not any(abs(x - a) < clear for a in avoid):
+                    return x
             return snap((lo + hi) / 2)
 
         b_fx = gxs["B"]
@@ -335,7 +343,8 @@ def register_strongarm() -> None:
         r = _inter(_seg_xrange(dp_segs, dp_nets, "d2"), gx_b)
         x_d2 = _pick_x(r) or snap(total_width * 0.75)
         r = _inter(_seg_xrange(dp_segs, dp_nets, "d1"), gx_a)
-        x_d1 = _pick_x(r, list(b_fx) + [x_d2]) or snap(total_width * 0.25)
+        x_d1 = _pick_x(r, list(b_fx) + [x_d2], clear=0.55) \
+            or snap(total_width * 0.25)
         _via1(x_d1, dp_strap["d1"])
         _strap_via(x_d1, nl_gy_a, on_li1=True)
         rect(c, layers.MET2, x_d1 - 0.19, dp_strap["d1"],
@@ -349,13 +358,16 @@ def register_strongarm() -> None:
         # would merge the outputs.
         r = _inter(_seg_xrange(nl_segs, nl_nets, "outp"),
                    _seg_xrange(pl_segs, pl_nets, "outp"), gx_a)
-        x_op = _pick_x(r, b_fx) or snap(total_width * 0.40)
+        # output risers must also clear the d1/d2 risers — their y spans
+        # (nl->pl vs dp->nl) overlap around the nlatch straps
+        x_op = _pick_x(r, list(b_fx) + [x_d1, x_d2], clear=0.55) \
+            or snap(total_width * 0.40)
         r = _inter(_seg_xrange(nl_segs, nl_nets, "outn"),
                    _seg_xrange(pl_segs, pl_nets, "outn"), gx_b)
-        x_on = _pick_x(r, [], clear=0.55, lo_bias=-1.0) \
+        x_on = _pick_x(r, [x_d1, x_d2], clear=0.55, lo_bias=-1.0) \
             or snap(total_width * 0.60)
         if x_op is not None and abs(x_on - x_op) < 0.55:
-            x_on = _pick_x(r, [x_op], clear=0.55) \
+            x_on = _pick_x(r, [x_op, x_d1, x_d2], clear=0.55) \
                 or snap(total_width * 0.60)
         _via1(x_on, nl_strap["outn"])
         _via1(x_on, pl_strap["outn"])
@@ -367,7 +379,8 @@ def register_strongarm() -> None:
         # overlapping risers would merge the outputs.
         r = _inter(_seg_xrange(nl_segs, nl_nets, "outp"),
                    _seg_xrange(pl_segs, pl_nets, "outp"), gx_a)
-        x_op = _pick_x(r, b_fx) or snap(total_width * 0.40)
+        x_op = _pick_x(r, list(b_fx) + [x_d1, x_d2, x_on], clear=0.55) \
+            or snap(total_width * 0.40)
         _via1(x_op, nl_strap["outp"])
         _via1(x_op, pl_strap["outp"])
         rect(c, layers.MET2, x_op - 0.19, nl_strap["outp"],

@@ -113,7 +113,38 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
     tops = list(ly.top_cells())
     if not tops:
         return ExtractionResult("error", errors=["GDS has no top cell"])
-    top = tops[0]
+    top_name_0 = tops[0].name
+
+    # Canonicalise shape order before extraction: this engine resolves
+    # derived-region connectivity (e.g. nwell<->ntap) in insertion order,
+    # and GDS writers emit records in arbitrary order — identical layouts
+    # written differently produced different nets (observed: a pmos bulk
+    # merging into vdd or staying a private net). Re-inserting every
+    # cell's shapes sorted by position makes extraction deterministic.
+    ly2 = db.Layout()
+    ly2.dbu = ly.dbu
+    cell_map = {}
+    for cell in sorted(ly.each_cell(), key=lambda c: c.name):
+        cell_map[cell.cell_index()] = ly2.create_cell(cell.name)
+    for cell in sorted(ly.each_cell(), key=lambda c: c.name):
+        dst = cell_map[cell.cell_index()]
+        for li in sorted(ly.layer_indexes(), key=lambda i: ly.get_info(i).to_s()):
+            shapes = [sh for sh in cell.each_shape(li)]
+            if not shapes:
+                continue
+            shapes.sort(key=lambda s: s.bbox().to_s())
+            li2 = ly2.layer(ly.get_info(li))
+            for sh in shapes:
+                dst.shapes(li2).insert(sh)
+        insts = sorted(cell.each_inst(),
+                       key=lambda i: i.cell_inst.to_s())
+        for inst in insts:
+            ci = inst.cell_inst
+            dst.insert(db.CellInstArray(
+                cell_map[ci.cell_index].cell_index(),
+                ci.trans, ci.a, ci.b, ci.na, ci.nb))
+    ly = ly2
+    top = next(c for c in ly.each_cell() if c.name == top_name_0)
 
     def L(key: str):
         spec = recipe[key]
@@ -218,9 +249,21 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
     rnactive = (rdiff & rnsdm) - rnwell
     rngate = rnactive & rpoly
     rnsd = rnactive - rngate
-    # bulk ties: n-well taps for pmos, p-sub taps for nmos
-    rntap = (rtap & rnwell) if rtap is not None else rnwell
-    rptap = (rtap - rnwell) if rtap is not None else (rdiff - rnwell)
+    # bulk ties: n-well taps for pmos, p-sub taps for nmos. Techs with a
+    # dedicated tap layer use it directly; IHP derives taps from implants:
+    # p+ tap = psd-marked diff outside nwell, n+ tap = nsd diff inside
+    # nwell. With no implants drawn there is simply no tap — falling back
+    # to (rdiff - rnwell) would declare every nmos diffusion a p-tap and
+    # short it to the global substrate.
+    if rtap is not None:
+        rntap = rtap & rnwell
+        rptap = rtap - rnwell
+    elif layers["psdm"] is not None and layers["psdm"].count() > 0:
+        rntap = (rdiff & rnsdm) & rnwell
+        rptap = (rdiff & rpsdm) - rnwell
+    else:
+        rntap = db.Region()
+        rptap = db.Region()
     # Shared substrate: without a contiguous bulk region every device gets
     # its own implicit bulk net (nc_1..nc_N), which blocks device
     # combination and mismatches a reference that ties all bulks to vss.
@@ -241,7 +284,10 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
         l2n.connect_global(rptap, "vss")
     for name, reg in (("psd", rpsd), ("nsd", rnsd),
                       ("ntap_d", rntap), ("ptap_d", rptap)):
-        l2n.register(reg, name)
+        # empty derived regions compare equal and registering two of them
+        # under different names fails ("layer already registered")
+        if not reg.is_empty():
+            l2n.register(reg, name)
     # derived terminal layers join connectivity through the contact stack.
     # Gate regions must NOT be connected: registering a derived region into
     # connectivity splits the parent poly shape into per-region clusters, so

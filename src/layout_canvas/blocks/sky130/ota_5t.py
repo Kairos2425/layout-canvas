@@ -167,14 +167,17 @@ def register_ota_5t() -> None:
         # tail gate strap: pads on the poly overhang, per-finger li1 stubs
         # plus a horizontal strap joining them (without it the two gates
         # stay separate nets), then an mcon -> met1 port riser.
+        # tail gate strap: pads on the poly overhang BELOW the rail —
+        # a pad reaching into the diffusion lands the contact on the
+        # channel (parasitic) and skews the extracted gate length.
         vbias_strap_y = tail_y0 - 0.45
         for fx in tail_fx:
-            rect(c, layers.POLY, fx - 0.2, vbias_strap_y + 0.55,
-                 fx + 0.2, tail_y0)
-            rect(c, layers.LICON, fx - 0.085, vbias_strap_y + 0.5,
-                 fx + 0.085, vbias_strap_y + 0.67)
+            rect(c, layers.POLY, fx - 0.2, vbias_strap_y,
+                 fx + 0.2, tail_y0 - 0.01)
+            rect(c, layers.LICON, fx - 0.085, vbias_strap_y + 0.2,
+                 fx + 0.085, vbias_strap_y + 0.37)
             rect(c, layers.LI, fx - 0.15, vbias_strap_y,
-                 fx + 0.15, vbias_strap_y + 0.7)
+                 fx + 0.15, vbias_strap_y + 0.42)
         vbias_px = tail_x0 + tail_pitch
         rect(c, layers.LI, tail_fx[0] - 0.15, vbias_strap_y,
              tail_fx[1] + 0.15, vbias_strap_y + 0.35)
@@ -298,8 +301,42 @@ def register_ota_5t() -> None:
         def _via1(x: float, y: float) -> None:
             rect(c, layers.VIA1, x - 0.13, y - 0.13, x + 0.13, y + 0.13)
 
+        # riser channels must be picked from the actual strap extents and
+        # kept apart — fixed fractions placed out1/out/ntap risers on
+        # colliding channels at non-default finger counts (observed: out
+        # and nwell-bulk risers merging at f8 -> out|vdd).
+        def _seg_xrange(segs, nets, name):
+            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets)
+                  if n == name and s[1] - s[0] >= 0.4]
+            return (min(xs) - 0.1, max(xs) + 0.1) if xs else None
+
+        def _inter(*ranges):
+            r = None
+            for x in ranges:
+                if x is None:
+                    return None
+                r = x if r is None else (max(r[0], x[0]), min(r[1], x[1]))
+            return r if r and r[0] <= r[1] else None
+
+        def _pick_x(r, avoid=(), clear=0.55, prefer=None):
+            if r is None:
+                return None
+            lo, hi = r
+            cand = prefer if prefer is not None else snap((lo + hi) / 2)
+            n = max(1, int((hi - lo) / 0.05) + 1)
+            idx = sorted(range(n),
+                         key=lambda i: abs(snap(lo + i * 0.05) - cand))
+            for i in idx:
+                x = snap(lo + i * 0.05)
+                if lo <= x <= hi and not any(abs(x - a) < clear for a in avoid):
+                    return x
+            return snap((lo + hi) / 2)
+
         # out1: dp outp strap -> load 'in' strap + load gate strap
-        x_out1 = snap(total_width * 0.25)
+        r1 = _inter(_seg_xrange(dp_segs, dp_nets, "out1"),
+                    _seg_xrange(ld_segs, ld_nets, "out1"))
+        x_out1 = _pick_x(r1, [ntx], prefer=snap(total_width * 0.25)) \
+            or snap(total_width * 0.25)
         rect(c, layers.MET1, x_out1 - 0.19, dp_strap["out1"] - 0.19,
              x_out1 + 0.19, dp_strap["out1"] + 0.19)
         _via1(x_out1, dp_strap["out1"])
@@ -308,13 +345,24 @@ def register_ota_5t() -> None:
              x_out1 + 0.19, ld_strap["out1"])
         # load gate strap joins out1 through a via into the same riser
         gx = snap((min(ld_fx) + max(ld_fx)) / 2)
+        if abs(gx - x_out1) < 0.55:
+            xs_g = [x for x in ld_fx
+                    if abs(x - x_out1) >= 0.55]
+            if xs_g:
+                gx = snap(min(xs_g, key=lambda x: abs(x - gx)))
         rect(c, layers.MCON, gx - 0.065, ld_gy - 0.065,
              gx + 0.065, ld_gy + 0.065)
+        # met1 riser touches the out1 strap directly (same layer) — a via
+        # here would bridge the strap into whatever met2 riser passes
+        # over gx (observed: out1 shorted to the out riser at f2)
         rect(c, layers.MET1, gx - 0.19, ld_gy - 0.19, gx + 0.19,
              ld_strap["out1"] + 0.19)
-        _via1(gx, ld_strap["out1"])
-        # out: dp outn strap -> load 'out' strap
-        x_out = snap(total_width * 0.75)
+        # out: dp outn strap -> load 'out' strap, distinct channel from
+        # both the out1 and the nwell-bulk risers
+        r2 = _inter(_seg_xrange(dp_segs, dp_nets, "out"),
+                    _seg_xrange(ld_segs, ld_nets, "out"))
+        x_out = _pick_x(r2, [ntx, x_out1], prefer=snap(total_width * 0.75)) \
+            or snap(total_width * 0.75)
         rect(c, layers.MET1, x_out - 0.19, dp_strap["out"] - 0.19,
              x_out + 0.19, dp_strap["out"] + 0.19)
         _via1(x_out, dp_strap["out"])

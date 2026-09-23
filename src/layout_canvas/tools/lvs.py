@@ -175,16 +175,21 @@ def _run_pya_lvs(
                    if dev.device_class() is dc or
                    dev.device_class().name.upper() == dc.name.upper())
 
+    # Pair by device polarity, not by a literal family string: sky130
+    # classes carry NFET/PFET while IHP uses NMOS/PMOS — keying on one
+    # vocabulary silently pairs nothing on the other.
+    def _pol(name: str) -> str:
+        if "PFET" in name or "PMOS" in name:
+            return "P"
+        if "NFET" in name or "NMOS" in name:
+            return "N"
+        return name
+
     for aname, adc in ext_classes.items():
-        if "NFET" in aname or "NMOS" in aname:
-            key = "NFET"
-        elif "PFET" in aname or "PMOS" in aname:
-            key = "PFET"
-        else:
-            key = aname
+        key = _pol(aname)
         best = None
         for bname, bdc in ref_classes.items():
-            if key in bname and _dev_count(ref_top, bdc) > 0:
+            if _pol(bname) == key and _dev_count(ref_top, bdc) > 0:
                 best = bdc
                 break
         if best is not None:

@@ -57,7 +57,13 @@ def register_guard_ring() -> None:
             rect(c, layers.ACTIV, x0, y0, x1, y1)
             rect(c, layers.METAL1, x0, y0, x1, y1)
 
+        # implant marks the tap polarity: extraction derives ptap as
+        # (activ & psdm) - nwell and ntap as (activ & nsdm) & nwell —
+        # without the implant the ring is just floating diffusion.
         margin = 0.15
+        implant = layers.PSDM if ring_type == "ptap" else layers.NSDM
+        rect(c, implant, xo0 - margin, yo0 - margin,
+             xo1 + margin, yo1 + margin)
         if ring_type == "ntap":
             nw = 0.62
             rect(c, layers.NWELL, xo0 - nw, yo0 - nw, xo1 + nw, yo1 + nw)

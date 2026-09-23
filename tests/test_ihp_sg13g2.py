@@ -43,17 +43,19 @@ def test_ihp_blocks_build_component(name):
     assert len(comp.ports) > 0
 
 
-def test_diff_pair_netlist_uses_psp_subckt_devices():
+def test_diff_pair_netlist_uses_finger_level_devices():
     text = compile_netlist(_design("ihp_sg13g2.diff_pair"))
-    # IHP lv devices are PDK subckt wrappers (d g s b) — X lines, not M lines.
-    assert re.search(r"^X1 outp inp tail vss sg13_lv_nmos ", text, re.M)
-    assert re.search(r"ng=4", text)
+    # Finger-level reference matching physical extraction: one M card per
+    # finger, S/D per the ABBA segment ownership, bulk on the shared vss.
+    assert re.search(r"^M\d+ tail inp outp vss sg13_lv_nmos ", text, re.M)
+    assert re.search(r"^M\d+ outn inn tail vss sg13_lv_nmos ", text, re.M)
+    assert "l=0.34u" in text
 
 
 def test_ihp_pin_labels_use_datatype_2():
     """LVS extraction on SG13G2 reads labels on (drawing layer, 2)."""
     comp = base.get("ihp_sg13g2.diff_pair").component()
-    assert (8, 2) in comp.layers  # metal1 pin-label layer
+    assert (10, 2) in comp.layers  # metal2 pin-label layer
 
 
 def test_ihp_pdk_descriptor():

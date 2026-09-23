@@ -22,6 +22,10 @@ TOPMETAL2 = (134, 0)
 SALBLOCK = (28, 0)
 NWELL = (31, 0)
 
+# Implant layers (verified in extract recipe: nsdm=(7,0), psdm=(14,0))
+NSDM = (7, 0)   # n+ source/drain implant
+PSDM = (14, 0)  # p+ source/drain implant
+
 # SG13G2 pin/text convention: (drawing layer, datatype 2)
 ACTIV_PIN = (1, 2)
 GATPOLY_PIN = (5, 2)
