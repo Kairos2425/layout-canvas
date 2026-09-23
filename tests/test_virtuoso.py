@@ -49,8 +49,9 @@ def test_spectre_dialect(tmp_path: Path):
     assert scs.startswith("// generated")
     assert "simulator lang=spectre" in scs
     assert "subckt sky130_current_mirror__" in scs
-    assert " ( in out gate )" in scs
-    assert "X1 ( out gate in in ) sky130_fd_pr__nfet_01v8" in scs
+    assert " ( in out gate vss )" in scs
+    # finger-level reference: M-cards converted to spectre form
+    assert "M1 ( vss gate in vss ) sky130_fd_pr__nfet_01v8" in scs
     assert "ends vt_test" in scs
     assert ".subckt" not in scs and ".ends" not in scs
 

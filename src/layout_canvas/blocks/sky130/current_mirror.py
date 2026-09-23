@@ -23,7 +23,7 @@ def register_current_mirror() -> None:
                 default=4,
                 min=2,
                 max=64,
-                description="Number of interdigitated fingers",
+                description="Fingers per side (input + output interleaved)",
             ),
             ParamSpec(
                 name="width",
@@ -52,9 +52,10 @@ def register_current_mirror() -> None:
             ),
         ],
         ports=[
-            PortSpec(name="in", layer="met1", direction="input", tap_layer="diff"),
-            PortSpec(name="out", layer="met1", direction="output", tap_layer="diff"),
-            PortSpec(name="gate", layer="met1", direction="input", tap_layer="poly"),
+            PortSpec(name="in", layer="met1", direction="input", tap_layer="met1"),
+            PortSpec(name="out", layer="met1", direction="output", tap_layer="met1"),
+            PortSpec(name="gate", layer="met1", direction="input", tap_layer="met1"),
+            PortSpec(name="vss", layer="met1", direction="inout", tap_layer="met1"),
         ],
         constraints=["common_centroid", "matched_orientation"],
         tags=["analog", "current_source"],
@@ -64,36 +65,153 @@ def register_current_mirror() -> None:
     def _build(fingers: int, width: float, length: float, type: str) -> gf.Component:
         c = gf.Component(name=f"current_mirror_f{fingers}_w{width}_l{length}_{type}")
 
-        # Simplified interdigitated layout
-        finger_pitch = snap(width + 0.5)
-        total_width = finger_pitch * fingers
+        # Same interdigitation discipline as the diff pair: A = input
+        # (diode) side, B = output side. Geometry honours params.
+        finger_pitch = snap(length + 1.2)
+        pattern = ["A", "B", "B", "A"] * (fingers // 2)
+        total_width = finger_pitch * len(pattern)
 
-        # Active diffusion stripe
-        diff_h = snap(length + 0.8)
-        rect(c, layers.DIFF, 0, 0, total_width, diff_h)
+        diff_h = snap(width)
+        implant = layers.NSDM if type == "nmos" else layers.PSDM
+        rect(c, layers.DIFF, 0, 3, total_width, 3 + diff_h)
+        rect(c, implant, -0.1, 2.9, total_width + 0.1, 3 + diff_h + 0.1)
 
-        # Poly gates (interdigitated)
-        poly_y0 = snap(-0.2)
-        poly_y1 = snap(diff_h + 0.2)
-        for i in range(fingers):
-            x = snap(i * finger_pitch + width / 2)
-            rect(c, layers.POLY, x - 0.075, poly_y0, x + 0.075, poly_y1)
+        half_l = length / 2
+        poly_y0 = snap(2.8)
+        poly_y1 = snap(3 + diff_h + 0.2)
+        for i in range(len(pattern)):
+            x = snap(i * finger_pitch + finger_pitch / 2)
+            rect(c, layers.POLY, x - half_l, poly_y0, x + half_l, poly_y1)
 
-        # Contacts and metal1 routing
-        # (Simplified - production would add LICON, implants, well, guard rings)
+        # Segment ownership: between different-device fingers -> shared
+        # source (vss); between same-device fingers -> that drain.
+        finger_x = [snap(i * finger_pitch + finger_pitch / 2)
+                    for i in range(len(pattern))]
+        edges = [0.0] + [x + half_l for x in finger_x]
+        starts = [x - half_l for x in finger_x] + [total_width]
+        segs = list(zip(edges, starts))
+        seg_net: list[str] = []
+        for j in range(len(segs)):
+            if j == 0:
+                seg_net.append("in" if pattern[0] == "A" else "out")
+            elif j == len(segs) - 1:
+                seg_net.append("in" if pattern[-1] == "A" else "out")
+            else:
+                seg_net.append("vss" if pattern[j - 1] != pattern[j]
+                               else ("in" if pattern[j] == "A" else "out"))
 
-        # Ports
-        add_port(c, "in", layers.MET1, (total_width * 0.25, diff_h / 2), 0.5, 180)
-        add_port(c, "out", layers.MET1, (total_width * 0.75, diff_h / 2), 0.5, 0)
-        add_port(c, "gate", layers.MET1, (total_width / 2, poly_y0), 0.3, 270)
+        # S/D straps on met1 with 0.66 pitch (strap height 0.48 +
+        # min-space 0.14 + margin — see diff_pair for the failure modes).
+        strap_y = {"in": 3 + diff_h + 0.55, "vss": 3 + diff_h + 1.21,
+                   "out": 3 + diff_h + 1.87}
+        for (sx0, sx1), net in zip(segs, seg_net):
+            if sx1 - sx0 < 0.4:
+                continue
+            cx = snap((sx0 + sx1) / 2)
+            y_top = strap_y[net]
+            n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
+            for k in range(n_con):
+                kx = snap(sx0 + 0.17 + (sx1 - sx0 - 0.34) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                rect(c, layers.LICON, kx - 0.085, 3 + diff_h / 2 - 0.085,
+                     kx + 0.085, 3 + diff_h / 2 + 0.085)
+            rect(c, layers.LI, sx0 + 0.06, 3 + diff_h / 2 - 0.15,
+                 sx1 - 0.06, 3 + diff_h / 2 + 0.15)
+            rect(c, layers.LI, cx - 0.15, 3 + diff_h / 2, cx + 0.15, y_top)
+            rect(c, layers.MCON, cx - 0.065, y_top - 0.065,
+                 cx + 0.065, y_top + 0.065)
+        for net, y in strap_y.items():
+            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, seg_net)
+                  if n == net and s[1] - s[0] >= 0.4]
+            if xs:
+                x1 = max(xs) + 0.2
+                if net == "vss":
+                    # extend the source strap into the right ring rail so
+                    # the shared-source net IS the vss net, not a float
+                    x1 = total_width + 0.65
+                rect(c, layers.MET1, min(xs) - 0.2, y - 0.24, x1, y + 0.24)
+
+        # Gate strapping — ALL fingers share the 'gate' net, so one li1
+        # strap below the rail ties every gate tap (same construction as
+        # the diff pair's A side).
+        diff_bottom = 3.0
+        tap_y = diff_bottom - 0.15
+        gy = 2.45
+        port_y = 3 + diff_h / 2
+        px_gate = total_width * 0.5
+        for fx in finger_x:
+            rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, diff_bottom)
+            rect(c, layers.LICON, fx - 0.085, tap_y - 0.085,
+                 fx + 0.085, tap_y + 0.085)
+            rect(c, layers.LI, fx - 0.15, gy, fx + 0.15, tap_y + 0.15)
+        rect(c, layers.LI,
+             min(min(finger_x), px_gate) - 0.15, gy - 0.15,
+             max(max(finger_x), px_gate) + 0.15, gy + 0.15)
+        rect(c, layers.MCON, px_gate - 0.065, gy - 0.065,
+             px_gate + 0.065, gy + 0.065)
+        rect(c, layers.MET1, px_gate - 0.19, gy - 0.19,
+             px_gate + 0.19, gy + 0.19)
+        rect(c, layers.MET1, px_gate - 0.19, gy, px_gate + 0.19, port_y)
+
+        # Ports + in-cell met1 pads (labels only attach to same-cell
+        # conductor shapes).
+        add_port(c, "in", layers.MET1, (total_width * 0.25, strap_y["in"]), 0.8, 90)
+        add_port(c, "out", layers.MET1, (total_width * 0.75, strap_y["out"]), 0.8, 90)
+        add_port(c, "gate", layers.MET1, (px_gate, port_y), 0.8, 180)
+        for px_, py_ in (
+            (total_width * 0.25, strap_y["in"]),
+            (total_width * 0.75, strap_y["out"]),
+            (px_gate, port_y),
+        ):
+            rect(c, layers.MET1, px_ - 0.24, py_ - 0.24, px_ + 0.24, py_ + 0.24)
+
+        # Guard ring: p-substrate tap frame + contacted met1 ring -> vss.
+        gx0, gx1 = -0.9, total_width + 0.9
+        gy0, gy1 = 0.9, strap_y["out"] + 1.0
+        rw = 0.5
+        for lay in (layers.TAP, layers.LI, layers.MET1):
+            rect(c, lay, gx0, gy0, gx0 + rw, gy1)
+            rect(c, lay, gx1 - rw, gy0, gx1, gy1)
+            rect(c, lay, gx0, gy0, gx1, gy0 + rw)
+            rect(c, lay, gx0, gy1 - rw, gx1, gy1)
+
+        def _ring_contacts(layer: tuple[int, int], half: float, pitch: float) -> None:
+            x = gx0 + rw / 2
+            while x < gx1:
+                for y in (gy0 + rw / 2, gy1 - rw / 2):
+                    rect(c, layer, x - half, y - half, x + half, y + half)
+                x += pitch
+            y = gy0 + rw / 2 + pitch
+            while y < gy1 - rw / 2:
+                for x in (gx0 + rw / 2, gx1 - rw / 2):
+                    rect(c, layer, x - half, y - half, x + half, y + half)
+                y += pitch
+        _ring_contacts(layers.LICON, 0.085, 0.5)
+        _ring_contacts(layers.MCON, 0.065, 0.5)
+        add_port(c, "vss", layers.MET1, (total_width / 2, gy0 + rw / 2), 0.8, 270)
 
         return c
 
 
 def _netlist_current_mirror(fingers: int, width: float, length: float, type: str) -> str:
     model = "sky130_fd_pr__nfet_01v8" if type == "nmos" else "sky130_fd_pr__pfet_01v8"
-    return (
-        f".subckt current_mirror in out gate\n"
-        f"X1 out gate in in {model} w={width}u l={length}u nf={fingers}\n"
-        f".ends"
-    )
+    # Finger-level reference, same ownership rules as the layout.
+    pattern = ["A", "B", "B", "A"] * (fingers // 2)
+
+    def seg_net(j: int) -> str:
+        n = len(pattern) + 1
+        if j == 0:
+            return "in" if pattern[0] == "A" else "out"
+        if j == n - 1:
+            return "in" if pattern[-1] == "A" else "out"
+        if pattern[j - 1] != pattern[j]:
+            return "vss"
+        return "in" if pattern[j] == "A" else "out"
+
+    lines = [".subckt current_mirror in out gate vss"]
+    for i, side in enumerate(pattern):
+        lines.append(
+            f"M{i + 1} {seg_net(i + 1)} gate {seg_net(i)} vss "
+            f"{model} w={width}u l={length}u"
+        )
+    lines.append(".ends")
+    return "\n".join(lines)

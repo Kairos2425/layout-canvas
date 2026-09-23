@@ -40,10 +40,11 @@ def test_extract_devices_from_real_gds(tmp_path: Path):
     result = extract_netlist(gds, tech="sky130")
     assert result.status == "ok"
     assert result.errors == []
-    # current_mirror f2 -> two nfet devices, real geometry params
-    assert result.devices == 2
+    # current_mirror f2 -> ABBA pattern -> 4 physical finger devices
+    assert result.devices == 4
     assert "nfet_01v8" in result.netlist_text
-    assert "W=0.95U" in result.netlist_text
+    # geometry honours the width param (diff height = channel width)
+    assert "W=1U" in result.netlist_text
     # the pin label surfaces as a named net in the extracted netlist
     assert "IN" in result.netlist_text
 
@@ -80,14 +81,13 @@ def test_pya_lvs_compares_real_netlists(tmp_path: Path):
 
     result = run_lvs(layout_path=gds, schematic_path=spice,
                      cell_name=design.name, engine="pya")
-    # Truthful result, not a verdict on the engine: our generated blocks
-    # currently draw device shapes without internal wiring, so extraction
-    # yields floating terminals and topology comparison must fail-closed.
-    assert result.status == "failed"
-    assert result.match is False
+    # The mirror draws real strapped geometry now — extraction yields the
+    # full in/out/gate/vss topology and LVS must match the reference.
+    assert result.status == "passed"
+    assert result.match is True
     assert result.report_path and result.report_path.is_file()
     text = result.report_path.read_text()
-    assert "MISMATCH" in text
+    assert "MATCH" in text
     assert "extracted devices:" in text
 
 
