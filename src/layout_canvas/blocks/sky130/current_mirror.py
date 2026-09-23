@@ -73,6 +73,11 @@ def register_current_mirror() -> None:
 
         diff_h = snap(width)
         implant = layers.NSDM if type == "nmos" else layers.PSDM
+        if type == "pmos":
+            # pmos devices live in the n-well: extraction derives the
+            # p-active as diff & nwell & psdm — without the well there is
+            # simply no device to extract.
+            rect(c, layers.NWELL, -0.5, 2.5, total_width + 0.5, 3 + diff_h + 0.5)
         rect(c, layers.DIFF, 0, 3, total_width, 3 + diff_h)
         rect(c, implant, -0.1, 2.9, total_width + 0.1, 3 + diff_h + 0.1)
 
@@ -129,6 +134,29 @@ def register_current_mirror() -> None:
                     # the shared-source net IS the vss net, not a float
                     x1 = total_width + 0.65
                 rect(c, layers.MET1, min(xs) - 0.2, y - 0.24, x1, y + 0.24)
+
+        if type == "pmos":
+            # n-well bulk tie to source: an n-tap (tap inside nwell) with a
+            # met1 jumper into the source strap. Without it the well is a
+            # floating per-cell net and LVS mismatches the reference bulk.
+            # The tap sits in the gap between the first two gate pads and
+            # the jumper runs DOWN to the bottom ring rail — met1 crosses
+            # the li1 gate strap without connecting, while any path up to
+            # the source strap would have to squeeze between strap ends
+            # and the ring rail (observed: 0.10-0.13 gaps, DRC fails).
+            # right of the last gate pad and left of the ring rail: the
+            # li1 gate strap only reaches px_gate (mid-cell) so this spot
+            # is clear for every size; an li1 pad touching the strap
+            # shorts gate to the well (observed: gate|vss merge).
+            ntx = snap(total_width - 0.1)
+            nty = 2.65
+            rect(c, layers.TAP, ntx - 0.15, nty - 0.15, ntx + 0.15, nty + 0.15)
+            rect(c, layers.LICON, ntx - 0.085, nty - 0.085,
+                 ntx + 0.085, nty + 0.085)
+            rect(c, layers.LI, ntx - 0.15, nty - 0.15, ntx + 0.15, nty + 0.15)
+            rect(c, layers.MCON, ntx - 0.065, nty - 0.065,
+                 ntx + 0.065, nty + 0.065)
+            rect(c, layers.MET1, ntx - 0.15, 1.15, ntx + 0.15, nty + 0.15)
 
         # Gate strapping — ALL fingers share the 'gate' net, so one li1
         # strap below the rail ties every gate tap (same construction as

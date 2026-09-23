@@ -251,6 +251,10 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
     for reg in (rnsd, rpsd, rptap, rntap):
         l2n.connect(reg, layers["licon"])
     l2n.connect(rnwell, rntap)
+    # The well itself must be a connectivity participant even with no taps
+    # in it — otherwise every pmos gets a private implicit bulk (nc_1..N)
+    # and parallel devices never combine.
+    l2n.connect(rnwell, rnwell)
 
     n_model, p_model = (
         LEAF_DEVICES[tech]["sg13_lv_nmos"][0] if tech == "ihp_sg13g2" else "nfet_01v8",

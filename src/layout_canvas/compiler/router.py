@@ -285,11 +285,15 @@ def route_design_nets(top: gf.Component, design: Design, inst_refs: dict[str, An
             routed_nets.add(net_a)
             routed_nets.add(net_b)
 
-    # 3. Route standard single-ended nets
+    # 3. Route standard single-ended nets — each net gets its own
+    # detour channel. Sharing one channel y merged every trunk on met1
+    # (observed: outp/outn/vdd all shorted at y=max_top+2.0).
+    channel_index = 0
     for net in design.nets:
         if net.name in routed_nets:
             continue
-        _route_single_net(top, net, inst_refs)
+        _route_single_net(top, net, inst_refs, channel_index=channel_index)
+        channel_index += 1
 
 
 def _get_pin_coords(pin_str: str, inst_refs: dict[str, Any]) -> tuple[float, float] | None:
@@ -326,7 +330,8 @@ def _intersects_obstacle(x0: float, y0: float, x1: float, y1: float, obstacles: 
     return False
 
 
-def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any]) -> None:
+def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
+                      channel_index: int = 0) -> None:
     """Perform Manhattan routing between pins with obstacle-aware channel bypass."""
     coords = [_get_pin_coords(p, inst_refs) for p in net.pins]
     valid_coords = [c for c in coords if c is not None]
@@ -357,10 +362,10 @@ def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any]) ->
             if vy1 > vy0:
                 rect(top, layers.MET2, x2 - wire_w / 2, vy0 - wire_w / 2, x2 + wire_w / 2, vy1 + wire_w / 2)
         else:
-            # Channel detour (Z-shape): route via intermediate channel Y
-            # Compute safe detour above or below obstacle cluster
+            # Channel detour (Z-shape): route via intermediate channel Y.
+            # Every net owns a distinct channel so trunks cannot merge.
             max_top = max([o[3] for o in obstacles], default=max(y1, y2))
-            detour_y = max_top + 2.0  # 2um routing channel
+            detour_y = max_top + 2.0 + channel_index * (wire_w + 0.4)
 
             # 1. Vertical escape from (x1, y1) to (x1, detour_y) on MET2
             rect(top, layers.VIA1, x1 - 0.13, y1 - 0.13, x1 + 0.13, y1 + 0.13)

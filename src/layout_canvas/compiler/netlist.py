@@ -53,6 +53,10 @@ def compile_netlist(design: Design) -> str:
             lines.append(f".ends {subckt_name}")
             lines.append("")
 
+    # Pins named like supplies join a global net even when the IR leaves
+    # them unconnected — matching the physical substrate/power rings.
+    _GLOBAL_PIN_NAMES = {"vss", "vdd", "gnd", "vcc", "vsub", "vssx"}
+
     # 2. Build pin-to-net connectivity map
     # net_name -> list of pin connections (e.g., "M1.in")
     pin_to_net: dict[str, str] = {}
@@ -82,6 +86,11 @@ def compile_netlist(design: Design) -> str:
                 top_match = next((p.name for p in design.ports if p.pin == pin_id), None)
                 if top_match:
                     conn_nets.append(top_match)
+                elif port.name.lower().rstrip("!") in _GLOBAL_PIN_NAMES:
+                    # Supply/substrate pins join a same-named global net —
+                    # physically every guard ring shares the substrate, so
+                    # the reference must not keep per-instance vss nets.
+                    conn_nets.append(port.name.lower().rstrip("!"))
                 else:
                     # Unconnected / internal floating net
                     conn_nets.append(f"net_{inst.id}_{port.name}")
