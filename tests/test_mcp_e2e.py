@@ -121,7 +121,8 @@ def test_full_agent_loop(mcp, tmp_path):
     design_now = snap["data"]["design"]
     err, nl = mcp.tool("generate_netlist", {"ir_json": design_now})
     assert "sky130_fd_pr__nfet_01v8" in nl["spice"]
-    assert "nf=8" in nl["spice"]
+    # finger-level reference: fingers=8 per side -> 16 physical devices
+    assert len(re.findall(r"^M\d+ .*sky130_fd_pr__nfet_01v8", nl["spice"], re.M)) == 16
     variant = re.search(r"\.subckt (sky130_diff_pair__\w+)", nl["spice"]).group(1)
 
     # abstract + PPA

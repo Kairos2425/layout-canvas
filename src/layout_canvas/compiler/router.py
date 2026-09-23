@@ -16,6 +16,244 @@ from layout_canvas.blocks.sky130.geom import rect, snap
 from layout_canvas.ir.model import ConstraintType, Design
 
 
+# Contact stacks per (pdk, tap layer): ordered bottom-up to reach the first
+# routing metal. A pin whose declared layer is already the routing metal gets
+# no stack — its port geometry is the pad.
+_ACCESS_STACK: dict[str, dict[str, list[tuple[str, float]]]] = {
+    "sky130": {
+        "diff": [("licon", 0.17), ("li1", 0.34), ("mcon", 0.13)],
+        "poly": [("licon", 0.17), ("li1", 0.34), ("mcon", 0.13)],
+        "tap": [("licon", 0.17), ("li1", 0.34), ("mcon", 0.13)],
+        "li1": [("mcon", 0.13)],
+    },
+    "ihp_sg13g2": {
+        "activ": [("cont", 0.16)],
+        "gatpoly": [("cont", 0.16)],
+        "metal1": [],
+    },
+}
+
+# Layers a tap must not land on: contacting poly over active punctures gate
+# oxide; contacting diff under a gate lands on the channel, not the S/D.
+_AVOID: dict[str, dict[str, list[str]]] = {
+    # li1 avoids diff: gate-side li1 taps (diff_pair.inp) must land on the
+    # riser below the active area, never on an S/D stub inside it — tapping
+    # a stub shorts the input pin to a drain (observed inp<->outn merge).
+    "sky130": {"poly": ["diff"], "diff": ["poly"], "li1": ["diff"]},
+    "ihp_sg13g2": {"gatpoly": ["activ"], "activ": ["gatpoly"]},
+}
+
+_STUB_LAYER = {"sky130": "li1", "ihp_sg13g2": "metal1"}
+
+
+def _closest_pt_on_polygon(poly: Any, px: int, py: int) -> tuple[int, int]:
+    """Closest point of a klayout polygon (dbu) to (px, py)."""
+    bb = poly.bbox()
+    cx = min(max(px, bb.left), bb.right)
+    cy = min(max(py, bb.bottom), bb.top)
+    cand = (cx, cy)
+    if poly.inside(__import__("klayout").db.Point(cx, cy)):
+        return cand
+    # walk edges, keep the nearest projection
+    best, best_d2 = cand, float("inf")
+    for e in poly.each_edge():
+        x1, y1, x2, y2 = e.p1.x, e.p1.y, e.p2.x, e.p2.y
+        dx, dy = x2 - x1, y2 - y1
+        t = 0.0 if (dx == 0 and dy == 0) else max(
+            0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / float(dx * dx + dy * dy)))
+        qx, qy = x1 + t * dx, y1 + t * dy
+        d2 = (qx - px) ** 2 + (qy - py) ** 2
+        if d2 < best_d2:
+            best_d2, best = d2, (round(qx), round(qy))
+    return best
+
+
+def _safe_tap_point(
+    polys: dict[Any, Any],
+    tap_layer: tuple[int, int],
+    avoid: list[tuple[int, int]],
+    px: int,
+    py: int,
+    contact_half_dbu: int = 150,
+) -> tuple[int, int] | None:
+    """Point on tap_layer nearest (px, py) that avoids `avoid` regions.
+
+    Uses Region booleans: poly taps skip diffusion (no contacts on gate
+    oxide); diff taps skip poly (S/D contacts never land on the channel).
+    Falls back to the raw tap layer when the safe region is empty, and to
+    any connective layer when the tap layer has no geometry at all.
+    """
+    import klayout.db as db
+
+    def region_of(layer: tuple[int, int]) -> Any:
+        r = db.Region()
+        for p in polys.get(layer, []):
+            r.insert(p)
+        return r
+
+    reg = region_of(tap_layer)
+    if reg.is_empty():
+        # graceful degradation: try any connective layer, highest first
+        for layer in (tap_layer, *avoid, *polys.keys()):
+            reg = region_of(layer)
+            if not reg.is_empty():
+                break
+        if reg.is_empty():
+            return None
+    avoid_reg = db.Region()
+    for layer in avoid:
+        for p in polys.get(layer, []):
+            avoid_reg.insert(p)
+    safe = reg - avoid_reg if not avoid_reg.is_empty() else reg
+    # The contact must clear the forbidden layer by its radius + enclosure.
+    # Grow the avoid region by that halo and subtract — this keeps a narrow
+    # finger usable (only the boundary halo is removed) instead of eroding
+    # the safe strip out of existence.
+    if not avoid_reg.is_empty():
+        halo = avoid_reg.sized(contact_half_dbu)
+        target = safe - halo
+        if target.is_empty():
+            target = safe
+    else:
+        target = safe
+    if target.is_empty():
+        target = reg
+
+    best, best_d2 = None, float("inf")
+    for p in target.each():
+        q = _closest_pt_on_polygon(p, px, py)
+        d2 = (q[0] - px) ** 2 + (q[1] - py) ** 2
+        if d2 < best_d2:
+            best_d2, best = d2, q
+    return best
+
+
+def add_pin_accesses(
+    top: gf.Component,
+    design: Design,
+    inst_refs: dict[str, Any],
+    pdk: Any = None,
+) -> list[str]:
+    """Back every declared block pin with real geometry.
+
+    For each formal port whose tap layer is below the routing metal, locate
+    the nearest safe point on that layer's polygons (Region boolean, dbu),
+    transform it to top-cell space, and drop the contact stack plus a stub
+    run to the port — so routed metal actually lands on silicon.
+    Returns a list of pins that could not be tapped (honest diagnostics).
+    """
+    from layout_canvas.blocks import base
+    from layout_canvas.pdk import descriptor
+
+    pdk_desc = pdk
+    if pdk_desc is None:
+        try:
+            pdk_desc = descriptor.get_pdk(design.pdk)
+        except KeyError:
+            pdk_desc = None
+    stacks = _ACCESS_STACK.get(design.pdk, {})
+    avoids = _AVOID.get(design.pdk, {})
+    stub_name = _STUB_LAYER.get(design.pdk, "met1")
+    stub_layer = pdk_desc.layer(stub_name) if pdk_desc else layers.LI
+    untapped: list[str] = []
+
+    for inst in design.instances:
+        if inst.id not in inst_refs:
+            continue
+        ref, comp = inst_refs[inst.id]
+        try:
+            spec = base.get(inst.block).spec
+        except KeyError:
+            continue
+        polys = comp.get_polygons(by="tuple")
+        port_layer = {
+            p.name: (p.tap_layer or p.layer) for p in spec.ports
+        }
+        for pname, tap_name in port_layer.items():
+            if pname not in comp.ports or not pdk_desc:
+                continue
+            try:
+                tap_tuple = pdk_desc.layer(tap_name)
+            except KeyError:
+                tap_tuple = None
+            try:
+                declared = pdk_desc.layer(
+                    next(p.layer for p in spec.ports if p.name == pname))
+            except (KeyError, StopIteration):
+                declared = None
+            stack = stacks.get(tap_name) if tap_name in stacks else None
+            if tap_tuple is None or (stack is None and tap_name != declared):
+                stack = stacks.get(tap_name, [])
+
+            pc = comp.ports[pname].center
+            px, py = int(round(pc[0] * 1000)), int(round(pc[1] * 1000))
+            avoid = [pdk_desc.layer(a) for a in avoids.get(tap_name, [])
+                     if a in pdk_desc.layers]
+            if tap_tuple and stack:
+                # contact radius + enclosure margin keeps the tap inside the
+                # tapped material, never straddling a layer boundary
+                half_dbu = int(round((stack[0][1] / 2 + 0.065) * 1000))
+                tap = _safe_tap_point(polys, tap_tuple, avoid, px, py,
+                                      contact_half_dbu=half_dbu)
+            else:
+                tap = (px, py)
+            if tap is None:
+                untapped.append(f"{inst.id}.{pname}")
+                continue
+
+            # transform dbu local point -> top cell (dbu), then µm for rect()
+            tp = ref.trans * __import__("klayout").db.Point(*tap)
+            tx, ty = tp.x / 1000.0, tp.y / 1000.0
+            pp = ref.trans * __import__("klayout").db.Point(px, py)
+            ox, oy = pp.x / 1000.0, pp.y / 1000.0
+
+            # widen narrow tap material first: a 0.17 contact cannot fit
+            # inside a 0.15 poly finger, so drop a tap-layer pad that merges
+            # with the finger and encloses the contact. Only pad when the
+            # existing material cannot enclose the contact — a gratuitous
+            # pad can violate same-layer spacing (observed on the mirror's
+            # gate stub: pad edge 0.185 from a neighbouring finger).
+            if stack and tap_tuple:
+                import klayout.db as _db
+                # does the existing material already enclose the contact?
+                # (local dbu coordinates — `tap` and `polys` share that space)
+                need_pad = True
+                erode_dbu = int(round((stack[0][1] / 2 + 0.065) * 1000))
+                mat = _db.Region()
+                for p in polys.get(tap_tuple, []):
+                    mat.insert(p)
+                inner = mat.sized(-erode_dbu)
+                pt = _db.Region(_db.Box(tap[0], tap[1], tap[0] + 1, tap[1] + 1))
+                if not (inner & pt).is_empty():
+                    need_pad = False
+                if need_pad:
+                    pad = stack[0][1] + 0.24
+                    half = pad / 2
+                    rect(top, tap_tuple, tx - half, ty - half,
+                         tx + half, ty + half)
+            # contact stack at the tap point
+            for lname, size in (stack or []):
+                l = pdk_desc.layer(lname)
+                half = size / 2
+                rect(top, l, tx - half, ty - half, tx + half, ty + half)
+            # stub run between tap and port on the DECLARED (routing)
+            # layer: the stack's top contact already lands the tap on that
+            # layer, and running the stub on li1 through the active area
+            # shorts the pin to whatever stubs it crosses (observed: inp's
+            # li1 stub + port-side mcon landed on an outn S/D stub).
+            run_layer = declared or stub_layer
+            if run_layer and (abs(tx - ox) > 1e-6 or abs(ty - oy) > 1e-6):
+                hw = 0.17
+                rect(top, run_layer,
+                     min(tx, ox) - hw, min(ty, oy) - hw,
+                     max(tx, ox) + hw, max(ty, oy) + hw)
+            # routing-metal pad at the declared port point
+            if declared:
+                hw = 0.24
+                rect(top, declared, ox - hw, oy - hw, ox + hw, oy + hw)
+    return untapped
+
+
 def route_design_nets(top: gf.Component, design: Design, inst_refs: dict[str, Any]) -> None:
     """Route declared nets in design onto top component.
 

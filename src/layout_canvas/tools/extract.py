@@ -142,17 +142,40 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
         )
         if has_text:
             text_layers.append(
-                l2n.make_text_layer(li, f"texts_{info.layer}_{info.datatype}")
+                (info, l2n.make_text_layer(li, f"texts_{info.layer}_{info.datatype}"))
             )
 
-    # interconnect stack: diff/tap/poly -> contact -> li1 -> via -> metals
-    l2n.connect(rdiff, layers["licon"])
+    # interconnect stack: diff/tap/poly -> contact -> li1 -> via -> metals.
+    # Raw rdiff is NOT connected to contacts: it is one contiguous polygon
+    # (one cluster) spanning every S/D segment — connecting it would bridge
+    # all segment straps through the rail. Contacts must land on the
+    # derived S/D regions (diff minus gate), connected further below.
     l2n.connect(rpoly, layers["licon"])
+    # Gate strapping workaround: in this engine, a raw polygon layer chained
+    # through a contact layer (poly->licon->li1) does not propagate into
+    # derived-region connectivity, while derived regions do (nsd->licon->li1
+    # works). Generated blocks always overlap the pad and the li riser at the
+    # contact site, so a direct poly<->li link is geometrically equivalent.
+    l2n.connect(rpoly, layers["li1"])
     if rtap is not None:
         l2n.connect(rtap, layers["licon"])
     l2n.connect(layers["licon"], layers["li1"])
     l2n.connect(layers["li1"], layers["mcon"])
     l2n.connect(layers["mcon"], layers["met1"])
+    # Same-layer merging is NOT implied by pairwise connects in this engine:
+    # connect(a,b) only joins touching a/b shape pairs — two touching shapes
+    # on the same layer still form separate clusters unless the layer is
+    # self-connected (observed: an li1 riser+strap blob, merged() == 1 shape
+    # in a Region, produced 3 clusters). Without self-connects every strap
+    # only reaches the pins that touch it cross-layer.
+    for reg in [
+        rpoly, layers["licon"], layers["li1"], layers["mcon"],
+        layers["met1"], layers["via1"], layers["met2"], layers["via2"],
+        layers["met3"], layers["via3"], layers["met4"], layers["via4"],
+        layers["met5"], rtap,
+    ]:
+        if reg is not None:
+            l2n.connect(reg, reg)
     stack = [("met1", "via1"), ("via1", "met2"), ("met2", "via2"),
              ("via2", "met3"), ("met3", "via3"), ("via3", "met4"),
              ("met4", "via4"), ("via4", "met5")]
@@ -164,10 +187,25 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
                   layers["met4"], layers["met5"]]
     if rtap is not None:
         conductors.append(rtap)
-    for tl in text_layers:
-        for pl in conductors:
-            if pl is not None:
-                l2n.connect(pl, tl)
+    # Pin texts live on (drawing_layer, pin_datatype) — a label must name
+    # exactly the conductor it is stamped on. Connecting every conductor to
+    # every text layer lets a label straddling the met1 pad AND the diff
+    # rail merge the pin net into the shared rail (observed as gates shorted
+    # to S/D). Map each text layer to the drawing layer of the same number.
+    conductor_by_gds = {
+        recipe[k]: pl for k, pl in (
+            ("diff", rdiff), ("tap", rtap), ("poly", rpoly),
+            ("licon", layers["licon"]), ("li1", layers["li1"]),
+            ("mcon", layers["mcon"]), ("met1", layers["met1"]),
+            ("met2", layers["met2"]), ("met3", layers["met3"]),
+            ("met4", layers["met4"]), ("met5", layers["met5"]),
+        ) if pl is not None
+    }
+    for info, tl in text_layers:
+        pl = (conductor_by_gds.get((info.layer, 20))  # sky130-style (L,20)
+              or conductor_by_gds.get((info.layer, 0)))  # IHP-style (L,0)
+        if pl is not None:
+            l2n.connect(pl, tl)
 
     # device derivations (official-deck recipe: active & implant, minus gate)
     # implant masks are optional in our generated blocks — fall back to the
@@ -183,11 +221,29 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
     # bulk ties: n-well taps for pmos, p-sub taps for nmos
     rntap = (rtap & rnwell) if rtap is not None else rnwell
     rptap = (rtap - rnwell) if rtap is not None else (rdiff - rnwell)
-    for name, reg in (("psd", rpsd), ("pgate", rpgate), ("nsd", rnsd),
-                      ("ngate", rngate), ("ntap_d", rntap), ("ptap_d", rptap)):
+    # Shared substrate: without a contiguous bulk region every device gets
+    # its own implicit bulk net (nc_1..nc_N), which blocks device
+    # combination and mismatches a reference that ties all bulks to vss.
+    # A cell-extent p-substrate region declared as a global net gives every
+    # nmos the same bulk — matching how real LVS treats the substrate.
+    extent = db.DBox()
+    for li in ly.layer_indexes():
+        extent += db.Region(top.begin_shapes_rec(li)).bbox()
+    rpsub = l2n.make_polygon_layer("psub")
+    rpsub.insert(db.Box(
+        int(round(extent.left * 1000)), int(round(extent.bottom * 1000)),
+        int(round(extent.right * 1000)), int(round(extent.top * 1000))))
+    l2n.connect_global(rpsub, "vss")
+    for name, reg in (("psd", rpsd), ("nsd", rnsd),
+                      ("ntap_d", rntap), ("ptap_d", rptap)):
         l2n.register(reg, name)
-    # derived terminal layers join connectivity through the contact stack
-    for reg in (rnsd, rpsd, rngate, rpgate, rptap, rntap):
+    # derived terminal layers join connectivity through the contact stack.
+    # Gate regions must NOT be connected: registering a derived region into
+    # connectivity splits the parent poly shape into per-region clusters, so
+    # every finger's gate would land on its own fragment (observed as gates
+    # failing to merge through the poly/li1 strap). Gates are recognised
+    # inputs only; their terminal net is taken from tG on the poly layer.
+    for reg in (rnsd, rpsd, rptap, rntap):
         l2n.connect(reg, layers["licon"])
     l2n.connect(rnwell, rntap)
 
@@ -201,7 +257,7 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
     )
     l2n.extract_devices(
         db.DeviceExtractorMOS4Transistor(n_model),
-        {"SD": rnsd, "G": rngate, "tS": rnsd, "tD": rnsd, "tG": rpoly, "W": rptap},
+        {"SD": rnsd, "G": rngate, "tS": rnsd, "tD": rnsd, "tG": rpoly, "W": rpsub},
     )
     l2n.extract_netlist()
     nl = l2n.netlist()

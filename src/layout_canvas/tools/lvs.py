@@ -150,12 +150,39 @@ def _run_pya_lvs(
                          [f"top circuit not found (ext={top_name} ref={ref_name})"])
 
     nl_a.combine_devices()
+    nl_b.combine_devices()
     for nl in (nl_a, nl_b):
         for dc in nl.each_device_class():
             dc.clear_parameters()
 
     cmp = db.NetlistComparer()
     cmp.same_circuits(ext_top, ref_top)
+    # Device class names differ across the two flows (extractor emits
+    # "nfet_01v8", the reference uses "sky130_fd_pr__nfet_01v8") — pair
+    # them explicitly by polarity or the comparer reports no devices.
+    ext_classes = {dc.name.upper(): dc for dc in nl_a.each_device_class()}
+    ref_classes = {dc.name.upper(): dc for dc in nl_b.each_device_class()}
+    # reference class -> device count in the reference top (device-abstract
+    # wrappers create empty classes; pairing against one yields nothing)
+    def _dev_count(top, dc):
+        return sum(1 for dev in top.each_device()
+                   if dev.device_class() is dc or
+                   dev.device_class().name.upper() == dc.name.upper())
+
+    for aname, adc in ext_classes.items():
+        if "NFET" in aname or "NMOS" in aname:
+            key = "NFET"
+        elif "PFET" in aname or "PMOS" in aname:
+            key = "PFET"
+        else:
+            key = aname
+        best = None
+        for bname, bdc in ref_classes.items():
+            if key in bname and _dev_count(ref_top, bdc) > 0:
+                best = bdc
+                break
+        if best is not None:
+            cmp.same_device_classes(adc, best)
     match = cmp.compare(nl_a, nl_b)
 
     if report:

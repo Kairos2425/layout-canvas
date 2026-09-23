@@ -30,9 +30,9 @@ def register_current_mirror() -> None:
                       description="Transistor type"),
         ],
         ports=[
-            PortSpec(name="in", layer="metal1", direction="input"),
-            PortSpec(name="out", layer="metal1", direction="output"),
-            PortSpec(name="gate", layer="gatpoly", direction="input"),
+            PortSpec(name="in", layer="metal1", direction="input", tap_layer="activ"),
+            PortSpec(name="out", layer="metal1", direction="output", tap_layer="activ"),
+            PortSpec(name="gate", layer="gatpoly", direction="input", tap_layer="gatpoly"),
         ],
         constraints=["common_centroid", "matched_orientation"],
         tags=["analog", "current_source", "ihp"],

@@ -86,6 +86,9 @@ class PortSpec(_Strict):
     name: str
     layer: str
     direction: Literal["input", "output", "inout", "supply"] = "inout"
+    # Physical drawing layer this pin actually connects to (e.g. a gate pin
+    # declared on met1 but tapping 'poly'). None = taps its own declared layer.
+    tap_layer: str | None = None
 
 
 class ParamSpec(_Strict):

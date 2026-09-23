@@ -54,11 +54,11 @@ def register_diff_pair() -> None:
             ),
         ],
         ports=[
-            PortSpec(name="inp", layer="met1", direction="input"),
-            PortSpec(name="inn", layer="met1", direction="input"),
-            PortSpec(name="outp", layer="met1", direction="output"),
-            PortSpec(name="outn", layer="met1", direction="output"),
-            PortSpec(name="tail", layer="met1", direction="input"),
+            PortSpec(name="inp", layer="met1", direction="input", tap_layer="met1"),
+            PortSpec(name="inn", layer="met1", direction="input", tap_layer="met1"),
+            PortSpec(name="outp", layer="met1", direction="output", tap_layer="met1"),
+            PortSpec(name="outn", layer="met1", direction="output", tap_layer="met1"),
+            PortSpec(name="tail", layer="met1", direction="input", tap_layer="met1"),
         ],
         constraints=["common_centroid_ABBA", "symmetric_vertical"],
         tags=["analog", "diff_pair", "opamp"],
@@ -85,26 +85,164 @@ def register_diff_pair() -> None:
             x = snap(i * finger_pitch + width / 2)
             rect(c, layers.POLY, x - 0.075, poly_y0, x + 0.075, poly_y1)
 
-        # Tail current source (centered below)
-        tail_h = snap(length + 1.0)
-        tail_x0 = snap(total_width / 2 - tail_width / 2)
-        tail_x1 = snap(total_width / 2 + tail_width / 2)
-        rect(c, layers.DIFF, tail_x0, 0, tail_x1, tail_h)
+        # The tail current source is a separate device (reference X3) — not
+        # part of this cell. The 'tail' pin is the shared-source net itself
+        # and is exported on the tail strap like the two drains.
 
-        # Ports
+        # --- intra-cell interconnect: real S/D and gate strapping ----------
+        # A bare fingered rail is eight electrically separate transistors;
+        # real cells contact every S/D segment and strap segments to their
+        # net, and strap the gates of each device to its input.
+        #
+        # Segment ownership (alternating-orientation interdigitation):
+        #   - segment between two DIFFERENT-device fingers -> shared source
+        #   - segment between two SAME-device fingers      -> that drain
+        #   - end segments                                 -> boundary drain
+        finger_x = [snap(i * finger_pitch + width / 2) for i in range(len(pattern))]
+        edges = [0.0] + [x + 0.075 for x in finger_x]
+        starts = [x - 0.075 for x in finger_x] + [total_width]
+        segs = list(zip(edges, starts))  # (x0, x1) per S/D segment
+        seg_net: list[str] = []
+        for j in range(len(segs)):
+            if j == 0:
+                seg_net.append("outp" if pattern[0] == "A" else "outn")
+            elif j == len(segs) - 1:
+                seg_net.append("outp" if pattern[-1] == "A" else "outn")
+            else:
+                seg_net.append("tail" if pattern[j - 1] != pattern[j]
+                               else ("outp" if pattern[j] == "A" else "outn"))
+
+        # Per-segment contact column + li1 riser up to its met1 strap.
+        # Strap spacing must clear the strap height (0.48) plus margin —
+        # 0.4 pitch made neighbouring straps physically overlap (real short,
+        # only visible once same-layer connectivity is honoured).
+        strap_y = {"outp": 3 + diff_h + 0.55, "tail": 3 + diff_h + 1.15,
+                   "outn": 3 + diff_h + 1.75}
+        for (sx0, sx1), net in zip(segs, seg_net):
+            if sx1 - sx0 < 0.4:
+                continue
+            cx = snap((sx0 + sx1) / 2)
+            y_top = strap_y[net]
+            # contact array on the segment (licon -> li1 -> mcon -> met1)
+            n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
+            for k in range(n_con):
+                kx = snap(sx0 + 0.17 + (sx1 - sx0 - 0.34) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                rect(c, layers.LICON, kx - 0.085, 3 + diff_h / 2 - 0.085,
+                     kx + 0.085, 3 + diff_h / 2 + 0.085)
+            rect(c, layers.LI, sx0 + 0.06, 3 + diff_h / 2 - 0.15,
+                 sx1 - 0.06, 3 + diff_h / 2 + 0.15)
+            # li1 riser from segment to the strap
+            rect(c, layers.LI, cx - 0.15, 3 + diff_h / 2, cx + 0.15, y_top)
+            rect(c, layers.MCON, cx - 0.065, y_top - 0.065,
+                 cx + 0.065, y_top + 0.065)
+        # three horizontal met1 straps
+        for net, y in strap_y.items():
+            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, seg_net)
+                  if n == net and s[1] - s[0] >= 0.4]
+            if xs:
+                rect(c, layers.MET1, min(xs) - 0.2, y - 0.24,
+                     max(xs) + 0.2, y + 0.24)
+
+        # Gate strapping. Both inputs strap below the rail on DIFFERENT
+        # layers so they can never cross: side A straps on li1, side B
+        # transitions li1->mcon->met1 at each tap and straps on met1
+        # (met1 passes over the A li1 strap without connecting).
+        # Tap pads stay inside the poly overhang — poly over diffusion
+        # would create parasitic channels.
+        diff_bottom = 3.0
+        tap_y = diff_bottom - 0.15                    # 2.85, inside overhang
+        gy_a, gy_b = 2.45, 1.95                       # li1 strap / met1 strap
+        port_y = 3 + diff_h / 2
+        gate_xs = {"A": [], "B": []}
+        for i, side in enumerate(pattern):
+            fx = finger_x[i]
+            rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, diff_bottom)
+            rect(c, layers.LICON, fx - 0.085, tap_y - 0.085,
+                 fx + 0.085, tap_y + 0.085)
+            if side == "A":
+                # li1 riser straight into the A strap
+                rect(c, layers.LI, fx - 0.15, gy_a, fx + 0.15, tap_y + 0.15)
+            else:
+                # li1 stub at tap -> mcon -> met1 riser down to the B strap.
+                # Stub bottom clears the A li1 strap (2.32-2.58) by >0.15.
+                rect(c, layers.LI, fx - 0.15, 2.75, fx + 0.15, tap_y + 0.15)
+                rect(c, layers.MCON, fx - 0.065, tap_y - 0.065,
+                     fx + 0.065, tap_y + 0.065)
+                rect(c, layers.MET1, fx - 0.19, gy_b, fx + 0.19, tap_y + 0.10)
+            gate_xs[side].append(fx)
+        # Gate port risers both run on met1: an li1 riser routed up through
+        # the diff area overlaps the S/D segment li stubs and shorts the
+        # input to a drain — observed as inp|outp merging once same-layer
+        # connectivity is honoured. The A strap is li1, so it transitions
+        # through mcon at the tap point; the B strap is already met1.
+        px = {"A": total_width * 0.25, "B": total_width * 0.75 + 0.3}
+        for side, xs in gate_xs.items():
+            if not xs:
+                continue
+            if side == "A":
+                rect(c, layers.LI,
+                     min(min(xs), px[side]) - 0.15, gy_a - 0.15,
+                     max(max(xs), px[side]) + 0.15, gy_a + 0.15)
+                rect(c, layers.MCON, px[side] - 0.065, gy_a - 0.065,
+                     px[side] + 0.065, gy_a + 0.065)
+                rect(c, layers.MET1, px[side] - 0.19, gy_a - 0.19,
+                     px[side] + 0.19, gy_a + 0.19)
+            else:
+                rect(c, layers.MET1,
+                     min(min(xs), px[side]) - 0.19, gy_b - 0.19,
+                     max(max(xs), px[side]) + 0.19, gy_b + 0.19)
+            rect(c, layers.MET1, px[side] - 0.19, gy_a if side == "A" else gy_b,
+                 px[side] + 0.19, port_y)
+
+        # Ports — positioned over the geometry that carries each net so pin
+        # labels and access stacks land on the right strap, never a
+        # neighbouring one. Labels only attach to same-cell conductor
+        # shapes, so every label gets an in-cell met1 pad that overlaps the
+        # net's own routing (verified: a label on a top-level pad alone does
+        # not name the net).
         add_port(c, "inp", layers.MET1, (total_width * 0.25, 3 + diff_h / 2), 0.8, 180)
         add_port(c, "inn", layers.MET1, (total_width * 0.75, 3 + diff_h / 2), 0.8, 0)
-        add_port(c, "outp", layers.MET1, (total_width * 0.25, 3 + diff_h + 0.5), 0.8, 90)
-        add_port(c, "outn", layers.MET1, (total_width * 0.75, 3 + diff_h + 0.5), 0.8, 90)
-        add_port(c, "tail", layers.MET1, (total_width / 2, tail_h / 2), 1.0, 180)
+        add_port(c, "outp", layers.MET1, (total_width * 0.25, strap_y["outp"]), 0.8, 90)
+        add_port(c, "outn", layers.MET1, (total_width * 0.75, strap_y["outn"]), 0.8, 90)
+        add_port(c, "tail", layers.MET1, (total_width / 2, strap_y["tail"]), 0.8, 90)
+        for px_, py_ in (
+            (total_width * 0.25, 3 + diff_h / 2),
+            (total_width * 0.75, 3 + diff_h / 2),
+            (total_width * 0.25, strap_y["outp"]),
+            (total_width * 0.75, strap_y["outn"]),
+            (total_width / 2, strap_y["tail"]),
+        ):
+            rect(c, layers.MET1, px_ - 0.24, py_ - 0.24, px_ + 0.24, py_ + 0.24)
 
         return c
 
 
 def _netlist_diff_pair(fingers: int, width: float, length: float, tail_width: float) -> str:
-    # Canonical SkyWater cell: X-instantiated sky130_fd_pr__nfet_01v8 subckt.
-    return f""".subckt diff_pair inp inn outp outn tail vdd vss
-X1 outp inp tail vss sky130_fd_pr__nfet_01v8 w={width}u l={length}u nf={fingers}
-X2 outn inn tail vss sky130_fd_pr__nfet_01v8 w={width}u l={length}u nf={fingers}
-X3 tail tail vss vss sky130_fd_pr__nfet_01v8 w={tail_width}u l={length}u
-.ends"""
+    # Finger-level reference: the layout draws every finger as a physical
+    # device, so the schematic is written at finger granularity (extraction
+    # yields one device per finger — comparing logical nf= devices would
+    # need device combination and hides real connectivity faults).
+    # Segment ownership mirrors the layout: segment between different-device
+    # fingers is the shared source, between same-device fingers the drain.
+    pattern = ["A", "B", "B", "A"] * (fingers // 2)
+
+    def seg_net(j: int) -> str:
+        n = len(pattern) + 1
+        if j == 0:
+            return "outp" if pattern[0] == "A" else "outn"
+        if j == n - 1:
+            return "outp" if pattern[-1] == "A" else "outn"
+        if pattern[j - 1] != pattern[j]:
+            return "tail"
+        return "outp" if pattern[j] == "A" else "outn"
+
+    lines = [".subckt diff_pair inp inn outp outn tail"]
+    for i, side in enumerate(pattern):
+        gate = "inp" if side == "A" else "inn"
+        # extraction assigns D to the right-hand segment, S to the left
+        lines.append(
+            f"M{i + 1} {seg_net(i + 1)} {gate} {seg_net(i)} vss "
+            f"sky130_fd_pr__nfet_01v8 w={width}u l={length}u"
+        )
+    lines.append(".ends")
+    return "\n".join(lines)

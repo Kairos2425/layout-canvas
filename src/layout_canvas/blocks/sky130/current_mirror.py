@@ -52,9 +52,9 @@ def register_current_mirror() -> None:
             ),
         ],
         ports=[
-            PortSpec(name="in", layer="met1", direction="input"),
-            PortSpec(name="out", layer="met1", direction="output"),
-            PortSpec(name="gate", layer="poly", direction="input"),
+            PortSpec(name="in", layer="met1", direction="input", tap_layer="diff"),
+            PortSpec(name="out", layer="met1", direction="output", tap_layer="diff"),
+            PortSpec(name="gate", layer="met1", direction="input", tap_layer="poly"),
         ],
         constraints=["common_centroid", "matched_orientation"],
         tags=["analog", "current_source"],
@@ -85,7 +85,7 @@ def register_current_mirror() -> None:
         # Ports
         add_port(c, "in", layers.MET1, (total_width * 0.25, diff_h / 2), 0.5, 180)
         add_port(c, "out", layers.MET1, (total_width * 0.75, diff_h / 2), 0.5, 0)
-        add_port(c, "gate", layers.POLY, (total_width / 2, poly_y0), 0.3, 270)
+        add_port(c, "gate", layers.MET1, (total_width / 2, poly_y0), 0.3, 270)
 
         return c
 

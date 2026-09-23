@@ -137,6 +137,14 @@ def compile_design(design: Design) -> gf.Component:
 
         inst_refs[inst.id] = (ref, comp)
 
+    # Pin access: every declared block pin gets real terminal geometry
+    # (contact stack up to the routing metal) before any net routing.
+    from layout_canvas.compiler.router import add_pin_accesses
+    untapped = add_pin_accesses(top, design, inst_refs, pdk)
+    if untapped:
+        import warnings
+        warnings.warn(f"untapped pins (no geometry to connect): {untapped}")
+
     # Route nets if defined in IR
     if design.nets:
         route_design_nets(top, design, inst_refs)
@@ -149,14 +157,16 @@ def compile_design(design: Design) -> gf.Component:
             if port_name in comp.ports:
                 p = ref.ports[port_name]
                 top.add_port(name=port.name, port=p)
-                # Inject text pin label for LVS netlist extraction
+                # Inject text pin label for LVS netlist extraction.
+                # p.layer is a kfactory-internal layer index, not the
+                # (layer, datatype) pair — resolve it via the layout.
                 try:
-                    p_layer = p.layer
+                    info = comp.kcl.layout.get_info(p.layer)
+                    p_layer = (info.layer, info.datatype)
                     if pdk is not None:
                         pin_layer = pdk.pin_label_layer(p_layer)
                     else:
-                        layer_num = p_layer[0] if isinstance(p_layer, (tuple, list)) else getattr(p_layer, "layer", 68)
-                        pin_layer = (layer_num, 16)
+                        pin_layer = (p_layer[0], 16)
                     top.add_label(text=port.name, position=p.center, layer=pin_layer)
                 except Exception:
                     pass
