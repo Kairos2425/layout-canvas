@@ -234,6 +234,10 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
         int(round(extent.left * 1000)), int(round(extent.bottom * 1000)),
         int(round(extent.right * 1000)), int(round(extent.top * 1000))))
     l2n.connect_global(rpsub, "vss")
+    # p-taps (guard rings, bulk ties) are part of the substrate net so a
+    # physical ring joins vss instead of floating as a separate net
+    if rptap is not None:
+        l2n.connect(rpsub, rptap)
     for name, reg in (("psd", rpsd), ("nsd", rnsd),
                       ("ntap_d", rntap), ("ptap_d", rptap)):
         l2n.register(reg, name)

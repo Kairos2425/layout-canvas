@@ -59,6 +59,7 @@ def register_diff_pair() -> None:
             PortSpec(name="outp", layer="met1", direction="output", tap_layer="met1"),
             PortSpec(name="outn", layer="met1", direction="output", tap_layer="met1"),
             PortSpec(name="tail", layer="met1", direction="input", tap_layer="met1"),
+            PortSpec(name="vss", layer="met1", direction="inout", tap_layer="met1"),
         ],
         constraints=["common_centroid_ABBA", "symmetric_vertical"],
         tags=["analog", "diff_pair", "opamp"],
@@ -116,8 +117,11 @@ def register_diff_pair() -> None:
         # Strap spacing must clear the strap height (0.48) plus margin —
         # 0.4 pitch made neighbouring straps physically overlap (real short,
         # only visible once same-layer connectivity is honoured).
-        strap_y = {"outp": 3 + diff_h + 0.55, "tail": 3 + diff_h + 1.15,
-                   "outn": 3 + diff_h + 1.75}
+        # Strap spacing must clear the strap height (0.48) plus met1
+        # min-space (0.14): 0.66 pitch. Tighter pitches caused both real
+        # overlap (merged nets) and DRC min_space violations.
+        strap_y = {"outp": 3 + diff_h + 0.55, "tail": 3 + diff_h + 1.21,
+                   "outn": 3 + diff_h + 1.87}
         for (sx0, sx1), net in zip(segs, seg_net):
             if sx1 - sx0 < 0.4:
                 continue
@@ -151,7 +155,7 @@ def register_diff_pair() -> None:
         # would create parasitic channels.
         diff_bottom = 3.0
         tap_y = diff_bottom - 0.15                    # 2.85, inside overhang
-        gy_a, gy_b = 2.45, 1.95                       # li1 strap / met1 strap
+        gy_a, gy_b = 2.45, 1.90                       # li1 strap / met1 strap
         port_y = 3 + diff_h / 2
         gate_xs = {"A": [], "B": []}
         for i, side in enumerate(pattern):
@@ -164,8 +168,9 @@ def register_diff_pair() -> None:
                 rect(c, layers.LI, fx - 0.15, gy_a, fx + 0.15, tap_y + 0.15)
             else:
                 # li1 stub at tap -> mcon -> met1 riser down to the B strap.
-                # Stub bottom clears the A li1 strap (2.32-2.58) by >0.15.
-                rect(c, layers.LI, fx - 0.15, 2.75, fx + 0.15, tap_y + 0.15)
+                # Stub bottom clears the A li1 strap (top 2.6) by li1
+                # min-space 0.17+margin.
+                rect(c, layers.LI, fx - 0.15, 2.79, fx + 0.15, tap_y + 0.15)
                 rect(c, layers.MCON, fx - 0.065, tap_y - 0.065,
                      fx + 0.065, tap_y + 0.065)
                 rect(c, layers.MET1, fx - 0.19, gy_b, fx + 0.19, tap_y + 0.10)
@@ -214,6 +219,34 @@ def register_diff_pair() -> None:
         ):
             rect(c, layers.MET1, px_ - 0.24, py_ - 0.24, px_ + 0.24, py_ + 0.24)
 
+        # --- guard ring: p-substrate tap frame with a contacted met1 ring --
+        # Real cells tie the bulk somewhere physical: the tap frame joins
+        # the global psub net in extraction (connect(rpsub, ptap)) and the
+        # met1 ring exports it as the 'vss' pin.
+        gx0, gx1 = -0.9, total_width + 0.9
+        gy0, gy1 = 0.9, strap_y["outn"] + 1.0
+        rw = 0.5
+        for lay in (layers.TAP, layers.LI, layers.MET1):
+            rect(c, lay, gx0, gy0, gx0 + rw, gy1)              # left rail
+            rect(c, lay, gx1 - rw, gy0, gx1, gy1)             # right rail
+            rect(c, lay, gx0, gy0, gx1, gy0 + rw)             # bottom rail
+            rect(c, lay, gx0, gy1 - rw, gx1, gy1)             # top rail
+        # contact arrays along each rail (licon on tap, mcon on li1->met1)
+        def _ring_contacts(layer: tuple[int, int], half: float, pitch: float) -> None:
+            x = gx0 + rw / 2
+            while x < gx1:
+                for y in (gy0 + rw / 2, gy1 - rw / 2):
+                    rect(c, layer, x - half, y - half, x + half, y + half)
+                x += pitch
+            y = gy0 + rw / 2 + pitch
+            while y < gy1 - rw / 2:
+                for x in (gx0 + rw / 2, gx1 - rw / 2):
+                    rect(c, layer, x - half, y - half, x + half, y + half)
+                y += pitch
+        _ring_contacts(layers.LICON, 0.085, 0.5)
+        _ring_contacts(layers.MCON, 0.065, 0.5)
+        add_port(c, "vss", layers.MET1, (total_width / 2, gy0 + rw / 2), 0.8, 270)
+
         return c
 
 
@@ -236,7 +269,7 @@ def _netlist_diff_pair(fingers: int, width: float, length: float, tail_width: fl
             return "tail"
         return "outp" if pattern[j] == "A" else "outn"
 
-    lines = [".subckt diff_pair inp inn outp outn tail"]
+    lines = [".subckt diff_pair inp inn outp outn tail vss"]
     for i, side in enumerate(pattern):
         gate = "inp" if side == "A" else "inn"
         # extraction assigns D to the right-hand segment, S to the left
