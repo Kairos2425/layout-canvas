@@ -81,7 +81,7 @@ def test_ppa_extraction_and_optimizer():
     assert ppa["net_count"] == 1
     assert ppa["port_count"] == 1
     assert ppa["hpwl_um"] > 0
-    assert ppa["net_hpwl_um"]["shared"] == pytest.approx(24.175, abs=0.001)
+    assert ppa["net_hpwl_um"]["shared"] == pytest.approx(19.025, abs=0.001)
     assert ppa["estimated_wire_length_um"] == ppa["hpwl_um"]
     assert ppa["power"] is None and ppa["power_status"] == "unavailable"
     assert ppa["performance"] is None and ppa["performance_status"] == "unavailable"

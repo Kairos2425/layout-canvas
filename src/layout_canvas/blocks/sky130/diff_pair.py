@@ -69,22 +69,25 @@ def register_diff_pair() -> None:
     def _build(fingers: int, width: float, length: float, tail_width: float) -> gf.Component:
         c = gf.Component(name=f"diff_pair_f{fingers}_w{width}_l{length}")
 
-        # ABBA interdigitation for common-centroid
-        finger_pitch = snap(width + 0.6)
+        # ABBA interdigitation for common-centroid. Geometry honours the
+        # params: finger poly width = gate length, diffusion height =
+        # channel width, x-pitch = gate length + S/D segment width.
+        finger_pitch = snap(length + 1.2)
         pattern = ["A", "B", "B", "A"] * (fingers // 2)
         total_width = finger_pitch * len(pattern)
 
         # Input pair active region
-        diff_h = snap(length + 1.0)
+        diff_h = snap(width)
         rect(c, layers.DIFF, 0, 3, total_width, 3 + diff_h)
         rect(c, layers.NSDM, -0.1, 2.9, total_width + 0.1, 3 + diff_h + 0.1)
 
-        # Poly gates
+        # Poly gates — finger width in x is the channel LENGTH
+        half_l = length / 2
         poly_y0 = snap(2.8)
         poly_y1 = snap(3 + diff_h + 0.2)
         for i, side in enumerate(pattern):
-            x = snap(i * finger_pitch + width / 2)
-            rect(c, layers.POLY, x - 0.075, poly_y0, x + 0.075, poly_y1)
+            x = snap(i * finger_pitch + finger_pitch / 2)
+            rect(c, layers.POLY, x - half_l, poly_y0, x + half_l, poly_y1)
 
         # The tail current source is a separate device (reference X3) — not
         # part of this cell. The 'tail' pin is the shared-source net itself
@@ -99,9 +102,10 @@ def register_diff_pair() -> None:
         #   - segment between two DIFFERENT-device fingers -> shared source
         #   - segment between two SAME-device fingers      -> that drain
         #   - end segments                                 -> boundary drain
-        finger_x = [snap(i * finger_pitch + width / 2) for i in range(len(pattern))]
-        edges = [0.0] + [x + 0.075 for x in finger_x]
-        starts = [x - 0.075 for x in finger_x] + [total_width]
+        finger_x = [snap(i * finger_pitch + finger_pitch / 2)
+                    for i in range(len(pattern))]
+        edges = [0.0] + [x + half_l for x in finger_x]
+        starts = [x - half_l for x in finger_x] + [total_width]
         segs = list(zip(edges, starts))  # (x0, x1) per S/D segment
         seg_net: list[str] = []
         for j in range(len(segs)):

@@ -151,9 +151,15 @@ def _run_pya_lvs(
 
     nl_a.combine_devices()
     nl_b.combine_devices()
+    # Compare W/L for real — geometry honours declared params, so a
+    # width/length mismatch is a genuine failure. Only layout-derived
+    # parasitics (AS/AD/PS/PD...) are exempted: the reference netlist
+    # does not specify them.
     for nl in (nl_a, nl_b):
         for dc in nl.each_device_class():
-            dc.clear_parameters()
+            for pd in dc.parameter_definitions():
+                if pd.name.upper() not in ("W", "L"):
+                    pd.is_primary = False
 
     cmp = db.NetlistComparer()
     cmp.same_circuits(ext_top, ref_top)
