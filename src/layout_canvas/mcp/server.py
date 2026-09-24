@@ -407,6 +407,21 @@ class LayoutCanvasMCPServer:
                             "type": "string",
                             "description": "Run a complete caller-provided SPICE deck verbatim instead of compiling a design.",
                         },
+                        "source": {
+                            "type": "string",
+                            "enum": ["schematic", "extracted"],
+                            "description": "'extracted' runs post-layout simulation: compile -> GDS -> KLayout extract -> foundry models. Default is the golden netlist.",
+                        },
+                        "probes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Extra nets to record for source=extracted — block pin names resolve hierarchically (e.g. 'tail' -> xd1.tail).",
+                        },
+                        "analysis": {
+                            "type": "string",
+                            "enum": ["op", "tran"],
+                            "description": "Analysis for source=extracted decks (auto-bias path).",
+                        },
                         "simulator": {
                             "type": "string",
                             "default": "auto",
@@ -686,6 +701,17 @@ class LayoutCanvasMCPServer:
                 design = self._parse_design(args["ir_json"])
             else:
                 raise ValueError("run_simulation needs 'session_id', 'ir_json', or 'deck'")
+            if args.get("source") == "extracted":
+                # Post-layout path: compile -> GDS -> extract -> simulate the
+                # extracted netlist under foundry wrapper models.
+                from layout_canvas.tools.sim import simulate_extracted
+                return simulate_extracted(
+                    design,
+                    analysis=args.get("analysis", "op"),
+                    stimulus=args.get("stimulus"),
+                    probes=args.get("probes"),
+                    simulator=args.get("simulator", "auto"),
+                )
             return simulate_design(
                 design,
                 stimulus=args.get("stimulus", ""),
