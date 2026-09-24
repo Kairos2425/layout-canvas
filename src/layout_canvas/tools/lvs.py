@@ -149,6 +149,17 @@ def _run_pya_lvs(
         return LVSResult("error", None, None, cell_name, None, "", "", None,
                          [f"top circuit not found (ext={top_name} ref={ref_name})"])
 
+    # Capacitor classes do not combine in parallel by default — enable it
+    # so a unit-cap array folds into the single reference C like MOS
+    # fingers fold into one device. C is compared with a 5% relative
+    # tolerance: the extracted value tracks the drawn plate overlap,
+    # which sits on the 5nm grid while the reference formula is exact.
+    for nl in (nl_a, nl_b):
+        for dc in nl.each_device_class():
+            if "CAP" in dc.name.upper() or "MIM" in dc.name.upper():
+                dc.supports_parallel_combination = True
+                dc.equal_parameters = db.EqualDeviceParameters(
+                    db.DeviceClassCapacitor.PARAM_C, 0.0, 0.05)
     nl_a.combine_devices()
     nl_b.combine_devices()
     # Compare W/L for real — geometry honours declared params, so a
@@ -179,6 +190,8 @@ def _run_pya_lvs(
     # classes carry NFET/PFET while IHP uses NMOS/PMOS — keying on one
     # vocabulary silently pairs nothing on the other.
     def _pol(name: str) -> str:
+        if "CAP" in name or "MIM" in name:
+            return "CAP"
         if "PFET" in name or "PMOS" in name:
             return "P"
         if "NFET" in name or "NMOS" in name:

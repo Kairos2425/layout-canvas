@@ -47,11 +47,11 @@ _RECIPES: dict[str, dict[str, Any]] = {
         "mcon": (67, 44), "met1": (68, 20), "via1": (68, 44),
         "met2": (69, 20), "via2": (69, 44), "met3": (70, 20),
         "via3": (70, 44), "met4": (71, 20), "via4": (71, 44), "met5": (72, 20),
-        "nsdm": (93, 44), "psdm": (94, 20),
+        "nsdm": (93, 44), "psdm": (94, 20), "capm": (89, 44),
         "text_datatypes": (16,),
     },
     "ihp_sg13g2": {
-        "well_n": (31, 0), "diff": (1, 0), "tap": None,
+        "well_n": (31, 0), "diff": (1, 0), "tap": None, "capm": None,
         "poly": (5, 0), "licon": (6, 0), "li1": (8, 0),
         "mcon": (19, 0), "met1": (10, 0), "via1": (29, 0),
         "met2": (30, 0), "via2": (49, 0), "met3": (50, 0),
@@ -158,7 +158,8 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
     layers = {
         k: (l2n.make_layer(L(k), k) if L(k) else None)
         for k in ("licon", "li1", "mcon", "met1", "via1", "met2", "via2",
-                  "met3", "via3", "met4", "via4", "met5", "nsdm", "psdm")
+                  "met3", "via3", "met4", "via4", "met5", "nsdm", "psdm",
+                  "capm")
     }
     # text layers for pin names (every layer carrying texts with the PDK's
     # label datatype)
@@ -276,12 +277,18 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
     rpsub.insert(db.Box(
         int(round(extent.left * 1000)), int(round(extent.bottom * 1000)),
         int(round(extent.right * 1000)), int(round(extent.top * 1000))))
-    l2n.connect_global(rpsub, "vss")
-    # p-taps (guard rings, bulk ties) are global too: a physical ring then
-    # IS the vss net — connecting a plain cluster to a global net does not
-    # merge them (observed as a separate vss$1 pin).
-    if rptap is not None:
-        l2n.connect_global(rptap, "vss")
+    # Globalize the substrate only where something uses it: with no nmos
+    # and no p-taps (e.g. a passive MIM array), an unconditional vss
+    # global would create a phantom net the reference lacks — an LVS
+    # mismatch on a net that carries nothing.
+    has_ptap = rptap is not None and not rptap.is_empty()
+    if not rngate.is_empty() or has_ptap:
+        l2n.connect_global(rpsub, "vss")
+        # p-taps (guard rings, bulk ties) are global too: a physical ring
+        # then IS the vss net — connecting a plain cluster to a global
+        # net does not merge them (observed as a separate vss$1 pin).
+        if has_ptap:
+            l2n.connect_global(rptap, "vss")
     for name, reg in (("psd", rpsd), ("nsd", rnsd),
                       ("ntap_d", rntap), ("ptap_d", rptap)):
         # empty derived regions compare equal and registering two of them
@@ -314,6 +321,17 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
         db.DeviceExtractorMOS4Transistor(n_model),
         {"SD": rnsd, "G": rngate, "tS": rnsd, "tD": rnsd, "tG": rpoly, "W": rpsub},
     )
+    # MIM capacitors are opt-in via the capm marker layer: each marker
+    # polygon becomes one C device whose plates are the metals it
+    # overlaps (met2 bottom / met3 top for sky130). Blocks that draw no
+    # marker get no caps — extraction stays MOS-only.
+    rcap = layers.get("capm")
+    if rcap is not None and rcap.count() > 0:
+        l2n.extract_devices(
+            db.DeviceExtractorCapacitor("mim", 2.0e-15),
+            {"P1": layers["met2"], "P2": layers["met3"], "C": rcap,
+             "tA": layers["met2"], "tB": layers["met3"]},
+        )
     l2n.extract_netlist()
     nl = l2n.netlist()
     errors = [e.description for e in l2n.each_error()]
