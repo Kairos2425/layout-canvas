@@ -121,6 +121,25 @@ _PYA_RULES: dict[str, dict[tuple[int, int], list[tuple[str, float]]]] = {
         (93, 44): [("width", 0.38), ("space", 0.38)],   # nsdm
         (94, 20): [("width", 0.38), ("space", 0.38)],   # psdm
     },
+    # IHP SG13G2 — values extracted verbatim from the foundry-published
+    # KLayout deck (libs.tech/klayout/tech/drc/rule_decks/
+    # sg13g2_tech_default.json). Same subset idea as sky130: headline
+    # min-width/min-space only; the full deck remains tapeout authority.
+    "ihp_sg13g2": {
+        (31, 0): [("width", 0.62), ("space", 0.62)],    # nwell   NW.a/b
+        (1, 0): [("width", 0.15), ("space", 0.21)],     # activ   Act.a/b
+        (5, 0): [("width", 0.13), ("space", 0.18)],     # gatpoly Gat.a/b
+        (6, 0): [("width", 0.16), ("space", 0.18)],     # cont    Cnt.a/b
+        (7, 0): [("width", 0.31), ("space", 0.31)],     # nsd     nSDB.a/b
+        (14, 0): [("width", 0.31), ("space", 0.31)],    # psd     pSD.a/b
+        (8, 0): [("width", 0.16), ("space", 0.18)],     # metal1  M1.a/b
+        (19, 0): [("width", 0.19), ("space", 0.22)],    # via1    V1.a/b
+        (10, 0): [("width", 0.20), ("space", 0.21)],    # metal2  Mn.a/b
+        (29, 0): [("width", 0.19), ("space", 0.22)],    # via2    Vn.a/b
+        (30, 0): [("width", 0.20), ("space", 0.21)],    # metal3  Mn.a/b
+        (49, 0): [("width", 0.19), ("space", 0.22)],    # via3    Vn.a/b
+        (50, 0): [("width", 0.20), ("space", 0.21)],    # metal4  Mn.a/b
+    },
 }
 
 

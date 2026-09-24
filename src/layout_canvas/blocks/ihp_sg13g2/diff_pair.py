@@ -1,4 +1,4 @@
-"""IHP SG13G2 common-centroid differential pair (L1 block).
+﻿"""IHP SG13G2 common-centroid differential pair (L1 block).
 
 Real implementation ported from the verified sky130 recipe:
 fingered rail + per-segment S/D straps + two-layer gate strapping +
@@ -89,15 +89,16 @@ def register_diff_pair() -> None:
                                else ("outp" if pattern[j] == "A" else "outn"))
 
         # per-segment CONT + METAL1 stub + riser + VIA1 to METAL2 strap
-        strap_y = {"outp": diff_bottom + diff_h + 0.55,
-                   "tail": diff_bottom + diff_h + 1.21,
-                   "outn": diff_bottom + diff_h + 1.87}
+        strap_y = {"outp": diff_bottom + diff_h + 0.60,
+                   "tail": diff_bottom + diff_h + 1.32,
+                   "outn": diff_bottom + diff_h + 2.04}
         for (sx0, sx1), net in zip(segs, seg_net):
             if sx1 - sx0 < 0.4:
                 continue
             cx = snap((sx0 + sx1) / 2)
             y_top = strap_y[net]
-            n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
+            # CONT pitch must keep 0.18 edge spacing (0.17 hole + 0.18)
+            n_con = max(1, int((sx1 - sx0 - 0.34) / 0.36) + 1)
             for k in range(n_con):
                 kx = snap(sx0 + 0.17 + (sx1 - sx0 - 0.34) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
                 rect(c, layers.CONT, kx - 0.085, diff_bottom + diff_h / 2 - 0.085,
@@ -106,9 +107,9 @@ def register_diff_pair() -> None:
                  sx1 - 0.06, diff_bottom + diff_h / 2 + 0.15)
             rect(c, layers.METAL1, cx - 0.15, diff_bottom + diff_h / 2,
                  cx + 0.15, y_top)
-            rect(c, layers.VIA1, cx - 0.065, y_top - 0.065,
-                 cx + 0.065, y_top + 0.065)
-        # every strap must reach its port pad — a single-segment net
+            rect(c, layers.VIA1, cx - 0.10, y_top - 0.10,
+                     cx + 0.10, y_top + 0.10)
+        # every strap must reach its port pad 鈥?a single-segment net
         # (outn at fingers=2) otherwise leaves the pad floating
         port_x = {"outp": total_width * 0.25, "outn": total_width * 0.75,
                   "tail": total_width / 2}
@@ -125,7 +126,7 @@ def register_diff_pair() -> None:
 
         # gate strapping: A on METAL1, B stub->VIA1->METAL2 riser+strap
         tap_y = diff_bottom - 0.15
-        gy_a, gy_b = diff_bottom - 0.55, diff_bottom - 1.10
+        gy_a, gy_b = diff_bottom - 0.62, diff_bottom - 1.20
         port_y = diff_bottom + diff_h / 2
         gate_xs = {"A": [], "B": []}
         for i, side in enumerate(pattern):
@@ -138,27 +139,27 @@ def register_diff_pair() -> None:
             else:
                 rect(c, layers.METAL1, fx - 0.15, gy_a + 0.34, fx + 0.15,
                      tap_y + 0.15)
-                rect(c, layers.VIA1, fx - 0.065, tap_y - 0.065,
-                     fx + 0.065, tap_y + 0.065)
-                rect(c, layers.METAL2, fx - 0.19, gy_b, fx + 0.19,
+                rect(c, layers.VIA1, fx - 0.10, tap_y - 0.10,
+                     fx + 0.10, tap_y + 0.10)
+                rect(c, layers.METAL2, fx - 0.15, gy_b, fx + 0.15,
                      tap_y + 0.10)
             gate_xs[side].append(fx)
-        px = {"A": total_width * 0.25, "B": total_width * 0.75 + 0.3}
+        px = {"A": total_width * 0.25, "B": total_width * 0.75}
         for side, xs in gate_xs.items():
             if not xs:
                 continue
             if side == "A":
                 rect(c, layers.METAL1, min(min(xs), px[side]) - 0.15,
                      gy_a - 0.15, max(max(xs), px[side]) + 0.15, gy_a + 0.15)
-                rect(c, layers.VIA1, px[side] - 0.065, gy_a - 0.065,
-                     px[side] + 0.065, gy_a + 0.065)
-                rect(c, layers.METAL2, px[side] - 0.19, gy_a - 0.19,
-                     px[side] + 0.19, gy_a + 0.19)
+                rect(c, layers.VIA1, px[side] - 0.10, gy_a - 0.10,
+                     px[side] + 0.10, gy_a + 0.10)
+                rect(c, layers.METAL2, px[side] - 0.15, gy_a - 0.15,
+                     px[side] + 0.15, gy_a + 0.15)
             else:
-                rect(c, layers.METAL2, min(min(xs), px[side]) - 0.19,
-                     gy_b - 0.19, max(max(xs), px[side]) + 0.19, gy_b + 0.19)
-            rect(c, layers.METAL2, px[side] - 0.19,
-                 gy_a if side == "A" else gy_b, px[side] + 0.19, port_y)
+                rect(c, layers.METAL2, min(min(xs), px[side]) - 0.15,
+                     gy_b - 0.15, max(max(xs), px[side]) + 0.15, gy_b + 0.15)
+            rect(c, layers.METAL2, px[side] - 0.15,
+                 gy_a if side == "A" else gy_b, px[side] + 0.15, port_y)
 
         # ports on METAL2 (the strap layer) + in-cell pads for labels
         add_port(c, "inp", layers.METAL2, (total_width * 0.25, port_y), 0.8, 180)
@@ -185,19 +186,18 @@ def register_diff_pair() -> None:
             rect(c, lay, gx0, gy0, gx1, gy0 + rw)
             rect(c, lay, gx0, gy1 - rw, gx1, gy1)
 
-        def _ring_contacts(layer, half, pitch):
-            x = gx0 + rw / 2
-            while x < gx1:
-                for y in (gy0 + rw / 2, gy1 - rw / 2):
-                    rect(c, layer, x - half, y - half, x + half, y + half)
-                x += pitch
-            y = gy0 + rw / 2 + pitch
-            while y < gy1 - rw / 2:
-                for x in (gx0 + rw / 2, gx1 - rw / 2):
-                    rect(c, layer, x - half, y - half, x + half, y + half)
-                y += pitch
-        _ring_contacts(layers.CONT, 0.085, 0.5)
-        _ring_contacts(layers.VIA1, 0.065, 0.5)
+        # continuous contact bars inside each rail (discrete holes at a
+        # pitch collide at corners and trip Cnt.b 0.18 spacing)
+        def _ring_contacts(layer, half):
+            for xa, ya, xb, yb in (
+                (gx0 + 0.2, gy0 + rw / 2 - half, gx1 - 0.2, gy0 + rw / 2 + half),
+                (gx0 + 0.2, gy1 - rw / 2 - half, gx1 - 0.2, gy1 - rw / 2 + half),
+                (gx0 + rw / 2 - half, gy0 + 0.2, gx0 + rw / 2 + half, gy1 - 0.2),
+                (gx1 - rw / 2 - half, gy0 + 0.2, gx1 - rw / 2 + half, gy1 - 0.2),
+            ):
+                rect(c, layer, xa, ya, xb, yb)
+        _ring_contacts(layers.CONT, 0.085)
+        _ring_contacts(layers.VIA1, 0.10)
         add_port(c, "vss", layers.METAL2, (total_width / 2, gy0 + rw / 2), 0.8, 270)
 
         return c

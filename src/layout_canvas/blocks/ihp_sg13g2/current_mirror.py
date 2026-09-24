@@ -1,4 +1,4 @@
-"""IHP SG13G2 interdigitated current mirror (L0 block).
+﻿"""IHP SG13G2 interdigitated current mirror (L0 block).
 
 Real implementation ported from the verified sky130 recipe. Stack:
 ACTIV/GATPOLY/CONT/METAL1/VIA1/METAL2.
@@ -53,7 +53,7 @@ def register_current_mirror() -> None:
         diff_bottom = 3.0
         implant = layers.NSDM if type == "nmos" else layers.PSDM
         if type == "pmos":
-            rect(c, layers.NWELL, -0.5, 2.5, total_width + 0.5,
+            rect(c, layers.NWELL, -0.5, 1.5, total_width + 0.5,
                  diff_bottom + diff_h + 0.5)
         rect(c, layers.ACTIV, 0, diff_bottom, total_width, diff_bottom + diff_h)
         rect(c, implant, -0.1, diff_bottom - 0.1, total_width + 0.1,
@@ -80,15 +80,15 @@ def register_current_mirror() -> None:
                 seg_net.append("vss" if pattern[j - 1] != pattern[j]
                                else ("in" if pattern[j] == "A" else "out"))
 
-        strap_y = {"in": diff_bottom + diff_h + 0.55,
-                   "vss": diff_bottom + diff_h + 1.21,
-                   "out": diff_bottom + diff_h + 1.87}
+        strap_y = {"in": diff_bottom + diff_h + 0.60,
+                   "vss": diff_bottom + diff_h + 1.32,
+                   "out": diff_bottom + diff_h + 2.04}
         for (sx0, sx1), net in zip(segs, seg_net):
             if sx1 - sx0 < 0.4:
                 continue
             cx = snap((sx0 + sx1) / 2)
             y_top = strap_y[net]
-            n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
+            n_con = max(1, int((sx1 - sx0 - 0.34) / 0.36) + 1)
             for k in range(n_con):
                 kx = snap(sx0 + 0.17 + (sx1 - sx0 - 0.34) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
                 rect(c, layers.CONT, kx - 0.085, diff_bottom + diff_h / 2 - 0.085,
@@ -97,9 +97,9 @@ def register_current_mirror() -> None:
                  sx1 - 0.06, diff_bottom + diff_h / 2 + 0.15)
             rect(c, layers.METAL1, cx - 0.15, diff_bottom + diff_h / 2,
                  cx + 0.15, y_top)
-            rect(c, layers.VIA1, cx - 0.065, y_top - 0.065,
-                 cx + 0.065, y_top + 0.065)
-        # every strap must reach its port pad — a single-segment net
+            rect(c, layers.VIA1, cx - 0.10, y_top - 0.10,
+                 cx + 0.10, y_top + 0.10)
+        # every strap must reach its port pad 鈥?a single-segment net
         # (out at fingers=2) otherwise leaves the pad floating
         port_x = {"in": total_width * 0.25, "out": total_width * 0.75}
         for net, y in strap_y.items():
@@ -118,8 +118,11 @@ def register_current_mirror() -> None:
         if type == "pmos":
             # n-well bulk tie: n+ tap (activ+nsdm inside nwell) -> cont ->
             # metal1 -> via1 -> metal2 jumper down to the ring rail (vss)
-            ntx = snap(total_width - 0.1)
-            nty = 2.65
+            # the tap sits in the clear strip below the gate-tap row —
+            # vertically separated from diff/gate CONTs, and the met2
+            # jumper down to the bottom rail crosses only empty metal.
+            ntx = snap(total_width - 0.5)
+            nty = 1.8
             rect(c, layers.ACTIV, ntx - 0.15, nty - 0.15,
                  ntx + 0.15, nty + 0.15)
             rect(c, layers.NSDM, ntx - 0.17, nty - 0.17,
@@ -128,11 +131,11 @@ def register_current_mirror() -> None:
                  ntx + 0.085, nty + 0.085)
             rect(c, layers.METAL1, ntx - 0.15, nty - 0.15,
                  ntx + 0.15, nty + 0.15)
-            rect(c, layers.VIA1, ntx - 0.065, nty - 0.065,
-                 ntx + 0.065, nty + 0.065)
+            rect(c, layers.VIA1, ntx - 0.10, nty - 0.10,
+                 ntx + 0.10, nty + 0.10)
             rect(c, layers.METAL2, ntx - 0.15, 1.15, ntx + 0.15, nty + 0.15)
 
-        # gate strapping: all fingers share 'gate' — one METAL1 strap
+        # gate strapping: all fingers share 'gate' 鈥?one METAL1 strap
         tap_y = diff_bottom - 0.15
         gy = diff_bottom - 0.55
         port_y = diff_bottom + diff_h / 2
@@ -146,11 +149,11 @@ def register_current_mirror() -> None:
         rect(c, layers.METAL1,
              min(min(finger_x), px_gate) - 0.15, gy - 0.15,
              max(max(finger_x), px_gate) + 0.15, gy + 0.15)
-        rect(c, layers.VIA1, px_gate - 0.065, gy - 0.065,
-             px_gate + 0.065, gy + 0.065)
-        rect(c, layers.METAL2, px_gate - 0.19, gy - 0.19,
-             px_gate + 0.19, gy + 0.19)
-        rect(c, layers.METAL2, px_gate - 0.19, gy, px_gate + 0.19, port_y)
+        rect(c, layers.VIA1, px_gate - 0.10, gy - 0.10,
+             px_gate + 0.10, gy + 0.10)
+        rect(c, layers.METAL2, px_gate - 0.15, gy - 0.15,
+             px_gate + 0.15, gy + 0.15)
+        rect(c, layers.METAL2, px_gate - 0.15, gy, px_gate + 0.15, port_y)
 
         add_port(c, "in", layers.METAL2, (total_width * 0.25, strap_y["in"]), 0.8, 90)
         add_port(c, "out", layers.METAL2, (total_width * 0.75, strap_y["out"]), 0.8, 90)
@@ -163,7 +166,7 @@ def register_current_mirror() -> None:
             rect(c, layers.METAL2, px_ - 0.24, py_ - 0.24, px_ + 0.24, py_ + 0.24)
 
         # p-tap guard ring: ACTIV+PSDM rails + CONT + METAL1 + VIA1 + METAL2
-        gx0, gx1 = -0.9, total_width + 0.9
+        gx0, gx1 = -1.05, total_width + 1.05
         gy0, gy1 = 0.9, strap_y["out"] + 1.0
         rw = 0.5
         for lay in (layers.ACTIV, layers.PSDM, layers.METAL1, layers.METAL2):
@@ -172,19 +175,18 @@ def register_current_mirror() -> None:
             rect(c, lay, gx0, gy0, gx1, gy0 + rw)
             rect(c, lay, gx0, gy1 - rw, gx1, gy1)
 
-        def _ring_contacts(layer, half, pitch):
-            x = gx0 + rw / 2
-            while x < gx1:
-                for y in (gy0 + rw / 2, gy1 - rw / 2):
-                    rect(c, layer, x - half, y - half, x + half, y + half)
-                x += pitch
-            y = gy0 + rw / 2 + pitch
-            while y < gy1 - rw / 2:
-                for x in (gx0 + rw / 2, gx1 - rw / 2):
-                    rect(c, layer, x - half, y - half, x + half, y + half)
-                y += pitch
-        _ring_contacts(layers.CONT, 0.085, 0.5)
-        _ring_contacts(layers.VIA1, 0.065, 0.5)
+        # continuous contact bars inside each rail (discrete holes at a
+        # pitch collide at corners and trip Cnt.b 0.18 spacing)
+        def _ring_contacts(layer, half):
+            for xa, ya, xb, yb in (
+                (gx0 + 0.2, gy0 + rw / 2 - half, gx1 - 0.2, gy0 + rw / 2 + half),
+                (gx0 + 0.2, gy1 - rw / 2 - half, gx1 - 0.2, gy1 - rw / 2 + half),
+                (gx0 + rw / 2 - half, gy0 + 0.2, gx0 + rw / 2 + half, gy1 - 0.2),
+                (gx1 - rw / 2 - half, gy0 + 0.2, gx1 - rw / 2 + half, gy1 - 0.2),
+            ):
+                rect(c, layer, xa, ya, xb, yb)
+        _ring_contacts(layers.CONT, 0.085)
+        _ring_contacts(layers.VIA1, 0.10)
         add_port(c, "vss", layers.METAL2, (total_width / 2, gy0 + rw / 2), 0.8, 270)
 
         return c

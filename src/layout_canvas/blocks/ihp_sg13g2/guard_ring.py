@@ -69,26 +69,17 @@ def register_guard_ring() -> None:
             rect(c, layers.NWELL, xo0 - nw, yo0 - nw, xo1 + nw, yo1 + nw)
             rect(c, layers.ACTIV, xo0 - margin, yo0 - margin, xo1 + margin, yo1 + margin)
 
-        contact = 0.16
-        pitch = 0.3
-        inset = (rw - contact) / 2
-
-        def contacts_h(x0: float, x1: float, yc: float) -> None:
-            x = x0 + pitch / 2
-            while x + contact <= x1:
-                rect(c, layers.CONT, x, yc - contact / 2, x + contact, yc + contact / 2)
-                x += pitch
-
-        def contacts_v(y0: float, y1: float, xc: float) -> None:
-            y = y0 + pitch / 2
-            while y + contact <= y1:
-                rect(c, layers.CONT, xc - contact / 2, y, xc + contact / 2, y + contact)
-                y += pitch
-
-        contacts_h(xo0 + inset, xo1 - inset, yo0 + rw / 2)
-        contacts_h(xo0 + inset, xo1 - inset, yo1 - rw / 2)
-        contacts_v(yi0, yi1, xo0 + rw / 2)
-        contacts_v(yi0, yi1, xo1 - rw / 2)
+        # continuous contact bars inside each rail — discrete holes at a
+        # pitch collide at corners and trip Cnt.b 0.18 spacing
+        contact = 0.17
+        half = contact / 2
+        for xa, ya, xb, yb in (
+            (xo0 + 0.2, yo0 + rw / 2 - half, xo1 - 0.2, yo0 + rw / 2 + half),
+            (xo0 + 0.2, yo1 - rw / 2 - half, xo1 - 0.2, yo1 - rw / 2 + half),
+            (xo0 + rw / 2 - half, yi0 + 0.2, xo0 + rw / 2 + half, yi1 - 0.2),
+            (xo1 - rw / 2 - half, yi0 + 0.2, xo1 - rw / 2 + half, yi1 - 0.2),
+        ):
+            rect(c, layers.CONT, xa, ya, xb, yb)
 
         add_port(c, "tap", layers.METAL1, (0.0, yo0 + rw / 2), rw, 270)
         add_port(c, "tap_s", layers.METAL1, (0.0, yo0 + rw / 2), rw, 270)

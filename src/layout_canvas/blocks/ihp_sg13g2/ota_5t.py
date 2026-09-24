@@ -1,4 +1,4 @@
-"""IHP SG13G2 5-transistor OTA (L2 block — composed stripes).
+﻿"""IHP SG13G2 5-transistor OTA (L2 block 鈥?composed stripes).
 
 Ported from the verified sky130 ota_5t. Stack mapping:
 DIFF->ACTIV, POLY->GATPOLY, LICON->CONT, LI->METAL1, MCON->VIA1,
@@ -81,7 +81,7 @@ def register_ota_5t() -> None:
                     continue
                 cx = snap((sx0 + sx1) / 2)
                 y_top = strap_ys[net]
-                n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
+                n_con = max(1, int((sx1 - sx0 - 0.34) / 0.36) + 1)
                 for k in range(n_con):
                     kx = snap(sx0 + 0.17 + (sx1 - sx0 - 0.34) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
                     rect(c, layers.CONT, kx - 0.085, y0 + diff_h / 2 - 0.085,
@@ -90,8 +90,8 @@ def register_ota_5t() -> None:
                      sx1 - 0.06, y0 + diff_h / 2 + 0.15)
                 rect(c, layers.METAL1, cx - 0.15, y0 + diff_h / 2,
                      cx + 0.15, y_top)
-                rect(c, layers.VIA1, cx - 0.065, y_top - 0.065,
-                     cx + 0.065, y_top + 0.065)
+                rect(c, layers.VIA1, cx - 0.10, y_top - 0.10,
+                     cx + 0.10, y_top + 0.10)
             for net, y in strap_ys.items():
                 xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets)
                       if n == net and s[1] - s[0] >= 0.4]
@@ -115,7 +115,7 @@ def register_ota_5t() -> None:
                     tail_x0 + 2 * tail_pitch]
         t_segs = list(zip(t_edges, t_starts))
         t_nets = ["vss", "tail", "vss"]
-        tail_strap_y = tail_y0 + tail_h + 0.55
+        tail_strap_y = tail_y0 + tail_h + 0.60
         for (sx0, sx1), net in zip(t_segs, t_nets):
             cx = snap((sx0 + sx1) / 2)
             rect(c, layers.CONT, cx - 0.085, tail_y0 + tail_h / 2 - 0.085,
@@ -125,17 +125,16 @@ def register_ota_5t() -> None:
             if net == "tail":
                 rect(c, layers.METAL1, cx - 0.15, tail_y0 + tail_h / 2,
                      cx + 0.15, tail_strap_y)
-                rect(c, layers.VIA1, cx - 0.065, tail_strap_y - 0.065,
-                     cx + 0.065, tail_strap_y + 0.065)
+                rect(c, layers.VIA1, cx - 0.10, tail_strap_y - 0.10,
+                     cx + 0.10, tail_strap_y + 0.10)
                 rect(c, layers.METAL2, cx - 0.24, tail_strap_y - 0.24,
                      cx + 0.24, tail_strap_y + 0.24)
             else:
-                rect(c, layers.VIA1, cx - 0.065, tail_y0 + tail_h / 2 - 0.065,
-                     cx + 0.065, tail_y0 + tail_h / 2 + 0.065)
+                rect(c, layers.VIA1, cx - 0.10, tail_y0 + tail_h / 2 - 0.10,
+                     cx + 0.10, tail_y0 + tail_h / 2 + 0.10)
                 rect(c, layers.METAL2, cx - 0.15, -0.65,
                      cx + 0.15, tail_y0 + tail_h / 2)
-        # tail gate strap: pads on the poly overhang BELOW the rail —
-        # a pad reaching into the diffusion lands the contact on the
+        # tail gate strap: pads on the poly overhang BELOW the rail 鈥?        # a pad reaching into the diffusion lands the contact on the
         # channel (parasitic) and skews the extracted gate length.
         vbias_strap_y = tail_y0 - 0.45
         for fx in tail_fx:
@@ -148,10 +147,10 @@ def register_ota_5t() -> None:
         vbias_px = tail_x0 + tail_pitch
         rect(c, layers.METAL1, tail_fx[0] - 0.15, vbias_strap_y,
              tail_fx[1] + 0.15, vbias_strap_y + 0.35)
-        rect(c, layers.VIA1, vbias_px - 0.065, vbias_strap_y + 0.2 - 0.065,
-             vbias_px + 0.065, vbias_strap_y + 0.2 + 0.065)
-        rect(c, layers.METAL2, vbias_px - 0.19, vbias_strap_y + 0.2 - 0.19,
-             vbias_px + 0.19, vbias_strap_y + 0.2 + 0.19)
+        rect(c, layers.VIA1, vbias_px - 0.10, vbias_strap_y + 0.2 - 0.10,
+             vbias_px + 0.10, vbias_strap_y + 0.2 + 0.10)
+        rect(c, layers.METAL2, vbias_px - 0.15, vbias_strap_y + 0.2 - 0.15,
+             vbias_px + 0.15, vbias_strap_y + 0.2 + 0.15)
         add_port(c, "vbias", layers.METAL2,
                  (vbias_px, vbias_strap_y + 0.2), 0.6, 270)
 
@@ -163,12 +162,12 @@ def register_ota_5t() -> None:
         for fx in dp_fx:
             rect(c, layers.GATPOLY, fx - half_l, dp_y0 - 0.2,
                  fx + half_l, dp_y0 + diff_h + 0.2)
-        dp_strap = {"out1": dp_y0 + diff_h + 0.55,
-                    "tail": dp_y0 + diff_h + 1.21,
-                    "out": dp_y0 + diff_h + 1.87}
+        dp_strap = {"out1": dp_y0 + diff_h + 0.60,
+                    "tail": dp_y0 + diff_h + 1.32,
+                    "out": dp_y0 + diff_h + 2.04}
         _sd_straps(dp_y0, dp_segs, dp_nets, dp_strap)
         tap_y = dp_y0 - 0.15
-        gy_a, gy_b = dp_y0 - 0.55, dp_y0 - 1.10
+        gy_a, gy_b = dp_y0 - 0.62, dp_y0 - 1.20
         port_y = dp_y0 + diff_h / 2
         gate_xs = {"A": [], "B": []}
         for i, side in enumerate(dp_pattern):
@@ -182,27 +181,27 @@ def register_ota_5t() -> None:
             else:
                 rect(c, layers.METAL1, fx - 0.15, gy_a + 0.34, fx + 0.15,
                      tap_y + 0.15)
-                rect(c, layers.VIA1, fx - 0.065, tap_y - 0.065,
-                     fx + 0.065, tap_y + 0.065)
-                rect(c, layers.METAL2, fx - 0.19, gy_b, fx + 0.19,
+                rect(c, layers.VIA1, fx - 0.10, tap_y - 0.10,
+                     fx + 0.10, tap_y + 0.10)
+                rect(c, layers.METAL2, fx - 0.15, gy_b, fx + 0.15,
                      tap_y + 0.10)
             gate_xs[side].append(fx)
-        px = {"A": total_width * 0.25, "B": total_width * 0.75 + 0.3}
+        px = {"A": total_width * 0.25, "B": total_width * 0.75}
         for side, xs in gate_xs.items():
             if not xs:
                 continue
             if side == "A":
                 rect(c, layers.METAL1, min(min(xs), px[side]) - 0.15,
                      gy_a - 0.15, max(max(xs), px[side]) + 0.15, gy_a + 0.15)
-                rect(c, layers.VIA1, px[side] - 0.065, gy_a - 0.065,
-                     px[side] + 0.065, gy_a + 0.065)
-                rect(c, layers.METAL2, px[side] - 0.19, gy_a - 0.19,
-                     px[side] + 0.19, gy_a + 0.19)
+                rect(c, layers.VIA1, px[side] - 0.10, gy_a - 0.10,
+                     px[side] + 0.10, gy_a + 0.10)
+                rect(c, layers.METAL2, px[side] - 0.15, gy_a - 0.15,
+                     px[side] + 0.15, gy_a + 0.15)
             else:
-                rect(c, layers.METAL2, min(min(xs), px[side]) - 0.19,
-                     gy_b - 0.19, max(max(xs), px[side]) + 0.19, gy_b + 0.19)
-            rect(c, layers.METAL2, px[side] - 0.19,
-                 gy_a if side == "A" else gy_b, px[side] + 0.19, port_y)
+                rect(c, layers.METAL2, min(min(xs), px[side]) - 0.15,
+                     gy_b - 0.15, max(max(xs), px[side]) + 0.15, gy_b + 0.15)
+            rect(c, layers.METAL2, px[side] - 0.15,
+                 gy_a if side == "A" else gy_b, px[side] + 0.15, port_y)
 
         # ---------------- pmos load stripe ---------------------------------
         ld_x0 = snap((total_width - pitch * len(ld_pattern)) / 2)
@@ -217,12 +216,12 @@ def register_ota_5t() -> None:
         for fx in ld_fx:
             rect(c, layers.GATPOLY, fx - half_l, ld_y0 - 0.2,
                  fx + half_l, ld_y0 + diff_h + 0.2)
-        ld_strap = {"out1": ld_y0 + diff_h + 0.55,
-                    "vdd": ld_y0 + diff_h + 1.21,
-                    "out": ld_y0 + diff_h + 1.87}
+        ld_strap = {"out1": ld_y0 + diff_h + 0.60,
+                    "vdd": ld_y0 + diff_h + 1.32,
+                    "out": ld_y0 + diff_h + 2.04}
         _sd_straps(ld_y0, ld_segs, ld_nets, ld_strap)
         ld_tap_y = ld_y0 - 0.15
-        ld_gy = ld_y0 - 0.55
+        ld_gy = ld_y0 - 0.60
         for fx in ld_fx:
             rect(c, layers.GATPOLY, fx - 0.2, ld_tap_y - 0.15, fx + 0.2, ld_y0)
             rect(c, layers.CONT, fx - 0.085, ld_tap_y - 0.085,
@@ -233,13 +232,13 @@ def register_ota_5t() -> None:
              max(ld_fx) + 0.15, ld_gy + 0.15)
         # n-well bulk tie -> vdd strap via METAL3 (crosses METAL2 straps)
         ntx = snap(ld_x0 + pitch * len(ld_pattern) - 0.1)
-        nty = ld_y0 - 0.35
+        nty = ld_y0 - 0.55
         rect(c, layers.ACTIV, ntx - 0.15, nty - 0.15, ntx + 0.15, nty + 0.15)
         rect(c, layers.NSDM, ntx - 0.17, nty - 0.17, ntx + 0.17, nty + 0.17)
         rect(c, layers.CONT, ntx - 0.085, nty - 0.085, ntx + 0.085, nty + 0.085)
         rect(c, layers.METAL1, ntx - 0.15, nty - 0.15, ntx + 0.15, nty + 0.15)
-        rect(c, layers.VIA1, ntx - 0.065, nty - 0.065, ntx + 0.065, nty + 0.065)
-        rect(c, layers.METAL2, ntx - 0.19, nty - 0.19, ntx + 0.19, nty + 0.19)
+        rect(c, layers.VIA1, ntx - 0.10, nty - 0.10, ntx + 0.10, nty + 0.10)
+        rect(c, layers.METAL2, ntx - 0.15, nty - 0.15, ntx + 0.15, nty + 0.15)
         xs_vdd = [snap((s[0] + s[1]) / 2) for s, n in zip(ld_segs, ld_nets)
                   if n == "vdd" and s[1] - s[0] >= 0.4]
         if xs_vdd:
@@ -248,7 +247,7 @@ def register_ota_5t() -> None:
             rect(c, layers.METAL2,
                  min(min(xs_vdd) - 0.2, vdd_port_x - 0.24),
                  ld_strap["vdd"] - 0.24,
-                 max(max(xs_vdd) + 0.2, ntx + 0.19, vdd_port_x + 0.24),
+                 max(max(xs_vdd) + 0.2, ntx + 0.15, vdd_port_x + 0.24),
                  ld_strap["vdd"] + 0.24)
 
         # ---------------- interconnect (METAL3 risers + VIA2) --------------
@@ -270,7 +269,7 @@ def register_ota_5t() -> None:
                 r = x if r is None else (max(r[0], x[0]), min(r[1], x[1]))
             return r if r and r[0] <= r[1] else None
 
-        def _pick_x(r, avoid=(), clear=0.55, prefer=None):
+        def _pick_x(r, avoid=(), clear=0.60, prefer=None):
             if r is None:
                 return None
             lo, hi = r
@@ -288,56 +287,56 @@ def register_ota_5t() -> None:
                     _seg_xrange(ld_segs, ld_nets, "out1"))
         x_out1 = _pick_x(r1, [ntx], prefer=snap(total_width * 0.25)) \
             or snap(total_width * 0.25)
-        rect(c, layers.METAL2, x_out1 - 0.19, dp_strap["out1"] - 0.19,
-             x_out1 + 0.19, dp_strap["out1"] + 0.19)
+        rect(c, layers.METAL2, x_out1 - 0.15, dp_strap["out1"] - 0.15,
+             x_out1 + 0.15, dp_strap["out1"] + 0.15)
         _via2(x_out1, dp_strap["out1"])
         _via2(x_out1, ld_strap["out1"])
-        rect(c, layers.METAL3, x_out1 - 0.19, dp_strap["out1"],
-             x_out1 + 0.19, ld_strap["out1"])
+        rect(c, layers.METAL3, x_out1 - 0.15, dp_strap["out1"],
+             x_out1 + 0.15, ld_strap["out1"])
         gx = snap((min(ld_fx) + max(ld_fx)) / 2)
-        if abs(gx - x_out1) < 0.55:
-            xs_g = [x for x in ld_fx if abs(x - x_out1) >= 0.55]
+        if abs(gx - x_out1) < 0.60:
+            xs_g = [x for x in ld_fx if abs(x - x_out1) >= 0.60]
             if xs_g:
                 gx = snap(min(xs_g, key=lambda x: abs(x - gx)))
-        rect(c, layers.VIA1, gx - 0.065, ld_gy - 0.065,
-             gx + 0.065, ld_gy + 0.065)
-        rect(c, layers.METAL2, gx - 0.19, ld_gy - 0.19, gx + 0.19,
-             ld_strap["out1"] + 0.19)
+        rect(c, layers.VIA1, gx - 0.10, ld_gy - 0.10,
+             gx + 0.10, ld_gy + 0.10)
+        rect(c, layers.METAL2, gx - 0.15, ld_gy - 0.15, gx + 0.15,
+             ld_strap["out1"] + 0.15)
         r2 = _inter(_seg_xrange(dp_segs, dp_nets, "out"),
                     _seg_xrange(ld_segs, ld_nets, "out"))
         x_out = _pick_x(r2, [ntx, x_out1], prefer=snap(total_width * 0.75)) \
             or snap(total_width * 0.75)
-        rect(c, layers.METAL2, x_out - 0.19, dp_strap["out"] - 0.19,
-             x_out + 0.19, dp_strap["out"] + 0.19)
+        rect(c, layers.METAL2, x_out - 0.15, dp_strap["out"] - 0.15,
+             x_out + 0.15, dp_strap["out"] + 0.15)
         _via2(x_out, dp_strap["out"])
         _via2(x_out, ld_strap["out"])
-        rect(c, layers.METAL3, x_out - 0.19, dp_strap["out"],
-             x_out + 0.19, ld_strap["out"])
+        rect(c, layers.METAL3, x_out - 0.15, dp_strap["out"],
+             x_out + 0.15, ld_strap["out"])
         x_tail = snap(vbias_px + tail_pitch / 2)
         _via2(x_tail, dp_strap["tail"])
         _via2(x_tail, tail_strap_y)
-        rect(c, layers.METAL2, x_tail - 0.19, tail_strap_y - 0.19,
-             x_tail + 0.19, tail_strap_y + 0.19)
-        rect(c, layers.METAL3, x_tail - 0.19, tail_strap_y,
-             x_tail + 0.19, dp_strap["tail"])
-        rect(c, layers.METAL2, tail_fx[1] - tail_pitch / 2 - 0.19,
-             tail_strap_y - 0.19, x_tail + 0.19, tail_strap_y + 0.19)
+        rect(c, layers.METAL2, x_tail - 0.15, tail_strap_y - 0.15,
+             x_tail + 0.15, tail_strap_y + 0.15)
+        rect(c, layers.METAL3, x_tail - 0.15, tail_strap_y,
+             x_tail + 0.15, dp_strap["tail"])
+        rect(c, layers.METAL2, tail_fx[1] - tail_pitch / 2 - 0.15,
+             tail_strap_y - 0.15, x_tail + 0.15, tail_strap_y + 0.15)
         # nwell bulk -> vdd strap
         _via2(ntx, nty)
         _via2(ntx, ld_strap["vdd"])
-        rect(c, layers.METAL3, ntx - 0.19, nty, ntx + 0.19, ld_strap["vdd"])
+        rect(c, layers.METAL3, ntx - 0.15, nty, ntx + 0.15, ld_strap["vdd"])
 
         # ---------------- ports + guard ring -------------------------------
         add_port(c, "inp", layers.METAL2, (px["A"], port_y), 0.8, 180)
-        add_port(c, "inn", layers.METAL2, (px["B"] - 0.3, port_y), 0.8, 0)
+        add_port(c, "inn", layers.METAL2, (px["B"], port_y), 0.8, 0)
         add_port(c, "out", layers.METAL2, (x_out, ld_strap["out"]), 0.8, 90)
         add_port(c, "vdd", layers.METAL2, (snap(total_width * 0.4), ld_strap["vdd"]), 0.8, 90)
-        for px_, py_ in ((px["A"], port_y), (px["B"] - 0.3, port_y),
+        for px_, py_ in ((px["A"], port_y), (px["B"], port_y),
                          (x_out, ld_strap["out"]),
                          (snap(total_width * 0.4), ld_strap["vdd"])):
             rect(c, layers.METAL2, px_ - 0.24, py_ - 0.24, px_ + 0.24, py_ + 0.24)
 
-        gx0, gx1 = -0.9, total_width + 0.9
+        gx0, gx1 = -1.05, total_width + 1.05
         gy0, gy1 = -0.9, ld_strap["out"] + 1.0
         rw = 0.5
         for lay in (layers.ACTIV, layers.PSDM, layers.METAL1, layers.METAL2):
@@ -346,19 +345,18 @@ def register_ota_5t() -> None:
             rect(c, lay, gx0, gy0, gx1, gy0 + rw)
             rect(c, lay, gx0, gy1 - rw, gx1, gy1)
 
-        def _ring_contacts(layer, half, pitch_):
-            x = gx0 + rw / 2
-            while x < gx1:
-                for y in (gy0 + rw / 2, gy1 - rw / 2):
-                    rect(c, layer, x - half, y - half, x + half, y + half)
-                x += pitch_
-            y = gy0 + rw / 2 + pitch_
-            while y < gy1 - rw / 2:
-                for x in (gx0 + rw / 2, gx1 - rw / 2):
-                    rect(c, layer, x - half, y - half, x + half, y + half)
-                y += pitch_
-        _ring_contacts(layers.CONT, 0.085, 0.5)
-        _ring_contacts(layers.VIA1, 0.065, 0.5)
+        # continuous contact bars inside each rail (discrete holes at a
+        # pitch collide at corners and trip Cnt.b 0.18 spacing)
+        def _ring_contacts(layer, half):
+            for xa, ya, xb, yb in (
+                (gx0 + 0.2, gy0 + rw / 2 - half, gx1 - 0.2, gy0 + rw / 2 + half),
+                (gx0 + 0.2, gy1 - rw / 2 - half, gx1 - 0.2, gy1 - rw / 2 + half),
+                (gx0 + rw / 2 - half, gy0 + 0.2, gx0 + rw / 2 + half, gy1 - 0.2),
+                (gx1 - rw / 2 - half, gy0 + 0.2, gx1 - rw / 2 + half, gy1 - 0.2),
+            ):
+                rect(c, layer, xa, ya, xb, yb)
+        _ring_contacts(layers.CONT, 0.085)
+        _ring_contacts(layers.VIA1, 0.10)
         add_port(c, "vss", layers.METAL2, (total_width / 2, gy0 + rw / 2), 0.8, 270)
 
         return c
