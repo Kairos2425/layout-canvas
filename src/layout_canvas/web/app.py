@@ -168,13 +168,20 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         if action == "netlist":
             return {"status": "ok", "data": {"spice": compile_netlist(design)}}
         if action == "simulate":
-            from layout_canvas.tools.sim import simulate_auto
+            from layout_canvas.tools.sim import simulate_auto, simulate_extracted
             exe = os.environ.get("LAYOUT_CANVAS_NGSPICE")
-            res = simulate_auto(
-                design,
-                analysis=str(payload.get("analysis", "op")),
-                vdd=float(payload.get("vdd", 1.8)),
-                simulator="ngspice", executable=exe)
+            if str(payload.get("source", "")).lower() in ("extracted", "pex", "post"):
+                res = simulate_extracted(
+                    design,
+                    analysis=str(payload.get("analysis", "op")),
+                    vdd=float(payload.get("vdd", 1.8)),
+                    simulator="ngspice", executable=exe)
+            else:
+                res = simulate_auto(
+                    design,
+                    analysis=str(payload.get("analysis", "op")),
+                    vdd=float(payload.get("vdd", 1.8)),
+                    simulator="ngspice", executable=exe)
             for k in ("log_path", "deck_path"):
                 if res.get(k):
                     res[k] = str(res[k])

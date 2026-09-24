@@ -113,6 +113,7 @@ PAGE = """<!doctype html>
   <button class="btn" onclick="sessionUndo()" title="undo last edit">Undo</button>
   <button class="btn" onclick="call('simulate',{analysis:'op'})">Simulate</button>
   <button class="btn" onclick="call('simulate',{analysis:'tran'})">Tran</button>
+  <button class="btn" onclick="call('simulate',{analysis:'op',source:'extracted'})">PEX</button>
   <button class="btn" onclick="call('ppa')">PPA</button>
   <button class="btn" onclick="call('connectivity')">Conn</button>
   <button class="btn" onclick="call('netlist')">Netlist</button>

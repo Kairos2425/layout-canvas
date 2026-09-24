@@ -382,6 +382,131 @@ def _emitter_missing(block_name: str) -> bool:
         return True
 
 
+# --- Post-layout simulation ----------------------------------------------
+# The extracted netlist is the physical truth: run IT through the foundry
+# models, not the golden schematic. Two surgeries make the extracted text
+# simulatable: leaf M-cards are rewritten as X-cards onto the PDK's wrapper
+# subckts (extracted ``nfet_01v8`` -> ``sky130_fd_pr__nfet_01v8`` — an
+# M-card cannot call a subckt), and the root circuit's .SUBCKT/.ENDS shell
+# is removed so its labelled nets become top-level bias targets (the
+# extraction top has no pins — it is the world boundary).
+
+def _leaf_to_wrapper(pdk: str) -> dict[str, str]:
+    from layout_canvas.tools.extract import LEAF_DEVICES
+
+    return {leaf: sub for sub, (leaf, _pol) in LEAF_DEVICES.get(pdk, {}).items()}
+
+
+def _unwrap_extracted_top(text: str) -> str | None:
+    """Drop the root circuit's .SUBCKT/.ENDS shell so its contents sit at
+    deck top level. Returns None when the root cannot be identified."""
+    names = re.findall(r"^\s*\.SUBCKT\s+(\S+)", text, flags=re.MULTILINE)
+    refs = {m.group(1).upper() for m in re.finditer(
+        r"^\s*X\S+\s+.*?(\S+)\s*$", text, flags=re.MULTILINE)}
+    roots = [n for n in names if n.upper() not in refs]
+    if len(roots) != 1:
+        return None
+    root = roots[0]
+    out, in_root = [], False
+    for line in text.splitlines():
+        if re.match(rf"^\s*\.SUBCKT\s+{re.escape(root)}\b", line, re.IGNORECASE):
+            in_root = True
+            continue
+        if in_root and re.match(
+                rf"^\s*\.ENDS(\s+{re.escape(root)})?\s*$", line, re.IGNORECASE):
+            in_root = False
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def simulate_extracted(
+    design: Design,
+    *,
+    analysis: str = "op",
+    vdd: float = 1.8,
+    tran_stop: str = "5u",
+    tran_step: str = "10n",
+    simulator: str = "auto",
+    executable: str | None = None,
+    timeout: int = 120,
+    workdir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Post-layout simulation: compile → GDS → extract → simulate the
+    extracted netlist. Fails closed on extraction errors."""
+    from layout_canvas.compiler.compile import compile_design
+    from layout_canvas.tools.extract import extract_netlist
+
+    root = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="lc_xsim_"))
+    root.mkdir(parents=True, exist_ok=True)
+    comp = compile_design(design)
+    gds = root / f"{design.name}.gds"
+    comp.write_gds(str(gds))
+    ext = extract_netlist(str(gds), design.pdk)
+    if ext.status != "ok" or ext.errors:
+        return {"status": "failed",
+                "errors": ["extraction failed: "
+                            + "; ".join(ext.errors or [ext.status])]}
+
+    leaf2wrap = _leaf_to_wrapper(design.pdk)
+    lines = []
+    for line in ext.netlist_text.splitlines():
+        # Extracted MOS cards are named like 'n$3'/'p$7' with the leaf
+        # model as the 6th token — rewrite to X-cards on the PDK wrapper
+        # subckts (w/l/as/ad/ps/pd params pass through unchanged).
+        m = re.match(r"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)(.*)$",
+                     line)
+        if m and m.group(6) in leaf2wrap and not m.group(1).startswith(
+                ("X", ".", "*")):
+            safe = re.sub(r"[^A-Za-z0-9_]", "_", m.group(1))
+            lines.append(
+                f"X_{safe} {m.group(2)} {m.group(3)} {m.group(4)} "
+                f"{m.group(5)} {leaf2wrap[m.group(6)]}{m.group(7)}")
+        else:
+            lines.append(line)
+    flat = _unwrap_extracted_top("\n".join(lines))
+    if flat is None:
+        return {"status": "failed",
+                "errors": ["could not identify the extracted root circuit"]}
+    if re.search(r"^\s*C\S+\s+.*\bmim\b", flat, re.MULTILINE):
+        flat += "\n.model mim c\n"  # cap cards name 'mim' as their model
+
+    # Bias targets: the design's port names that survive as extracted net
+    # names (labels). Anything not extracted is skipped rather than
+    # creating a phantom floating node.
+    port_names = [p.name for p in design.ports
+                  if re.search(rf"\b{re.escape(p.name)}\b", flat)]
+    stimulus_lines = [_bias_line(p, vdd) for p in port_names]
+    if not any(p.lower() in ("vdd", "vcc") for p in port_names):
+        stimulus_lines.insert(0, f"V_VDD vdd 0 {vdd}")
+    if not any(p.lower() in ("vss", "gnd") for p in port_names):
+        stimulus_lines.insert(0, "V_VSS vss 0 0")
+    vectors = " ".join(f"v({p})" for p in port_names)
+    run = "op" if analysis == "op" else f"tran {tran_step} {tran_stop}"
+    stimulus_lines += [".control"]
+    stimulus_lines.extend(default_control_prelude(design.pdk))
+    stimulus_lines += [run, f"wrdata waves.dat {vectors}", ".endc"]
+
+    prelude = default_model_prelude(design.pdk)
+    deck_parts = ["* layout-canvas post-layout deck", ""]
+    if prelude:
+        deck_parts += [prelude, ""]
+    deck_parts += [flat.rstrip(), "", "\n".join(stimulus_lines), "", ".end"]
+
+    result = run_netlist(
+        "\n".join(deck_parts), simulator=simulator,
+        executable=executable, timeout=timeout, workdir=root)
+    waves_raw = parse_wrdata(root / "waves.dat")
+    waves = {port_names[i - 1]: waves_raw[f"v{i}"]
+             for i in range(1, len(port_names) + 1) if f"v{i}" in waves_raw}
+    out = result.to_dict()
+    out["ports"] = port_names
+    out["sweep"] = waves_raw.get("v0", [])
+    out["waves"] = waves
+    out["extracted"] = {"devices": ext.devices, "nets": ext.nets}
+    return out
+
+
 def parse_wrdata(path: Path) -> dict[str, list[float]]:
     """ngspice `wrdata` output: first column is the sweep, then each vector
     is written as an interleaved (real, imag) column pair — DC/tran data has
