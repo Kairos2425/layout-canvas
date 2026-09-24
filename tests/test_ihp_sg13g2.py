@@ -1,4 +1,4 @@
-"""IHP SG13G2 block package + real PSP-model simulation smoke."""
+﻿"""IHP SG13G2 block package + real PSP-model simulation smoke."""
 
 import os
 import re
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import layout_canvas.blocks.ihp_sg13g2  # noqa: F401 — registers the blocks
+import layout_canvas.blocks.ihp_sg13g2  # noqa: F401 鈥?registers the blocks
 from layout_canvas.blocks import base
 from layout_canvas.compiler.netlist import compile_netlist
 from layout_canvas.ir.model import Design
@@ -114,7 +114,7 @@ VINN inn 0 0.6
 IT tail vss 10u
 RDP vdd outp 10k
 RDN vdd outn 10k
-X1 inp inn outp outn tail {variant}
+X1 inp inn outp outn tail vss {variant}
 .op
 """
     result = simulate_design(

@@ -155,8 +155,10 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
     rdiff = l2n.make_layer(L("diff"), "diff")
     rtap = l2n.make_layer(L("tap"), "tap") if recipe["tap"] else None
     rpoly = l2n.make_layer(L("poly"), "poly")
+    # NOTE: L() returns a layer *index* — index 0 is valid but falsy, so the
+    # presence test must be `is not None`, not truthiness.
     layers = {
-        k: (l2n.make_layer(L(k), k) if L(k) else None)
+        k: (l2n.make_layer(L(k), k) if L(k) is not None else None)
         for k in ("licon", "li1", "mcon", "met1", "via1", "met2", "via2",
                   "met3", "via3", "met4", "via4", "met5", "nsdm", "psdm",
                   "capm")
@@ -183,12 +185,11 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
     # all segment straps through the rail. Contacts must land on the
     # derived S/D regions (diff minus gate), connected further below.
     l2n.connect(rpoly, layers["licon"])
-    # Gate strapping workaround: in this engine, a raw polygon layer chained
-    # through a contact layer (poly->licon->li1) does not propagate into
-    # derived-region connectivity, while derived regions do (nsd->licon->li1
-    # works). Generated blocks always overlap the pad and the li riser at the
-    # contact site, so a direct poly<->li link is geometrically equivalent.
-    l2n.connect(rpoly, layers["li1"])
+    # NOTE: a direct poly<->li1 connect was tried and removed — at narrow
+    # widths the gate pad + riser geometry sits close enough to the S/D
+    # stub bottom edge that the raw-layer connect merged gate into the
+    # S/D nets. Gate taps are always covered by a contact, so the
+    # poly->licon->li1 chain is sufficient and geometrically honest.
     if rtap is not None:
         l2n.connect(rtap, layers["licon"])
     l2n.connect(layers["licon"], layers["li1"])

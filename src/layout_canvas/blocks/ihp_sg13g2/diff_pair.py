@@ -33,8 +33,9 @@ def register_diff_pair() -> None:
                 description="Fingers per input transistor (ABBA pattern)",
             ),
             ParamSpec(
-                name="width", type="float", default=1.0, unit="um", min=0.15, max=10.0,
-                description="Channel width per finger",
+                name="width", type="float", default=1.0, unit="um", min=0.32, max=10.0,
+                description="Channel width per finger (min set by CONT "
+                            "0.17 + 2x0.07 Activ enclosure)",
             ),
             ParamSpec(
                 name="length", type="float", default=0.34, unit="um", min=0.13, max=5.0,
@@ -97,16 +98,17 @@ def register_diff_pair() -> None:
                 continue
             cx = snap((sx0 + sx1) / 2)
             y_top = strap_y[net]
-            # CONT pitch must keep 0.18 edge spacing (0.17 hole + 0.18)
+            # CONT pitch must keep 0.18 edge spacing (0.17 hole + 0.18);
+            # inset keeps Metal1 enclosure >= 0.07 (Cnt.d)
             n_con = max(1, int((sx1 - sx0 - 0.34) / 0.36) + 1)
             for k in range(n_con):
-                kx = snap(sx0 + 0.17 + (sx1 - sx0 - 0.34) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                kx = snap(sx0 + 0.22 + (sx1 - sx0 - 0.44) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
                 rect(c, layers.CONT, kx - 0.085, diff_bottom + diff_h / 2 - 0.085,
                      kx + 0.085, diff_bottom + diff_h / 2 + 0.085)
-            rect(c, layers.METAL1, sx0 + 0.06, diff_bottom + diff_h / 2 - 0.15,
-                 sx1 - 0.06, diff_bottom + diff_h / 2 + 0.15)
-            rect(c, layers.METAL1, cx - 0.15, diff_bottom + diff_h / 2,
-                 cx + 0.15, y_top)
+            rect(c, layers.METAL1, sx0 + 0.06, diff_bottom + diff_h / 2 - 0.16,
+                 sx1 - 0.06, diff_bottom + diff_h / 2 + 0.16)
+            rect(c, layers.METAL1, cx - 0.16, diff_bottom + diff_h / 2,
+                 cx + 0.16, y_top + 0.11)
             rect(c, layers.VIA1, cx - 0.10, y_top - 0.10,
                      cx + 0.10, y_top + 0.10)
         # every strap must reach its port pad 鈥?a single-segment net
@@ -124,25 +126,34 @@ def register_diff_pair() -> None:
                     x1 = max(x1, port_x[net] + 0.24)
                 rect(c, layers.METAL2, x0, y - 0.24, x1, y + 0.24)
 
-        # gate strapping: A on METAL1, B stub->VIA1->METAL2 riser+strap
-        tap_y = diff_bottom - 0.15
-        gy_a, gy_b = diff_bottom - 0.62, diff_bottom - 1.20
+        # gate strapping: A on METAL1, B stub->VIA1->METAL2 riser+strap.
+        # tap_y is width-aware: the tap riser top (tap_y+0.16) must clear
+        # the segment strap bottom (diff_bottom+diff_h/2-0.16) by Metal1
+        # min-space 0.18 at every legal width; the pad still stays on the
+        # poly overhang and encloses the 0.16 contact by >=0.07 (Cnt.c/d).
+        tap_y = diff_bottom - max(0.53 - diff_h / 2, 0.17)
+        # gy_a tracks tap_y: the B stub bottom (gy_a+0.34) keeps M1
+        # min-space 0.18 to the A strap top (gy_a+0.15) and encloses the
+        # tap contact bottom; gy_b keeps Metal2 min-space 0.21 to the
+        # bottom ring rail (top edge 1.4).
+        gy_a, gy_b = tap_y - 0.55, tap_y - 1.10
         port_y = diff_bottom + diff_h / 2
         gate_xs = {"A": [], "B": []}
         for i, side in enumerate(pattern):
             fx = finger_x[i]
-            rect(c, layers.GATPOLY, fx - 0.2, tap_y - 0.15, fx + 0.2, diff_bottom)
-            rect(c, layers.CONT, fx - 0.085, tap_y - 0.085,
-                 fx + 0.085, tap_y + 0.085)
+            rect(c, layers.GATPOLY, fx - 0.2, tap_y - 0.17, fx + 0.2, diff_bottom - 0.005)
+            rect(c, layers.CONT, fx - 0.08, tap_y - 0.08,
+                 fx + 0.08, tap_y + 0.08)
             if side == "A":
-                rect(c, layers.METAL1, fx - 0.15, gy_a, fx + 0.15, tap_y + 0.15)
+                rect(c, layers.METAL1, fx - 0.16, gy_a, fx + 0.16,
+                     tap_y + 0.16)
             else:
-                rect(c, layers.METAL1, fx - 0.15, gy_a + 0.34, fx + 0.15,
-                     tap_y + 0.15)
+                rect(c, layers.METAL1, fx - 0.16, gy_a + 0.34, fx + 0.16,
+                     tap_y + 0.16)
                 rect(c, layers.VIA1, fx - 0.10, tap_y - 0.10,
                      fx + 0.10, tap_y + 0.10)
                 rect(c, layers.METAL2, fx - 0.15, gy_b, fx + 0.15,
-                     tap_y + 0.10)
+                     tap_y + 0.11)
             gate_xs[side].append(fx)
         px = {"A": total_width * 0.25, "B": total_width * 0.75}
         for side, xs in gate_xs.items():
@@ -177,8 +188,11 @@ def register_diff_pair() -> None:
             rect(c, layers.METAL2, px_ - 0.24, py_ - 0.24, px_ + 0.24, py_ + 0.24)
 
         # p-tap guard ring: ACTIV+PSDM rails + CONT + METAL1 + VIA1 + METAL2
+        # bottom rail yields to the B Metal2 strap: rail top (gy0+rw)
+        # keeps Metal2 min-space 0.21 below the strap bottom (gy_b-0.15)
+        # -> gy0 <= gy_b-0.86.
         gx0, gx1 = -0.9, total_width + 0.9
-        gy0, gy1 = 0.9, strap_y["outn"] + 1.0
+        gy0, gy1 = min(0.9, gy_b - 0.86), strap_y["outn"] + 1.0
         rw = 0.5
         for lay in (layers.ACTIV, layers.PSDM, layers.METAL1, layers.METAL2):
             rect(c, lay, gx0, gy0, gx0 + rw, gy1)

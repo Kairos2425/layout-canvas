@@ -1,4 +1,4 @@
-"""Interdigitated current mirror (L0 block)."""
+﻿"""Interdigitated current mirror (L0 block)."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def register_current_mirror() -> None:
         implant = layers.NSDM if type == "nmos" else layers.PSDM
         if type == "pmos":
             # pmos devices live in the n-well: extraction derives the
-            # p-active as diff & nwell & psdm — without the well there is
+            # p-active as diff & nwell & psdm 鈥?without the well there is
             # simply no device to extract.
             rect(c, layers.NWELL, -0.5, 2.5, total_width + 0.5, 3 + diff_h + 0.5)
         rect(c, layers.DIFF, 0, 3, total_width, 3 + diff_h)
@@ -106,7 +106,7 @@ def register_current_mirror() -> None:
                                else ("in" if pattern[j] == "A" else "out"))
 
         # S/D straps on met1 with 0.66 pitch (strap height 0.48 +
-        # min-space 0.14 + margin — see diff_pair for the failure modes).
+        # min-space 0.14 + margin 鈥?see diff_pair for the failure modes).
         strap_y = {"in": 3 + diff_h + 0.55, "vss": 3 + diff_h + 1.21,
                    "out": 3 + diff_h + 1.87}
         for (sx0, sx1), net in zip(segs, seg_net):
@@ -116,15 +116,16 @@ def register_current_mirror() -> None:
             y_top = strap_y[net]
             n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
             for k in range(n_con):
-                kx = snap(sx0 + 0.17 + (sx1 - sx0 - 0.34) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                # licon inset keeps li1 enclosure >= 0.06
+                kx = snap(sx0 + 0.21 + (sx1 - sx0 - 0.42) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
                 rect(c, layers.LICON, kx - 0.085, 3 + diff_h / 2 - 0.085,
                      kx + 0.085, 3 + diff_h / 2 + 0.085)
             rect(c, layers.LI, sx0 + 0.06, 3 + diff_h / 2 - 0.15,
                  sx1 - 0.06, 3 + diff_h / 2 + 0.15)
-            rect(c, layers.LI, cx - 0.15, 3 + diff_h / 2, cx + 0.15, y_top)
+            rect(c, layers.LI, cx - 0.15, 3 + diff_h / 2, cx + 0.15, y_top + 0.1)
             rect(c, layers.MCON, cx - 0.065, y_top - 0.065,
                  cx + 0.065, y_top + 0.065)
-        # Every strap must reach its port pad — a single-segment net
+        # Every strap must reach its port pad 鈥?a single-segment net
         # (out at fingers=2) otherwise leaves the pad on a floating
         # island and the pin never attaches to the devices (invisible
         # at cell level, fatal once instantiated).
@@ -149,7 +150,7 @@ def register_current_mirror() -> None:
             # met1 jumper into the source strap. Without it the well is a
             # floating per-cell net and LVS mismatches the reference bulk.
             # The tap sits in the gap between the first two gate pads and
-            # the jumper runs DOWN to the bottom ring rail — met1 crosses
+            # the jumper runs DOWN to the bottom ring rail 鈥?met1 crosses
             # the li1 gate strap without connecting, while any path up to
             # the source strap would have to squeeze between strap ends
             # and the ring rail (observed: 0.10-0.13 gaps, DRC fails).
@@ -167,16 +168,16 @@ def register_current_mirror() -> None:
                  ntx + 0.065, nty + 0.065)
             rect(c, layers.MET1, ntx - 0.15, 1.15, ntx + 0.15, nty + 0.15)
 
-        # Gate strapping — ALL fingers share the 'gate' net, so one li1
+        # Gate strapping 鈥?ALL fingers share the 'gate' net, so one li1
         # strap below the rail ties every gate tap (same construction as
         # the diff pair's A side).
         diff_bottom = 3.0
-        tap_y = diff_bottom - 0.15
-        gy = 2.45
+        tap_y = diff_bottom - max(0.50 - diff_h / 2, 0.15)
+        gy = tap_y - 0.55
         port_y = 3 + diff_h / 2
         px_gate = total_width * 0.5
         for fx in finger_x:
-            rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, diff_bottom)
+            rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, diff_bottom - 0.005)
             rect(c, layers.LICON, fx - 0.085, tap_y - 0.085,
                  fx + 0.085, tap_y + 0.085)
             rect(c, layers.LI, fx - 0.15, gy, fx + 0.15, tap_y + 0.15)
@@ -213,12 +214,12 @@ def register_current_mirror() -> None:
 
         def _ring_contacts(layer: tuple[int, int], half: float, pitch: float) -> None:
             x = gx0 + rw / 2
-            while x < gx1:
+            while x <= gx1 - rw:
                 for y in (gy0 + rw / 2, gy1 - rw / 2):
                     rect(c, layer, x - half, y - half, x + half, y + half)
                 x += pitch
             y = gy0 + rw / 2 + pitch
-            while y < gy1 - rw / 2:
+            while y <= gy1 - rw:
                 for x in (gx0 + rw / 2, gx1 - rw / 2):
                     rect(c, layer, x - half, y - half, x + half, y + half)
                 y += pitch

@@ -238,10 +238,7 @@ def _netlist_guard_ring(
     ring_width: float,
     ring_type: str,
 ) -> str:
-    port_name = "vss" if ring_type == "ptap" else "vdd"
     return f"""* Sky130 Guard Ring ({ring_type})
-.subckt guard_ring_{ring_type} tap
-* Substrate tie contact to {port_name}
-Rtap tap {port_name} 0.001
+.subckt guard_ring_{ring_type} tap tap_n tap_s tap_w tap_e
 .ends
 """

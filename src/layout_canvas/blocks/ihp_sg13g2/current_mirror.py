@@ -26,8 +26,9 @@ def register_current_mirror() -> None:
         params=[
             ParamSpec(name="fingers", type="int", default=4, min=2, max=64,
                       description="Fingers per side (input + output interleaved)"),
-            ParamSpec(name="width", type="float", default=0.5, unit="um", min=0.15, max=10.0,
-                      description="Channel width per finger"),
+            ParamSpec(name="width", type="float", default=0.5, unit="um", min=0.32, max=10.0,
+                      description="Channel width per finger (min set by CONT "
+                                  "0.17 + 2x0.07 Activ enclosure)"),
             ParamSpec(name="length", type="float", default=0.13, unit="um", min=0.13, max=10.0,
                       description="Gate length"),
             ParamSpec(name="type", type="str", default="nmos", choices=["nmos", "pmos"],
@@ -88,15 +89,16 @@ def register_current_mirror() -> None:
                 continue
             cx = snap((sx0 + sx1) / 2)
             y_top = strap_y[net]
+            # inset keeps Metal1 enclosure of CONT >= 0.07 (Cnt.d)
             n_con = max(1, int((sx1 - sx0 - 0.34) / 0.36) + 1)
             for k in range(n_con):
-                kx = snap(sx0 + 0.17 + (sx1 - sx0 - 0.34) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                kx = snap(sx0 + 0.22 + (sx1 - sx0 - 0.44) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
                 rect(c, layers.CONT, kx - 0.085, diff_bottom + diff_h / 2 - 0.085,
                      kx + 0.085, diff_bottom + diff_h / 2 + 0.085)
-            rect(c, layers.METAL1, sx0 + 0.06, diff_bottom + diff_h / 2 - 0.15,
-                 sx1 - 0.06, diff_bottom + diff_h / 2 + 0.15)
-            rect(c, layers.METAL1, cx - 0.15, diff_bottom + diff_h / 2,
-                 cx + 0.15, y_top)
+            rect(c, layers.METAL1, sx0 + 0.06, diff_bottom + diff_h / 2 - 0.16,
+                 sx1 - 0.06, diff_bottom + diff_h / 2 + 0.16)
+            rect(c, layers.METAL1, cx - 0.16, diff_bottom + diff_h / 2,
+                 cx + 0.16, y_top + 0.12)
             rect(c, layers.VIA1, cx - 0.10, y_top - 0.10,
                  cx + 0.10, y_top + 0.10)
         # every strap must reach its port pad 鈥?a single-segment net
@@ -123,29 +125,32 @@ def register_current_mirror() -> None:
             # jumper down to the bottom rail crosses only empty metal.
             ntx = snap(total_width - 0.5)
             nty = 1.8
-            rect(c, layers.ACTIV, ntx - 0.15, nty - 0.15,
-                 ntx + 0.15, nty + 0.15)
-            rect(c, layers.NSDM, ntx - 0.17, nty - 0.17,
-                 ntx + 0.17, nty + 0.17)
-            rect(c, layers.CONT, ntx - 0.085, nty - 0.085,
-                 ntx + 0.085, nty + 0.085)
-            rect(c, layers.METAL1, ntx - 0.15, nty - 0.15,
-                 ntx + 0.15, nty + 0.15)
+            rect(c, layers.ACTIV, ntx - 0.16, nty - 0.16,
+                 ntx + 0.16, nty + 0.16)
+            rect(c, layers.NSDM, ntx - 0.18, nty - 0.18,
+                 ntx + 0.18, nty + 0.18)
+            rect(c, layers.CONT, ntx - 0.08, nty - 0.08,
+                 ntx + 0.08, nty + 0.08)
+            rect(c, layers.METAL1, ntx - 0.16, nty - 0.16,
+                 ntx + 0.16, nty + 0.16)
             rect(c, layers.VIA1, ntx - 0.10, nty - 0.10,
                  ntx + 0.10, nty + 0.10)
             rect(c, layers.METAL2, ntx - 0.15, 1.15, ntx + 0.15, nty + 0.15)
 
         # gate strapping: all fingers share 'gate' 鈥?one METAL1 strap
-        tap_y = diff_bottom - 0.15
-        gy = diff_bottom - 0.55
+        # tap_y is width-aware: the tap riser top (tap_y+0.16) must clear
+        # the segment strap bottom (diff_bottom+diff_h/2-0.16) by Metal1
+        # min-space 0.18 even at minimum width.
+        tap_y = diff_bottom - max(0.53 - diff_h / 2, 0.17)
+        gy = tap_y - 0.50
         port_y = diff_bottom + diff_h / 2
         px_gate = total_width * 0.5
         for fx in finger_x:
-            rect(c, layers.GATPOLY, fx - 0.2, tap_y - 0.15, fx + 0.2,
+            rect(c, layers.GATPOLY, fx - 0.2, tap_y - 0.17, fx + 0.2,
                  diff_bottom)
-            rect(c, layers.CONT, fx - 0.085, tap_y - 0.085,
-                 fx + 0.085, tap_y + 0.085)
-            rect(c, layers.METAL1, fx - 0.15, gy, fx + 0.15, tap_y + 0.15)
+            rect(c, layers.CONT, fx - 0.08, tap_y - 0.08,
+                 fx + 0.08, tap_y + 0.08)
+            rect(c, layers.METAL1, fx - 0.16, gy, fx + 0.16, tap_y + 0.16)
         rect(c, layers.METAL1,
              min(min(finger_x), px_gate) - 0.15, gy - 0.15,
              max(max(finger_x), px_gate) + 0.15, gy + 0.15)

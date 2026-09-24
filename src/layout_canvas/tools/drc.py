@@ -67,10 +67,17 @@ def run_pya_drc(gds_path: Path, tech: str = "sky130") -> DRCResult:
                          ["GDS has no top cell"])
     top = tops[0]
     violations: list[dict[str, Any]] = []
+    regions: dict[tuple[int, int], Any] = {}
+
+    def _region(layer: int, dt: int):
+        key = (layer, dt)
+        if key not in regions:
+            it = db.RecursiveShapeIterator(ly, top, [ly.layer(layer, dt)])
+            regions[key] = db.Region(it)
+        return regions[key]
+
     for (layer, dt), checks in rules.items():
-        li = ly.layer(layer, dt)
-        shapes = db.RecursiveShapeIterator(ly, top, [li])
-        region = db.Region(shapes)
+        region = _region(layer, dt)
         if region.count() == 0:
             continue
         name = f"{layer}/{dt}"
@@ -90,6 +97,34 @@ def run_pya_drc(gds_path: Path, tech: str = "sky130") -> DRCResult:
                     "bbox": [bb.left * ly.dbu, bb.bottom * ly.dbu,
                              bb.right * ly.dbu, bb.top * ly.dbu],
                 })
+
+    # Enclosure checks: every cut shape must sit fully inside its enclosing
+    # layer(s), shrunk by the minimum enclosure. `not_inside` on the sized
+    # region flags vias/contacts whose edge is closer than the rule value —
+    # same construction the .drc decks use (enclosed-by with distance).
+    for label, (inner_l, inner_dt), outers, enc in _PYA_ENCLOSURE.get(tech, []):
+        inner = _region(inner_l, inner_dt)
+        if inner.count() == 0:
+            continue
+        outer = db.Region()
+        for ol, odt in outers:
+            outer += _region(ol, odt)
+        if outer.count() == 0:
+            violations.append({
+                "rule": f"{label}.enc",
+                "check": "no enclosing layer present",
+                "bbox": None,
+            })
+            continue
+        shrunk = outer.sized(-int(round(enc / ly.dbu)))
+        for poly in inner.not_inside(shrunk).each():
+            bb = poly.bbox()
+            violations.append({
+                "rule": f"{label}.enc",
+                "check": f"enclosure < {enc}um",
+                "bbox": [bb.left * ly.dbu, bb.bottom * ly.dbu,
+                         bb.right * ly.dbu, bb.top * ly.dbu],
+            })
     total = len(violations)
     report.write_text(
         f"DRC (klayout-pya engine, {tech} subset): "
@@ -140,6 +175,33 @@ _PYA_RULES: dict[str, dict[tuple[int, int], list[tuple[str, float]]]] = {
         (49, 0): [("width", 0.19), ("space", 0.22)],    # via3    Vn.a/b
         (50, 0): [("width", 0.20), ("space", 0.21)],    # metal4  Mn.a/b
     },
+}
+
+# Minimum enclosure rules (um): (label, cut-layer, enclosing-layers, enc).
+# The cut shape must be fully covered by the union of the enclosing layers
+# shrunk by ``enc``. IHP values are Cnt.c/Cnt.d, V1.c/V1.c1, Vn.c verbatim
+# from sg13g2_tech_default.json; sky130 values are the published headline
+# licon/mcon/via enclosure rules.
+_PYA_ENCLOSURE: dict[str, list[tuple[str, tuple[int, int], list[tuple[int, int]], float]]] = {
+    "sky130": [
+        ("licon.li", (66, 44), [(67, 20)], 0.06),                       # li1 encloses licon
+        ("mcon.li", (67, 44), [(67, 20)], 0.03),                        # li1 encloses mcon
+        ("mcon.m1", (67, 44), [(68, 20)], 0.03),                        # met1 encloses mcon
+        ("via.m1", (68, 44), [(68, 20)], 0.055),                        # met1 encloses via
+        ("via.m2", (68, 44), [(69, 20)], 0.055),                        # met2 encloses via
+        ("via2.m2", (69, 44), [(69, 20)], 0.065),                       # met2 encloses via2
+        ("via2.m3", (69, 44), [(70, 20)], 0.065),                       # met3 encloses via2
+    ],
+    "ihp_sg13g2": [
+        ("cnt.act", (6, 0), [(1, 0), (5, 0)], 0.07),                    # Cnt.c: activ|gatpoly enc cont
+        ("cnt.m1", (6, 0), [(8, 0)], 0.07),                             # Cnt.d: metal1 enc cont
+        ("v1.m1", (19, 0), [(8, 0)], 0.01),                             # V1.c: m1 enc via1
+        ("v1.m2", (19, 0), [(10, 0)], 0.01),                            # V1.c: m2 enc via1
+        ("v2.m2", (29, 0), [(10, 0)], 0.005),                           # Vn.c: m2 enc via2
+        ("v2.m3", (29, 0), [(30, 0)], 0.005),                           # Vn.c: m3 enc via2
+        ("v3.m3", (49, 0), [(30, 0)], 0.005),                           # Vn.c: m3 enc via3
+        ("v3.m4", (49, 0), [(50, 0)], 0.005),                           # Vn.c: m4 enc via3
+    ],
 }
 
 

@@ -1,4 +1,4 @@
-"""End-to-end MCP walkthrough over real stdio JSON-RPC.
+﻿"""End-to-end MCP walkthrough over real stdio JSON-RPC.
 
 Spawns the actual server subprocess and drives the full agent loop:
 open -> snapshot -> connectivity -> transact -> ppa -> compile -> netlist
@@ -153,7 +153,7 @@ VINN inn 0 0.9
 IT tail vss 10u
 RDP vdd outp 10k
 RDN vdd outn 10k
-X1 inp inn outp outn tail {variant}
+X1 inp inn outp outn tail vss {variant}
 .op
 """
         err, sim = mcp.tool("run_simulation", {

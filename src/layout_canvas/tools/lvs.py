@@ -143,7 +143,23 @@ def _run_pya_lvs(
 
     top_name = cell_name or _top_circuit_name(nl_a)
     ext_top = _flatten_to_top(nl_a, top_name) if top_name else None
-    ref_name = cell_name or _top_circuit_name(nl_b)
+    # The reference side picks the circuit named like the extracted top:
+    # device-abstract wrappers appended above are unreferenced subcircuits,
+    # so the unique-top heuristic fails on designs that instantiate none
+    # of them (e.g. a connectivity-only guard ring).
+    # The reference side may name its top subckt differently from the GDS
+    # cell (block-level calls use the cell name, e.g. "diff_pair_f4_...",
+    # while the emitter calls the subckt "diff_pair"). Prefer an exact
+    # match on cell_name, then on the extracted top name, and fall back to
+    # the unique-top heuristic — device-abstract wrappers are unreferenced
+    # subcircuits, so ambiguity means there is no clear reference top.
+    ref_name = None
+    for cand in dict.fromkeys(x for x in (cell_name, top_name) if x):
+        ref_name = next((c.name for c in nl_b.each_circuit()
+                         if c.name.upper() == cand.upper()), None)
+        if ref_name:
+            break
+    ref_name = ref_name or _ref_top_name(nl_b, top_name or cell_name)
     ref_top = _flatten_to_top(nl_b, ref_name) if ref_name else None
     if ext_top is None or ref_top is None:
         return LVSResult("error", None, None, cell_name, None, "", "", None,
@@ -264,6 +280,37 @@ def _top_circuit_name(nl) -> str | None:
             referenced.add(sc.circuit_ref().name)
     tops = [c.name for c in nl.each_circuit() if c.name not in referenced]
     return tops[0] if len(tops) == 1 else None
+
+
+def _ref_top_name(nl, hint: str | None) -> str | None:
+    """Pick the reference top when several unreferenced circuits exist.
+
+    Device-abstract wrappers appended to the reference file are unreferenced
+    subcircuits, so the plain unique-top heuristic fails. Prefer a circuit
+    whose name is contained in (or contains) the extracted top name —
+    emitters name subckts after the block ("diff_pair") while cells carry
+    parameter suffixes ("diff_pair_f4_w1.0_l0.15"). Otherwise take the
+    unreferenced circuit with the most devices; wrappers have none.
+    """
+    referenced = set()
+    for c in nl.each_circuit():
+        for sc in c.each_subcircuit():
+            referenced.add(sc.circuit_ref().name)
+    tops = [c for c in nl.each_circuit() if c.name not in referenced]
+    if len(tops) == 1:
+        return tops[0].name
+    if hint:
+        h = hint.upper()
+        named = [t.name for t in tops
+                 if t.name.upper() in h or h in t.name.upper()]
+        if len(named) == 1:
+            return named[0]
+    by_dev = sorted(tops,
+                    key=lambda c: sum(1 for _ in c.each_device()),
+                    reverse=True)
+    if by_dev and sum(1 for _ in by_dev[0].each_device()) > 0:
+        return by_dev[0].name
+    return None
 
 
 def _default_setup(tech: str) -> Path | None:

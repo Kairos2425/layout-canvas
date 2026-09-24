@@ -34,3 +34,8 @@ ENV/
 *.swo
 *~
 uv.lock
+
+.tmp_*
+waves.dat
+
+

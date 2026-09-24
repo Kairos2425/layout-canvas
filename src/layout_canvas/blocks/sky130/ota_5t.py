@@ -1,4 +1,4 @@
-"""5-transistor OTA (L2 block - composed stripes with real interconnect)."""
+﻿"""5-transistor OTA (L2 block - composed stripes with real interconnect)."""
 
 from __future__ import annotations
 
@@ -111,12 +111,14 @@ def register_ota_5t() -> None:
                 y_top = strap_ys[net]
                 n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
                 for k in range(n_con):
-                    kx = snap(sx0 + 0.17 + (sx1 - sx0 - 0.34) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                    # licon inset keeps li1 enclosure >= 0.06
+                    kx = snap(sx0 + 0.21 + (sx1 - sx0 - 0.42) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
                     rect(c, layers.LICON, kx - 0.085, y0 + diff_h / 2 - 0.085,
                          kx + 0.085, y0 + diff_h / 2 + 0.085)
                 rect(c, layers.LI, sx0 + 0.06, y0 + diff_h / 2 - 0.15,
                      sx1 - 0.06, y0 + diff_h / 2 + 0.15)
-                rect(c, layers.LI, cx - 0.15, y0 + diff_h / 2, cx + 0.15, y_top)
+                rect(c, layers.LI, cx - 0.15, y0 + diff_h / 2,
+                     cx + 0.15, y_top + 0.1)
                 rect(c, layers.MCON, cx - 0.065, y_top - 0.065,
                      cx + 0.065, y_top + 0.065)
             for net, y in strap_ys.items():
@@ -153,7 +155,7 @@ def register_ota_5t() -> None:
             if net == "tail":
                 # riser up to the tail strap
                 rect(c, layers.LI, cx - 0.15, tail_y0 + tail_h / 2,
-                     cx + 0.15, tail_strap_y)
+                     cx + 0.15, tail_strap_y + 0.1)
                 rect(c, layers.MCON, cx - 0.065, tail_strap_y - 0.065,
                      cx + 0.065, tail_strap_y + 0.065)
                 rect(c, layers.MET1, cx - 0.24, tail_strap_y - 0.24,
@@ -163,24 +165,26 @@ def register_ota_5t() -> None:
                 rect(c, layers.MCON, cx - 0.065, tail_y0 + tail_h / 2 - 0.065,
                      cx + 0.065, tail_y0 + tail_h / 2 + 0.065)
                 rect(c, layers.MET1, cx - 0.15, -0.65,
-                     cx + 0.15, tail_y0 + tail_h / 2)
+                     cx + 0.15, tail_y0 + tail_h / 2 + 0.1)
         # tail gate strap: pads on the poly overhang, per-finger li1 stubs
         # plus a horizontal strap joining them (without it the two gates
         # stay separate nets), then an mcon -> met1 port riser.
-        # tail gate strap: pads on the poly overhang BELOW the rail —
-        # a pad reaching into the diffusion lands the contact on the
+        # tail gate strap: pads on the poly overhang BELOW the rail 鈥?        # a pad reaching into the diffusion lands the contact on the
         # channel (parasitic) and skews the extracted gate length.
-        vbias_strap_y = tail_y0 - 0.45
+        # li1 top (strap_y+0.44) keeps li1 min-space below the tail stub
+        # bottom (tail_y0+diff_h/2-0.15); contacts stay on the poly
+        # overhang (cont top <= tail_y0-0.01).
+        vbias_strap_y = tail_y0 + min(diff_h / 2 - 0.78, -0.38)
         for fx in tail_fx:
             rect(c, layers.POLY, fx - 0.2, vbias_strap_y,
                  fx + 0.2, tail_y0 - 0.01)
             rect(c, layers.LICON, fx - 0.085, vbias_strap_y + 0.2,
                  fx + 0.085, vbias_strap_y + 0.37)
             rect(c, layers.LI, fx - 0.15, vbias_strap_y,
-                 fx + 0.15, vbias_strap_y + 0.42)
+                 fx + 0.15, vbias_strap_y + 0.44)
         vbias_px = tail_x0 + tail_pitch
         rect(c, layers.LI, tail_fx[0] - 0.15, vbias_strap_y,
-             tail_fx[1] + 0.15, vbias_strap_y + 0.35)
+             tail_fx[1] + 0.15, vbias_strap_y + 0.44)
         rect(c, layers.MCON, vbias_px - 0.065, vbias_strap_y + 0.2 - 0.065,
              vbias_px + 0.065, vbias_strap_y + 0.2 + 0.065)
         rect(c, layers.MET1, vbias_px - 0.19, vbias_strap_y + 0.2 - 0.19,
@@ -199,24 +203,27 @@ def register_ota_5t() -> None:
                     "out": dp_y0 + diff_h + 1.87}
         _sd_straps(dp_y0, dp_segs, dp_nets, dp_strap)
         # gate strapping: A on li1, B on met1 (same recipe as diff_pair)
-        tap_y = dp_y0 - 0.15
-        gy_a, gy_b = dp_y0 - 0.55, dp_y0 - 1.10
+        tap_y = dp_y0 - max(0.50 - diff_h / 2, 0.15)
+        # gy_a tracks tap_y: the B-side li1 stub bottom (gy_a+0.325)
+        # encloses the licon by >=0.06 while keeping li1 min-space to the
+        # A strap top (gy_a+0.15).
+        gy_a, gy_b = tap_y - 0.55, tap_y - 1.10
         port_y = dp_y0 + diff_h / 2
         gate_xs = {"A": [], "B": []}
         for i, side in enumerate(dp_pattern):
             fx = dp_fx[i]
-            rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, dp_y0)
+            rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, dp_y0 - 0.005)
             rect(c, layers.LICON, fx - 0.085, tap_y - 0.085,
                  fx + 0.085, tap_y + 0.085)
             if side == "A":
                 rect(c, layers.LI, fx - 0.15, gy_a, fx + 0.15, tap_y + 0.15)
             else:
-                rect(c, layers.LI, fx - 0.15, gy_a + 0.34, fx + 0.15,
+                rect(c, layers.LI, fx - 0.15, gy_a + 0.325, fx + 0.15,
                      tap_y + 0.15)
                 rect(c, layers.MCON, fx - 0.065, tap_y - 0.065,
                      fx + 0.065, tap_y + 0.065)
                 rect(c, layers.MET1, fx - 0.19, gy_b, fx + 0.19,
-                     tap_y + 0.10)
+                     tap_y + 0.13)
             gate_xs[side].append(fx)
         px = {"A": total_width * 0.25, "B": total_width * 0.75 + 0.3}
         for side, xs in gate_xs.items():
@@ -271,7 +278,7 @@ def register_ota_5t() -> None:
         ld_tap_y = ld_y0 - 0.15
         ld_gy = ld_y0 - 0.55
         for fx in ld_fx:
-            rect(c, layers.POLY, fx - 0.2, ld_tap_y - 0.15, fx + 0.2, ld_y0)
+            rect(c, layers.POLY, fx - 0.2, ld_tap_y - 0.15, fx + 0.2, ld_y0 - 0.005)
             rect(c, layers.LICON, fx - 0.085, ld_tap_y - 0.085,
                  fx + 0.085, ld_tap_y + 0.085)
             rect(c, layers.LI, fx - 0.15, ld_gy, fx + 0.15, ld_tap_y + 0.15)
@@ -279,7 +286,7 @@ def register_ota_5t() -> None:
              max(ld_fx) + 0.15, ld_gy + 0.15)
         # n-well bulk tie to source: n-tap at the stripe's right edge,
         # then via1 -> met2 up to the vdd strap. met2 crosses the
-        # out1/out straps without connecting — a met1 jumper would short
+        # out1/out straps without connecting 鈥?a met1 jumper would short
         # straight through them.
         ntx = snap(ld_x0 + ld_pitch * ld_n - 0.1)
         nty = ld_y0 - 0.35
@@ -290,8 +297,7 @@ def register_ota_5t() -> None:
         rect(c, layers.MCON, ntx - 0.065, nty - 0.065,
              ntx + 0.065, nty + 0.065)
         rect(c, layers.MET1, ntx - 0.19, nty - 0.19, ntx + 0.19, nty + 0.19)
-        # extend the vdd strap past the tap so the upper via lands on it —
-        # and past the vdd port x, or the port pad floats off the strap
+        # extend the vdd strap past the tap so the upper via lands on it 鈥?        # and past the vdd port x, or the port pad floats off the strap
         # (same single-segment failure as the mirror out pad)
         xs_vdd = [snap((s[0] + s[1]) / 2) for s, n in zip(ld_segs, ld_nets)
                   if n == "vdd" and s[1] - s[0] >= 0.4]
@@ -308,7 +314,7 @@ def register_ota_5t() -> None:
             rect(c, layers.VIA1, x - 0.13, y - 0.13, x + 0.13, y + 0.13)
 
         # riser channels must be picked from the actual strap extents and
-        # kept apart — fixed fractions placed out1/out/ntap risers on
+        # kept apart 鈥?fixed fractions placed out1/out/ntap risers on
         # colliding channels at non-default finger counts (observed: out
         # and nwell-bulk risers merging at f8 -> out|vdd).
         def _seg_xrange(segs, nets, name):
@@ -347,8 +353,9 @@ def register_ota_5t() -> None:
              x_out1 + 0.19, dp_strap["out1"] + 0.19)
         _via1(x_out1, dp_strap["out1"])
         _via1(x_out1, ld_strap["out1"])
-        rect(c, layers.MET2, x_out1 - 0.19, dp_strap["out1"],
-             x_out1 + 0.19, ld_strap["out1"])
+        # met2 riser overruns each via by the met2 enclosure (0.065)
+        rect(c, layers.MET2, x_out1 - 0.19, dp_strap["out1"] - 0.19,
+             x_out1 + 0.19, ld_strap["out1"] + 0.19)
         # load gate strap joins out1 through a via into the same riser
         gx = snap((min(ld_fx) + max(ld_fx)) / 2)
         if abs(gx - x_out1) < 0.55:
@@ -358,7 +365,7 @@ def register_ota_5t() -> None:
                 gx = snap(min(xs_g, key=lambda x: abs(x - gx)))
         rect(c, layers.MCON, gx - 0.065, ld_gy - 0.065,
              gx + 0.065, ld_gy + 0.065)
-        # met1 riser touches the out1 strap directly (same layer) — a via
+        # met1 riser touches the out1 strap directly (same layer) 鈥?a via
         # here would bridge the strap into whatever met2 riser passes
         # over gx (observed: out1 shorted to the out riser at f2)
         rect(c, layers.MET1, gx - 0.19, ld_gy - 0.19, gx + 0.19,
@@ -373,20 +380,21 @@ def register_ota_5t() -> None:
              x_out + 0.19, dp_strap["out"] + 0.19)
         _via1(x_out, dp_strap["out"])
         _via1(x_out, ld_strap["out"])
-        rect(c, layers.MET2, x_out - 0.19, dp_strap["out"],
-             x_out + 0.19, ld_strap["out"])
+        rect(c, layers.MET2, x_out - 0.19, dp_strap["out"] - 0.19,
+             x_out + 0.19, ld_strap["out"] + 0.19)
         # n-well bulk: tap pad -> via -> met2 -> via -> vdd strap
         _via1(ntx, nty)
         _via1(ntx, ld_strap["vdd"])
-        rect(c, layers.MET2, ntx - 0.19, nty, ntx + 0.19, ld_strap["vdd"])
+        rect(c, layers.MET2, ntx - 0.19, nty - 0.19,
+             ntx + 0.19, ld_strap["vdd"] + 0.19)
         # tail: dp tail strap -> tail drain strap (down, on met2)
         x_tail = snap(vbias_px + tail_pitch / 2)
         _via1(x_tail, dp_strap["tail"])
         _via1(x_tail, tail_strap_y)
         rect(c, layers.MET1, x_tail - 0.19, tail_strap_y - 0.19,
              x_tail + 0.19, tail_strap_y + 0.19)
-        rect(c, layers.MET2, x_tail - 0.19, tail_strap_y,
-             x_tail + 0.19, dp_strap["tail"])
+        rect(c, layers.MET2, x_tail - 0.19, tail_strap_y - 0.19,
+             x_tail + 0.19, dp_strap["tail"] + 0.19)
         rect(c, layers.MET1, tail_fx[1] - tail_pitch / 2 - 0.19,
              tail_strap_y - 0.19, x_tail + 0.19, tail_strap_y + 0.19)
 
@@ -411,12 +419,12 @@ def register_ota_5t() -> None:
 
         def _ring_contacts(layer, half, pitch):
             x = gx0 + rw / 2
-            while x < gx1:
+            while x <= gx1 - rw:
                 for y in (gy0 + rw / 2, gy1 - rw / 2):
                     rect(c, layer, x - half, y - half, x + half, y + half)
                 x += pitch
             y = gy0 + rw / 2 + pitch
-            while y < gy1 - rw / 2:
+            while y <= gy1 - rw:
                 for x in (gx0 + rw / 2, gx1 - rw / 2):
                     rect(c, layer, x - half, y - half, x + half, y + half)
                 y += pitch

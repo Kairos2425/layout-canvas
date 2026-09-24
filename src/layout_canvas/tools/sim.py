@@ -85,7 +85,9 @@ def simulate_design(
             ],
             unresolved_blocks=unresolved,
         )
-    deck = _build_deck(compile_netlist(design), stimulus, includes or [])
+    deck = _build_deck(
+        _rewrite_mos_cards(compile_netlist(design), design.pdk),
+        stimulus, includes or [])
     return run_netlist(
         deck, simulator=simulator, executable=executable, timeout=timeout, workdir=workdir
     )
@@ -385,6 +387,24 @@ def _emitter_missing(block_name: str) -> bool:
 # --- Post-layout simulation ----------------------------------------------
 # The extracted netlist is the physical truth: run IT through the foundry
 # models, not the golden schematic. Two surgeries make the extracted text
+def _rewrite_mos_cards(netlist: str, pdk: str) -> str:
+    """Golden-netlist M-cards carry the PDK wrapper subckt name as their
+    model token (``M1 d g s b sky130_fd_pr__nfet_01v8 w=.. l=..``). ngspice
+    resolves M-cards against .model only, so rewrite them as X-cards onto
+    the wrapper subckt — the same trick the extracted path uses."""
+    wrappers = set(_leaf_to_wrapper(pdk).values())
+    out = []
+    for line in netlist.splitlines():
+        m = re.match(r"^(M\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)(.*)$",
+                     line)
+        if m and m.group(6) in wrappers:
+            out.append(f"X_{m.group(1)} {m.group(2)} {m.group(3)} "
+                       f"{m.group(4)} {m.group(5)} {m.group(6)}{m.group(7)}")
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 # simulatable: leaf M-cards are rewritten as X-cards onto the PDK's wrapper
 # subckts (extracted ``nfet_01v8`` -> ``sky130_fd_pr__nfet_01v8`` — an
 # M-card cannot call a subckt), and the root circuit's .SUBCKT/.ENDS shell
@@ -427,13 +447,17 @@ def simulate_extracted(
     vdd: float = 1.8,
     tran_stop: str = "5u",
     tran_step: str = "10n",
+    stimulus: str | None = None,
+    probes: list[str] | None = None,
     simulator: str = "auto",
     executable: str | None = None,
     timeout: int = 120,
     workdir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Post-layout simulation: compile → GDS → extract → simulate the
-    extracted netlist. Fails closed on extraction errors."""
+    extracted netlist. Fails closed on extraction errors. ``stimulus``
+    supplies a caller testbench (sources + .control); ``probes`` adds
+    named extracted nets to the wrdata columns."""
     from layout_canvas.compiler.compile import compile_design
     from layout_canvas.tools.extract import extract_netlist
 
@@ -465,6 +489,18 @@ def simulate_extracted(
         else:
             lines.append(line)
     flat = _unwrap_extracted_top("\n".join(lines))
+    if flat is not None:
+        # Extracted instance names carry '$' (X$1) which ngspice cannot
+        # parse inside a hierarchical probe vector (x$1.tail fails as
+        # "1.tail"). Renaming the instance line is safe — the name is
+        # local to the deck and never referenced elsewhere.
+        # lowercase too: ngspice stores instance vectors lowercased, and
+        # probing v(Xd1.tail) misses while v(xd1.tail) resolves.
+        flat = re.sub(r"^X\$(\d+)", r"xd\1", flat, flags=re.MULTILINE)
+        # Anonymous nets come out '\$11' — ngspice treats '$' as variable
+        # syntax so neither v(\$11) nor v($11) resolves. Rename to plain
+        # n<digits> everywhere (token-boundary safe).
+        flat = re.sub(r"\\\$(\d+)\b", r"n\1", flat)
     if flat is None:
         return {"status": "failed",
                 "errors": ["could not identify the extracted root circuit"]}
@@ -473,34 +509,96 @@ def simulate_extracted(
 
     # Bias targets: the design's port names that survive as extracted net
     # names (labels). Anything not extracted is skipped rather than
-    # creating a phantom floating node.
+    # creating a phantom floating node. ``probes`` widens wrdata to any
+    # named net in the extracted top (internal nodes like ``tail``);
+    # ``stimulus`` replaces the whole auto-bias block with caller text
+    # (sources + .control) for a real testbench.
     port_names = [p.name for p in design.ports
                   if re.search(rf"\b{re.escape(p.name)}\b", flat)]
-    stimulus_lines = [_bias_line(p, vdd) for p in port_names]
-    if not any(p.lower() in ("vdd", "vcc") for p in port_names):
-        stimulus_lines.insert(0, f"V_VDD vdd 0 {vdd}")
-    if not any(p.lower() in ("vss", "gnd") for p in port_names):
-        stimulus_lines.insert(0, "V_VSS vss 0 0")
-    vectors = " ".join(f"v({p})" for p in port_names)
-    run = "op" if analysis == "op" else f"tran {tran_step} {tran_stop}"
-    stimulus_lines += [".control"]
-    stimulus_lines.extend(default_control_prelude(design.pdk))
-    stimulus_lines += [run, f"wrdata waves.dat {vectors}", ".endc"]
+    # Probe resolution: a top-level extracted net probes as v(net); a name
+    # that only exists inside an instance subckt (e.g. the diff pair's
+    # 'tail') probes hierarchically as v(x<inst>.<name>) — ngspice exposes
+    # subcircuit nodes through the instance name. Each entry is
+    # (wave label, vector expression).
+    subckts = {m.group(1): m.group(0)
+               for m in re.finditer(
+                   r"^\.SUBCKT\s+(\S+)\s.*?^\.ENDS[^\n]*", flat,
+                   re.MULTILINE | re.DOTALL | re.IGNORECASE)}
+    # subckt pin lists — for mapping an instance pin to the top net
+    sub_pins = {m.group(1): m.group(2).split()
+                for m in re.finditer(
+                    r"^\.SUBCKT\s+(\S+)\s+([^\n]*)", flat,
+                    re.MULTILINE | re.IGNORECASE)}
+    top_text = re.sub(r"^\.SUBCKT\s+\S+\s.*?^\.ENDS[^\n]*", "", flat,
+                      flags=re.MULTILINE | re.DOTALL | re.IGNORECASE)
+    # comment lines ("* pin tail" etc.) are not connectivity — strip them
+    # or a pin annotation would resolve as a top-level probe net.
+    top_text = re.sub(r"^\*[^\n]*", "", top_text, flags=re.MULTILINE)
+    # instance -> (args, subckt name); ngspice collapses subckt PIN nodes
+    # onto the parent net, so a pin probe must name the top-level net the
+    # pin binds to — v(xd1.tail) fails while v(<topnet>) resolves.
+    insts = [(m.group(1), m.group(2).split(), m.group(3))
+             for m in re.finditer(
+                 r"^([Xx]\S+)\s+(.*?)\s+(\S+)\s*$", top_text, re.MULTILINE)]
+
+    def _resolve(name: str) -> list[tuple[str, str]]:
+        if re.search(rf"\b{re.escape(name)}\b", top_text):
+            return [(name, f"v({name})")]
+        out = []
+        for xname, args, subname in insts:
+            body = subckts.get(subname, "")
+            pins = sub_pins.get(subname, [])
+            if name in pins and pins.index(name) < len(args):
+                # pin -> the top net bound at that argument position
+                top_net = args[pins.index(name)]
+                out.append((f"{xname}.{name}", f"v({top_net})"))
+            elif re.search(rf"\b{re.escape(name)}\b", body):
+                # true internal node survives hierarchically
+                out.append((f"{xname}.{name}", f"v({xname}.{name})"))
+        return out
+
+    probe_vecs: list[tuple[str, str]] = [(p, f"v({p})") for p in port_names]
+    unresolved_probes: list[str] = []
+    for extra in probes or []:
+        hits = _resolve(extra)
+        if not hits:
+            unresolved_probes.append(extra)
+        for label, vec in hits:
+            if vec not in [v for _, v in probe_vecs]:
+                probe_vecs.append((label, vec))
+    probe_names = [label for label, _ in probe_vecs]
+
+    if stimulus:
+        stimulus_text = stimulus.rstrip()
+    else:
+        stimulus_lines = [_bias_line(p, vdd) for p in port_names]
+        if not any(p.lower() in ("vdd", "vcc") for p in port_names):
+            stimulus_lines.insert(0, f"V_VDD vdd 0 {vdd}")
+        if not any(p.lower() in ("vss", "gnd") for p in port_names):
+            stimulus_lines.insert(0, "V_VSS vss 0 0")
+        vectors = " ".join(vec for _, vec in probe_vecs)
+        run = "op" if analysis == "op" else f"tran {tran_step} {tran_stop}"
+        stimulus_lines += [".control"]
+        stimulus_lines.extend(default_control_prelude(design.pdk))
+        stimulus_lines += [run, f"wrdata waves.dat {vectors}", ".endc"]
+        stimulus_text = "\n".join(stimulus_lines)
 
     prelude = default_model_prelude(design.pdk)
     deck_parts = ["* layout-canvas post-layout deck", ""]
     if prelude:
         deck_parts += [prelude, ""]
-    deck_parts += [flat.rstrip(), "", "\n".join(stimulus_lines), "", ".end"]
+    deck_parts += [flat.rstrip(), "", stimulus_text, "", ".end"]
 
     result = run_netlist(
         "\n".join(deck_parts), simulator=simulator,
         executable=executable, timeout=timeout, workdir=root)
     waves_raw = parse_wrdata(root / "waves.dat")
-    waves = {port_names[i - 1]: waves_raw[f"v{i}"]
-             for i in range(1, len(port_names) + 1) if f"v{i}" in waves_raw}
+    waves = {probe_names[i - 1]: waves_raw[f"v{i}"]
+             for i in range(1, len(probe_names) + 1) if f"v{i}" in waves_raw}
     out = result.to_dict()
-    out["ports"] = port_names
+    out["ports"] = probe_names
+    if unresolved_probes:
+        out["unresolved_probes"] = unresolved_probes
     out["sweep"] = waves_raw.get("v0", [])
     out["waves"] = waves
     out["extracted"] = {"devices": ext.devices, "nets": ext.nets}

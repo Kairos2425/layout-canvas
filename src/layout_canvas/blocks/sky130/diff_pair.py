@@ -1,4 +1,4 @@
-"""Common-centroid differential pair (L1 block)."""
+﻿"""Common-centroid differential pair (L1 block)."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ def register_diff_pair() -> None:
         rect(c, layers.DIFF, 0, 3, total_width, 3 + diff_h)
         rect(c, layers.NSDM, -0.1, 2.9, total_width + 0.1, 3 + diff_h + 0.1)
 
-        # Poly gates — finger width in x is the channel LENGTH
+        # Poly gates 鈥?finger width in x is the channel LENGTH
         half_l = length / 2
         poly_y0 = snap(2.8)
         poly_y1 = snap(3 + diff_h + 0.2)
@@ -89,7 +89,7 @@ def register_diff_pair() -> None:
             x = snap(i * finger_pitch + finger_pitch / 2)
             rect(c, layers.POLY, x - half_l, poly_y0, x + half_l, poly_y1)
 
-        # The tail current source is a separate device (reference X3) — not
+        # The tail current source is a separate device (reference X3) 鈥?not
         # part of this cell. The 'tail' pin is the shared-source net itself
         # and is exported on the tail strap like the two drains.
 
@@ -118,8 +118,7 @@ def register_diff_pair() -> None:
                                else ("outp" if pattern[j] == "A" else "outn"))
 
         # Per-segment contact column + li1 riser up to its met1 strap.
-        # Strap spacing must clear the strap height (0.48) plus margin —
-        # 0.4 pitch made neighbouring straps physically overlap (real short,
+        # Strap spacing must clear the strap height (0.48) plus margin 鈥?        # 0.4 pitch made neighbouring straps physically overlap (real short,
         # only visible once same-layer connectivity is honoured).
         # Strap spacing must clear the strap height (0.48) plus met1
         # min-space (0.14): 0.66 pitch. Tighter pitches caused both real
@@ -134,16 +133,19 @@ def register_diff_pair() -> None:
             # contact array on the segment (licon -> li1 -> mcon -> met1)
             n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
             for k in range(n_con):
-                kx = snap(sx0 + 0.17 + (sx1 - sx0 - 0.34) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                # licon inset keeps li1 enclosure >= 0.06 (licon edge at
+                # sx0+0.125 vs li1 edge at sx0+0.06)
+                kx = snap(sx0 + 0.21 + (sx1 - sx0 - 0.42) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
                 rect(c, layers.LICON, kx - 0.085, 3 + diff_h / 2 - 0.085,
                      kx + 0.085, 3 + diff_h / 2 + 0.085)
             rect(c, layers.LI, sx0 + 0.06, 3 + diff_h / 2 - 0.15,
                  sx1 - 0.06, 3 + diff_h / 2 + 0.15)
-            # li1 riser from segment to the strap
-            rect(c, layers.LI, cx - 0.15, 3 + diff_h / 2, cx + 0.15, y_top)
+            # li1 riser from segment to the strap 鈥?runs past the mcon pad
+            # (mcon at y_top+-0.065, li1 enclosure 0.03 -> riser top y_top+0.095)
+            rect(c, layers.LI, cx - 0.15, 3 + diff_h / 2, cx + 0.15, y_top + 0.1)
             rect(c, layers.MCON, cx - 0.065, y_top - 0.065,
                  cx + 0.065, y_top + 0.065)
-        # three horizontal met1 straps — each strap must reach its port
+        # three horizontal met1 straps 鈥?each strap must reach its port
         # pad: a single-segment net (e.g. outn at fingers=2) otherwise
         # leaves the port pad on a floating island and the pin never
         # attaches to the devices (invisible at cell level, fatal when
@@ -165,16 +167,19 @@ def register_diff_pair() -> None:
         # layers so they can never cross: side A straps on li1, side B
         # transitions li1->mcon->met1 at each tap and straps on met1
         # (met1 passes over the A li1 strap without connecting).
-        # Tap pads stay inside the poly overhang — poly over diffusion
+        # Tap pads stay inside the poly overhang 鈥?poly over diffusion
         # would create parasitic channels.
         diff_bottom = 3.0
-        tap_y = diff_bottom - 0.15                    # 2.85, inside overhang
-        gy_a, gy_b = 2.45, 1.90                       # li1 strap / met1 strap
+        # tap row is width-aware: the tap riser top (tap_y+0.15) must clear
+        # the segment strap bottom (diff_bottom+diff_h/2-0.15) by li1
+        # min-space 0.17 even at minimum width.
+        tap_y = diff_bottom - max(0.50 - diff_h / 2, 0.15)
+        gy_a, gy_b = tap_y - 0.55, tap_y - 1.10       # li1 strap / met1 strap
         port_y = 3 + diff_h / 2
         gate_xs = {"A": [], "B": []}
         for i, side in enumerate(pattern):
             fx = finger_x[i]
-            rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, diff_bottom)
+            rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, diff_bottom - 0.005)
             rect(c, layers.LICON, fx - 0.085, tap_y - 0.085,
                  fx + 0.085, tap_y + 0.085)
             if side == "A":
@@ -182,16 +187,16 @@ def register_diff_pair() -> None:
                 rect(c, layers.LI, fx - 0.15, gy_a, fx + 0.15, tap_y + 0.15)
             else:
                 # li1 stub at tap -> mcon -> met1 riser down to the B strap.
-                # Stub bottom clears the A li1 strap (top 2.6) by li1
-                # min-space 0.17+margin.
-                rect(c, layers.LI, fx - 0.15, 2.79, fx + 0.15, tap_y + 0.15)
+                # Stub bottom (tap_y-0.15) encloses the licon by >= 0.06 and
+                # clears the A li1 strap top (gy_a+0.15 = tap_y-0.40) by 0.25.
+                rect(c, layers.LI, fx - 0.15, tap_y - 0.15, fx + 0.15, tap_y + 0.15)
                 rect(c, layers.MCON, fx - 0.065, tap_y - 0.065,
                      fx + 0.065, tap_y + 0.065)
                 rect(c, layers.MET1, fx - 0.19, gy_b, fx + 0.19, tap_y + 0.10)
             gate_xs[side].append(fx)
         # Gate port risers both run on met1: an li1 riser routed up through
         # the diff area overlaps the S/D segment li stubs and shorts the
-        # input to a drain — observed as inp|outp merging once same-layer
+        # input to a drain 鈥?observed as inp|outp merging once same-layer
         # connectivity is honoured. The A strap is li1, so it transitions
         # through mcon at the tap point; the B strap is already met1.
         px = {"A": total_width * 0.25, "B": total_width * 0.75 + 0.3}
@@ -213,7 +218,7 @@ def register_diff_pair() -> None:
             rect(c, layers.MET1, px[side] - 0.19, gy_a if side == "A" else gy_b,
                  px[side] + 0.19, port_y)
 
-        # Ports — positioned over the geometry that carries each net so pin
+        # Ports 鈥?positioned over the geometry that carries each net so pin
         # labels and access stacks land on the right strap, never a
         # neighbouring one. Labels only attach to same-cell conductor
         # shapes, so every label gets an in-cell met1 pad that overlaps the
@@ -237,8 +242,11 @@ def register_diff_pair() -> None:
         # Real cells tie the bulk somewhere physical: the tap frame joins
         # the global psub net in extraction (connect(rpsub, ptap)) and the
         # met1 ring exports it as the 'vss' pin.
+        # the bottom rail yields to the B met1 strap at narrow widths:
+        # rail top (gy0+rw) must keep met1 min-space below the strap
+        # bottom (gy_b-0.19) -> gy0 <= gy_b-0.83.
         gx0, gx1 = -0.9, total_width + 0.9
-        gy0, gy1 = 0.9, strap_y["outn"] + 1.0
+        gy0, gy1 = min(0.9, gy_b - 0.83), strap_y["outn"] + 1.0
         rw = 0.5
         for lay in (layers.TAP, layers.LI, layers.MET1):
             rect(c, lay, gx0, gy0, gx0 + rw, gy1)              # left rail
@@ -247,13 +255,16 @@ def register_diff_pair() -> None:
             rect(c, lay, gx0, gy1 - rw, gx1, gy1)             # top rail
         # contact arrays along each rail (licon on tap, mcon on li1->met1)
         def _ring_contacts(layer: tuple[int, int], half: float, pitch: float) -> None:
+            # contacts stay on the rails' straight spans 鈥?a hole landing in
+            # the L-corner gets only corner coverage, which fails the
+            # enclosing layer's enclosure check once it is shrunk.
             x = gx0 + rw / 2
-            while x < gx1:
+            while x <= gx1 - rw:
                 for y in (gy0 + rw / 2, gy1 - rw / 2):
                     rect(c, layer, x - half, y - half, x + half, y + half)
                 x += pitch
             y = gy0 + rw / 2 + pitch
-            while y < gy1 - rw / 2:
+            while y <= gy1 - rw:
                 for x in (gx0 + rw / 2, gx1 - rw / 2):
                     rect(c, layer, x - half, y - half, x + half, y + half)
                 y += pitch
@@ -267,7 +278,7 @@ def register_diff_pair() -> None:
 def _netlist_diff_pair(fingers: int, width: float, length: float, tail_width: float) -> str:
     # Finger-level reference: the layout draws every finger as a physical
     # device, so the schematic is written at finger granularity (extraction
-    # yields one device per finger — comparing logical nf= devices would
+    # yields one device per finger 鈥?comparing logical nf= devices would
     # need device combination and hides real connectivity faults).
     # Segment ownership mirrors the layout: segment between different-device
     # fingers is the shared source, between same-device fingers the drain.

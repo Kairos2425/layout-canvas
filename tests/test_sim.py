@@ -1,4 +1,4 @@
-"""Tests for the fail-closed ngspice runner."""
+﻿"""Tests for the fail-closed ngspice runner."""
 
 import os
 import re
@@ -87,7 +87,7 @@ VINN inn 0 0.9
 IT tail vss 10u
 RDP vdd outp 10k
 RDN vdd outn 10k
-X1 inp inn outp outn tail {variant}
+X1 inp inn outp outn tail vss {variant}
 .op
 """
     result = simulate_design(
@@ -97,7 +97,7 @@ X1 inp inn outp outn tail {variant}
         executable=_ngspice_binary(),
         workdir=tmp_path,
     )
-    # Illustrative level-1 models, real ngspice — asserts the interface works;
+    # Illustrative level-1 models, real ngspice 鈥?asserts the interface works;
     # says nothing about silicon (per ADR 0005 / illustrative-model rule).
     assert result.status == "passed", result.errors
     assert result.log_path and result.log_path.is_file()
@@ -133,7 +133,7 @@ VINN inn 0 0.9
 IT tail vss 10u
 RDP vdd outp 10k
 RDN vdd outn 10k
-X1 inp inn outp outn tail {variant}
+X1 inp inn outp outn tail vss {variant}
 .op
 """
     result = simulate_design(

@@ -175,6 +175,8 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
                     design,
                     analysis=str(payload.get("analysis", "op")),
                     vdd=float(payload.get("vdd", 1.8)),
+                    stimulus=payload.get("stimulus"),
+                    probes=payload.get("probes"),
                     simulator="ngspice", executable=exe)
             else:
                 res = simulate_auto(

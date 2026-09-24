@@ -91,10 +91,8 @@ def register_guard_ring() -> None:
 
 def _netlist_guard_ring(inner_width: float, inner_height: float, ring_width: float,
                         ring_type: str) -> str:
-    port = "vss" if ring_type == "ptap" else "vdd"
     return f"""* IHP SG13G2 guard ring ({ring_type})
-.subckt guard_ring_{ring_type} tap
-Rtap tap {port} 0.001
+.subckt guard_ring_{ring_type} tap tap_n tap_s tap_w tap_e
 .ends
 """
 

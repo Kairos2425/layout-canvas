@@ -363,8 +363,10 @@ def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
     # MET3 never touches in-cell metal; each end needs a via1+via2 stack.
     def _stack(x: float, y: float) -> None:
         """met1 <-> met3 via stack at a point (pin pad or trunk end)."""
+        # met2 pad must enclose via1 (0.055) and via2 (0.065): half 0.20
+        # gives 0.07 around the 0.13-half vias.
         rect(top, layers.VIA1, x - 0.13, y - 0.13, x + 0.13, y + 0.13)
-        rect(top, layers.MET2, x - 0.19, y - 0.19, x + 0.19, y + 0.19)
+        rect(top, layers.MET2, x - 0.20, y - 0.20, x + 0.20, y + 0.20)
         rect(top, layers.VIA2, x - 0.13, y - 0.13, x + 0.13, y + 0.13)
 
     def _riser(x: float, y_a: float, y_b: float, w: float) -> float:
