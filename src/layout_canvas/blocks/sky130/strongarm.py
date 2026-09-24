@@ -284,8 +284,13 @@ def register_strongarm() -> None:
         xs_vdd = [snap((s[0] + s[1]) / 2) for s, n in zip(pl_segs, pl_nets)
                   if n == "vdd" and s[1] - s[0] >= 0.4]
         if xs_vdd:
-            rect(c, layers.MET1, min(xs_vdd) - 0.2, pl_strap["vdd"] - 0.24,
-                 max(max(xs_vdd) + 0.2, ntx + 0.19), pl_strap["vdd"] + 0.24)
+            # strap must also cover the vdd port pad (0.5 * total_width)
+            vdd_port_x = snap(total_width * 0.5)
+            rect(c, layers.MET1,
+                 min(min(xs_vdd) - 0.2, vdd_port_x - 0.24),
+                 pl_strap["vdd"] - 0.24,
+                 max(max(xs_vdd) + 0.2, ntx + 0.19, vdd_port_x + 0.24),
+                 pl_strap["vdd"] + 0.24)
 
         # ---------------- interconnect (met2 risers + via1) --------------
         def _strap_via(x, y, on_li1):

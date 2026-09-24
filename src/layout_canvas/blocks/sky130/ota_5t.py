@@ -290,12 +290,18 @@ def register_ota_5t() -> None:
         rect(c, layers.MCON, ntx - 0.065, nty - 0.065,
              ntx + 0.065, nty + 0.065)
         rect(c, layers.MET1, ntx - 0.19, nty - 0.19, ntx + 0.19, nty + 0.19)
-        # extend the vdd strap past the tap so the upper via lands on it
+        # extend the vdd strap past the tap so the upper via lands on it —
+        # and past the vdd port x, or the port pad floats off the strap
+        # (same single-segment failure as the mirror out pad)
         xs_vdd = [snap((s[0] + s[1]) / 2) for s, n in zip(ld_segs, ld_nets)
                   if n == "vdd" and s[1] - s[0] >= 0.4]
         if xs_vdd:
-            rect(c, layers.MET1, min(xs_vdd) - 0.2, ld_strap["vdd"] - 0.24,
-                 max(max(xs_vdd) + 0.2, ntx + 0.19), ld_strap["vdd"] + 0.24)
+            vdd_port_x = snap(total_width * 0.4)
+            rect(c, layers.MET1,
+                 min(min(xs_vdd) - 0.2, vdd_port_x - 0.24),
+                 ld_strap["vdd"] - 0.24,
+                 max(max(xs_vdd) + 0.2, ntx + 0.19, vdd_port_x + 0.24),
+                 ld_strap["vdd"] + 0.24)
 
         # ---------------- inter-stripe routing (met2 verticals) ---------
         def _via1(x: float, y: float) -> None:

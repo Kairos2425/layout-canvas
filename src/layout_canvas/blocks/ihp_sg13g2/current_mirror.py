@@ -99,14 +99,21 @@ def register_current_mirror() -> None:
                  cx + 0.15, y_top)
             rect(c, layers.VIA1, cx - 0.065, y_top - 0.065,
                  cx + 0.065, y_top + 0.065)
+        # every strap must reach its port pad — a single-segment net
+        # (out at fingers=2) otherwise leaves the pad floating
+        port_x = {"in": total_width * 0.25, "out": total_width * 0.75}
         for net, y in strap_y.items():
             xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, seg_net)
                   if n == net and s[1] - s[0] >= 0.4]
             if xs:
+                x0 = min(xs) - 0.2
                 x1 = max(xs) + 0.2
+                if net in port_x:
+                    x0 = min(x0, port_x[net] - 0.24)
+                    x1 = max(x1, port_x[net] + 0.24)
                 if net == "vss":
                     x1 = total_width + 0.65  # extend into the right ring rail
-                rect(c, layers.METAL2, min(xs) - 0.2, y - 0.24, x1, y + 0.24)
+                rect(c, layers.METAL2, x0, y - 0.24, x1, y + 0.24)
 
         if type == "pmos":
             # n-well bulk tie: n+ tap (activ+nsdm inside nwell) -> cont ->

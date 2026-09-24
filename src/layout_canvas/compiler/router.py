@@ -287,12 +287,16 @@ def route_design_nets(top: gf.Component, design: Design, inst_refs: dict[str, An
 
     # 3. Route standard single-ended nets — each net gets its own
     # detour channel. Sharing one channel y merged every trunk on met1
-    # (observed: outp/outn/vdd all shorted at y=max_top+2.0).
+    # (observed: outp/outn/vdd all shorted at y=max_top+2.0). Vertical
+    # risers are tracked the same way: two pins sharing an x would drop
+    # met2 risers on top of each other (observed: bias_in|vss merged).
     channel_index = 0
+    used_v: list[tuple[float, float, float]] = []
     for net in design.nets:
         if net.name in routed_nets:
             continue
-        _route_single_net(top, net, inst_refs, channel_index=channel_index)
+        _route_single_net(top, net, inst_refs, channel_index=channel_index,
+                          used_v=used_v)
         channel_index += 1
 
 
@@ -330,8 +334,18 @@ def _intersects_obstacle(x0: float, y0: float, x1: float, y1: float, obstacles: 
     return False
 
 
+def _riser_x_free(x: float, y0: float, y1: float, w: float,
+                  used_v: list[tuple[float, float, float]]) -> bool:
+    """True if a met2 riser at x over [y0,y1] clears every used riser."""
+    for ux, uy0, uy1 in used_v:
+        if abs(x - ux) < w + 0.2 and y0 < uy1 + 0.1 and y1 > uy0 - 0.1:
+            return False
+    return True
+
+
 def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
-                      channel_index: int = 0) -> None:
+                      channel_index: int = 0,
+                      used_v: list[tuple[float, float, float]] | None = None) -> None:
     """Perform Manhattan routing between pins with obstacle-aware channel bypass."""
     coords = [_get_pin_coords(p, inst_refs) for p in net.pins]
     valid_coords = [c for c in coords if c is not None]
@@ -339,6 +353,39 @@ def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
         return
 
     obstacles = _get_obstacles(inst_refs)
+    if used_v is None:
+        used_v = []
+
+    # Vertical runs that cross cell interiors go on MET3, not MET2:
+    # cells use met2 internally, so a top-level met2 riser through a
+    # cell merges with whatever internal met2 it crosses (observed:
+    # a vss riser at the U1.vss x merged the ota tail node into vss).
+    # MET3 never touches in-cell metal; each end needs a via1+via2 stack.
+    def _stack(x: float, y: float) -> None:
+        """met1 <-> met3 via stack at a point (pin pad or trunk end)."""
+        rect(top, layers.VIA1, x - 0.13, y - 0.13, x + 0.13, y + 0.13)
+        rect(top, layers.MET2, x - 0.19, y - 0.19, x + 0.19, y + 0.19)
+        rect(top, layers.VIA2, x - 0.13, y - 0.13, x + 0.13, y + 0.13)
+
+    def _riser(x: float, y_a: float, y_b: float, w: float) -> float:
+        """Reserve a free vertical channel; jog on met1 if x is taken."""
+        lo, hi = min(y_a, y_b), max(y_a, y_b)
+        if _riser_x_free(x, lo, hi, w, used_v):
+            used_v.append((x, lo, hi))
+            return x
+        for dx in (w + 0.4, -(w + 0.4), 2 * (w + 0.4), -2 * (w + 0.4),
+                   3 * (w + 0.4), -3 * (w + 0.4)):
+            xj = snap(x + dx)
+            # The jog runs at the pin's own y — the met1 there is this
+            # net's own strap/ring rail, so instance-bbox obstacles do
+            # not apply (a pin inside a cell bbox would always "hit").
+            if _riser_x_free(xj, lo, hi, w, used_v):
+                rect(top, layers.MET1, min(x, xj) - w / 2, y_a - w / 2,
+                     max(x, xj) + w / 2, y_a + w / 2)
+                used_v.append((xj, lo, hi))
+                return xj
+        used_v.append((x, lo, hi))
+        return x
 
     # Route consecutively between pin pairs
     for i in range(len(valid_coords) - 1):
@@ -347,41 +394,49 @@ def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
 
         wire_w = snap(getattr(net, "width", 0.48) or 0.48)
 
-        # Standard L-route: horizontal on MET1, vertical on MET2
+        # Standard L-route: horizontal on MET1, vertical on MET3
         # Check if direct L-turn hits obstacle
         direct_h_blocked = _intersects_obstacle(x1, y1, x2, y1, obstacles)
         direct_v_blocked = _intersects_obstacle(x2, y1, x2, y2, obstacles)
 
         if not (direct_h_blocked or direct_v_blocked):
-            # Clean direct L-route
-            hx0, hx1 = min(x1, x2), max(x1, x2)
+            # Clean direct L-route — reserve the riser channel first so
+            # the met1 trunk reaches it even when the riser jogged aside.
+            lo, hi = min(y1, y2), max(y1, y2)
+            x2r = _riser(x2, lo, hi, wire_w)
+            hx0, hx1 = min(x1, x2r), max(x1, x2r)
             if hx1 > hx0:
                 rect(top, layers.MET1, hx0 - wire_w / 2, y1 - wire_w / 2, hx1 + wire_w / 2, y1 + wire_w / 2)
-            rect(top, layers.VIA1, x2 - 0.13, y1 - 0.13, x2 + 0.13, y1 + 0.13)
-            vy0, vy1 = min(y1, y2), max(y1, y2)
-            if vy1 > vy0:
-                rect(top, layers.MET2, x2 - wire_w / 2, vy0 - wire_w / 2, x2 + wire_w / 2, vy1 + wire_w / 2)
+            _stack(x2r, y1)
+            _stack(x2r, y2)
+            if hi > lo:
+                rect(top, layers.MET3, x2r - wire_w / 2, lo - wire_w / 2, x2r + wire_w / 2, hi + wire_w / 2)
         else:
             # Channel detour (Z-shape): route via intermediate channel Y.
             # Every net owns a distinct channel so trunks cannot merge.
             max_top = max([o[3] for o in obstacles], default=max(y1, y2))
             detour_y = max_top + 2.0 + channel_index * (wire_w + 0.4)
 
-            # 1. Vertical escape from (x1, y1) to (x1, detour_y) on MET2
-            rect(top, layers.VIA1, x1 - 0.13, y1 - 0.13, x1 + 0.13, y1 + 0.13)
+            # Escape riser up from pin 1; reserve the drop channel first
+            # so the trunk spans escape-x to drop-x even when shifted.
+            x1r = _riser(x1, y1, detour_y, wire_w)
+            x2r = _riser(x2, y2, detour_y, wire_w)
+
+            # 1. Vertical escape from (x1r, y1) to detour_y on MET3
+            _stack(x1r, y1)
+            _stack(x1r, detour_y)
             vy0, vy1 = min(y1, detour_y), max(y1, detour_y)
-            rect(top, layers.MET2, x1 - wire_w / 2, vy0 - wire_w / 2, x1 + wire_w / 2, vy1 + wire_w / 2)
+            rect(top, layers.MET3, x1r - wire_w / 2, vy0 - wire_w / 2, x1r + wire_w / 2, vy1 + wire_w / 2)
 
             # 2. Horizontal channel trunk on MET1
-            rect(top, layers.VIA1, x1 - 0.13, detour_y - 0.13, x1 + 0.13, detour_y + 0.13)
-            hx0, hx1 = min(x1, x2), max(x1, x2)
+            hx0, hx1 = min(x1r, x2r), max(x1r, x2r)
             rect(top, layers.MET1, hx0 - wire_w / 2, detour_y - wire_w / 2, hx1 + wire_w / 2, detour_y + wire_w / 2)
 
-            # 3. Vertical drop from (x2, detour_y) to (x2, y2) on MET2
-            rect(top, layers.VIA1, x2 - 0.13, detour_y - 0.13, x2 + 0.13, detour_y + 0.13)
+            # 3. Vertical drop from detour_y to (x2r, y2) on MET3
+            _stack(x2r, detour_y)
+            _stack(x2r, y2)
             vy0, vy1 = min(detour_y, y2), max(detour_y, y2)
-            rect(top, layers.MET2, x2 - wire_w / 2, vy0 - wire_w / 2, x2 + wire_w / 2, vy1 + wire_w / 2)
-            rect(top, layers.VIA1, x2 - 0.13, y2 - 0.13, x2 + 0.13, y2 + 0.13)
+            rect(top, layers.MET3, x2r - wire_w / 2, vy0 - wire_w / 2, x2r + wire_w / 2, vy1 + wire_w / 2)
 
 
 def route_differential_pair(
