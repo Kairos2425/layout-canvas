@@ -179,6 +179,20 @@ class LayoutCanvasMCPServer:
                 },
             },
             {
+                "name": "verify_design",
+                "description": "One-shot physical verification of a design or session: compiles to GDS, extracts devices, runs DRC, and LVS-compares against the design's own reference netlist. Returns extract/drc/lvs sections plus an overall 'passed' flag. Fail-closed: unavailable engines report as such, never as a pass.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "description": "Open session to verify."},
+                        "ir_json": {
+                            "type": ["string", "object"],
+                            "description": "Block IR design content (JSON string or object) when no session is used.",
+                        },
+                    },
+                },
+            },
+            {
                 "name": "get_active_layout_info",
                 "description": "Query the currently open active layout inside the running KLayout GUI instance (active cell, cell hierarchy, bounding box, layer count).",
                 "inputSchema": {
@@ -678,6 +692,16 @@ class LayoutCanvasMCPServer:
                 includes=args.get("includes"),
                 simulator=args.get("simulator", "auto"),
             ).to_dict()
+
+        elif name == "verify_design":
+            from layout_canvas.tools.verify import verify_design
+            if args.get("session_id"):
+                design = self._get_session(args["session_id"]).design
+            elif args.get("ir_json") is not None:
+                design = self._parse_design(args["ir_json"])
+            else:
+                raise ValueError("verify_design needs 'session_id' or 'ir_json'")
+            return verify_design(design)
 
         elif name == "probe_environment":
             from layout_canvas.tools.backends import probe_environment
