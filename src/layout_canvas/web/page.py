@@ -209,6 +209,7 @@ async function sessionOpen(design) {
 }
 
 async function sessionEdit(edits) {
+  lastViolations = [];  // layout changed — old markers are stale
   const res = await api('session/edit',
     {edits: edits, expected_revision: revision});
   revision = res.revision ?? revision;
@@ -247,6 +248,7 @@ async function refresh() {
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 let pendingPin = null;  // 'inst.pin' waiting for a second click to wire
+let lastViolations = [];  // DRC violation bboxes painted back on canvas
 
 function pinXY(pinRef) {
   const [iid, pn] = pinRef.split('.');
@@ -287,6 +289,23 @@ function drawOverlay() {
       t.textContent = pn;
       svg.appendChild(t);
     }
+  }
+  // DRC violation markers — red boxes + rule label, RVE-style
+  for (const v of lastViolations) {
+    const b = v.bbox;
+    if (!b || b.length < 4) continue;
+    const r = document.createElementNS(SVGNS, 'rect');
+    r.setAttribute('x', b[0]); r.setAttribute('y', H - b[3]);
+    r.setAttribute('width', Math.max(b[2] - b[0], 0.05));
+    r.setAttribute('height', Math.max(b[3] - b[1], 0.05));
+    r.setAttribute('fill', 'rgba(214,69,69,0.18)');
+    r.setAttribute('stroke', '#d64545'); r.setAttribute('stroke-width', '0.06');
+    svg.appendChild(r);
+    const t = document.createElementNS(SVGNS, 'text');
+    t.setAttribute('x', b[0]); t.setAttribute('y', H - b[3] - 0.08);
+    t.setAttribute('font-size', '0.4'); t.setAttribute('fill', '#d64545');
+    t.textContent = (v.rule || '') + ' ' + (v.check || '');
+    svg.appendChild(t);
   }
 }
 
@@ -531,7 +550,16 @@ async function call(action, extra) {
   const res = await api(action, payload);
   if (action === 'simulate') return showSim(res);
   if (res.status !== 'ok') return showErr(res);
-  if (action === 'verify') return showVerify(res.data);
+  // DRC violations get painted onto the canvas as red marker boxes
+  if (action === 'drc') {
+    lastViolations = res.data.violations || [];
+    drawOverlay();
+  }
+  if (action === 'verify') {
+    lastViolations = (res.data.drc || {}).violations || [];
+    drawOverlay();
+    return showVerify(res.data);
+  }
   if (curTab !== 'output') tab('output');
   const o = document.getElementById('out');
   if (action === 'netlist') o.textContent = res.data.spice;
