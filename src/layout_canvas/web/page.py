@@ -117,6 +117,7 @@ PAGE = """<!doctype html>
   <button class="btn" onclick="call('connectivity')">Conn</button>
   <button class="btn" onclick="call('netlist')">Netlist</button>
   <button class="btn" onclick="call('drc')">DRC</button>
+  <button class="btn" onclick="call('verify')" title="extract + DRC + LVS">Verify</button>
   <button class="btn" onclick="call('virtuoso')">Virtuoso</button>
   <button class="btn primary" onclick="publish()">Publish</button>
 </header>
@@ -530,6 +531,7 @@ async function call(action, extra) {
   const res = await api(action, payload);
   if (action === 'simulate') return showSim(res);
   if (res.status !== 'ok') return showErr(res);
+  if (action === 'verify') return showVerify(res.data);
   if (curTab !== 'output') tab('output');
   const o = document.getElementById('out');
   if (action === 'netlist') o.textContent = res.data.spice;
@@ -537,6 +539,44 @@ async function call(action, extra) {
     o.textContent = '=== SKILL ===\\n' + res.data.skill +
                     '\\n\\n=== SPECTRE ===\\n' + res.data.spectre;
   else o.textContent = JSON.stringify(res.data, null, 2);
+}
+
+// ---------- verification ----------
+function showVerify(d) {
+  tab('output');
+  const o = document.getElementById('out');
+  const badge = (ok, label) =>
+    '<span style="display:inline-block;padding:2px 10px;border-radius:10px;' +
+    'font:600 11px ui-monospace;color:#fff;background:' +
+    (ok === true ? '#2e9e5b' : ok === false ? '#d64545' : '#9aa3b0') +
+    '">' + label + '</span>';
+  let html = '<h3 style="margin:0 0 10px">' +
+    badge(d.passed, d.passed ? 'VERIFIED' : 'NOT CLEAN') + ' ' +
+    '<span style="font:11px ui-monospace;color:var(--mut)">' + d.design +
+    ' · ' + d.pdk + '</span></h3><table class="op">' +
+    '<tr><th>check</th><th>result</th><th>detail</th></tr>';
+  html += '<tr><td>extract</td><td>' + badge(!d.extract.errors.length,
+      d.extract.errors.length ? 'ERRORS' : 'OK') + '</td><td>' +
+    d.extract.devices + ' devices · ' + d.extract.nets + ' nets' +
+    (d.extract.errors.length ? ' · ' + d.extract.errors.join('; ') : '') +
+    '</td></tr>';
+  const drcOk = d.drc.status === 'passed' ||
+    (d.drc.total_violations === 0 && d.drc.status !== 'unavailable');
+  const drcTxt = d.drc.status === 'unavailable' ? 'no deck' :
+    d.drc.total_violations + ' violations';
+  html += '<tr><td>DRC</td><td>' + badge(drcOk, drcTxt.toUpperCase()) +
+    '</td><td>' + ((d.drc.violations || []).slice(0, 5).map(v =>
+      (v.rule || '') + ' ' + (v.check || '') + ' @ ' +
+      JSON.stringify(v.bbox || '')).join('<br>')) + '</td></tr>';
+  const lvsOk = d.lvs.match === true;
+  const lvsTxt = d.lvs.match === true ? 'MATCH' :
+    (d.lvs.match === false ? 'MISMATCH' : 'UNAVAILABLE');
+  html += '<tr><td>LVS</td><td>' +
+    badge(d.lvs.match === true ? true : d.lvs.match === false ? false : null,
+          lvsTxt) + '</td><td>' +
+    ((d.lvs.errors || []).join('; ')) + '</td></tr>';
+  html += '</table>';
+  o.innerHTML = html;
 }
 
 // ---------- simulation ----------

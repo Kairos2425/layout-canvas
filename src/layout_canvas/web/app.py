@@ -204,6 +204,37 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(v, Path):
                     data[k] = str(v)
             return {"status": "ok", "data": data}
+        if action == "verify":
+            # One-shot physical verification: extract + DRC + LVS against
+            # the design's own reference netlist. Results are fail-closed —
+            # an unavailable engine reports as such, never as a pass.
+            import tempfile
+            from layout_canvas.tools.drc import run_drc
+            from layout_canvas.tools.extract import extract_netlist
+            from layout_canvas.tools.lvs import run_lvs
+            tmp = Path(tempfile.mkdtemp())
+            gds = tmp / f"{design.name}.gds"
+            comp.write_gds(str(gds))
+            ext = extract_netlist(str(gds), design.pdk)
+            drc = run_drc(str(gds), tech=design.pdk, engine="pya")
+            spice_path = tmp / f"{design.name}.cir"
+            spice_path.write_text(compile_netlist(design), encoding="utf-8")
+            lvs = run_lvs(layout_path=str(gds), schematic_path=str(spice_path),
+                          cell_name=design.name, tech=design.pdk, engine="pya")
+            drc_d = drc.to_dict() if hasattr(drc, "to_dict") else drc.__dict__
+            for k, v in list(drc_d.items()):
+                if isinstance(v, Path):
+                    drc_d[k] = str(v)
+            return {"status": "ok", "data": {
+                "design": design.name,
+                "pdk": design.pdk,
+                "extract": {"status": ext.status, "devices": ext.devices,
+                            "nets": ext.nets, "errors": ext.errors},
+                "drc": drc_d,
+                "lvs": lvs.to_dict(),
+                "passed": bool(lvs.match) and drc.total_violations == 0
+                          and not ext.errors,
+            }}
         if action == "virtuoso":
             import tempfile
             from layout_canvas.compiler.virtuoso import export_skill, export_spectre
