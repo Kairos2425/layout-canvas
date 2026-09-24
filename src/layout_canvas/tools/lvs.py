@@ -208,6 +208,7 @@ def _run_pya_lvs(
         if best is not None:
             cmp.same_device_classes(adc, best)
     match = cmp.compare(nl_a, nl_b)
+    net_diff = [] if match else _net_terminal_diff(ext_top, ref_top, _pol)
 
     if report:
         ext_count = len(list(ext_top.each_device()))
@@ -223,7 +224,37 @@ def _run_pya_lvs(
         status, match, report if report and report.exists() else None,
         ext_top.name, None,
         errors=[] if match else ["netlist topology mismatch"],
+        unmatched_nets=net_diff or None,
     )
+
+
+def _net_terminal_diff(ext_top, ref_top, class_key) -> list[str]:
+    """Named nets whose terminal signature differs between the flattened
+    tops — the actionable part of an LVS mismatch. Signature = multiset
+    of (polarity-class, terminal) pairs hanging on the net. Unnamed $N
+    nets are skipped: they have no user-visible handle."""
+
+    def sig(circuit) -> dict[str, list[str]]:
+        out: dict[str, list[str]] = {}
+        for dev in circuit.each_device():
+            cls = class_key(dev.device_class().name.upper())
+            for term in dev.device_class().terminal_definitions():
+                net = dev.net_for_terminal(term.name)
+                if net is None:
+                    continue
+                name = net.expanded_name() or net.name
+                if name.startswith("$"):
+                    continue
+                out.setdefault(name.lower(), []).append(
+                    f"{cls}.{term.name}")
+        return {k: sorted(v) for k, v in out.items()}
+
+    ext_sig, ref_sig = sig(ext_top), sig(ref_top)
+    diff = []
+    for name in sorted(set(ext_sig) | set(ref_sig)):
+        if ext_sig.get(name) != ref_sig.get(name):
+            diff.append(name)
+    return diff
 
 
 def _top_circuit_name(nl) -> str | None:

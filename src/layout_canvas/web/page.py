@@ -211,6 +211,7 @@ async function sessionOpen(design) {
 
 async function sessionEdit(edits) {
   lastViolations = [];  // layout changed — old markers are stale
+  lastBadNets = new Set();
   const res = await api('session/edit',
     {edits: edits, expected_revision: revision});
   revision = res.revision ?? revision;
@@ -250,6 +251,7 @@ async function refresh() {
 const SVGNS = 'http://www.w3.org/2000/svg';
 let pendingPin = null;  // 'inst.pin' waiting for a second click to wire
 let lastViolations = [];  // DRC violation bboxes painted back on canvas
+let lastBadNets = new Set();  // LVS-unmatched net names (lowercase)
 
 function pinXY(pinRef) {
   const [iid, pn] = pinRef.split('.');
@@ -266,13 +268,22 @@ function drawOverlay() {
   for (const net of lastData.nets || []) {
     const pts = net.pins.map(pinXY).filter(Boolean);
     if (pts.length >= 2) {
+      const bad = lastBadNets.has(String(net.name).toLowerCase());
       const pl = document.createElementNS(SVGNS, 'polyline');
       pl.setAttribute('points', pts.map(p => p.x + ',' + (H - p.y)).join(' '));
       pl.setAttribute('fill', 'none');
-      pl.setAttribute('stroke', '#c94f8f');
-      pl.setAttribute('stroke-width', '0.09');
-      pl.setAttribute('stroke-dasharray', '0.25 0.12');
+      pl.setAttribute('stroke', bad ? '#e03030' : '#c94f8f');
+      pl.setAttribute('stroke-width', bad ? '0.22' : '0.09');
+      pl.setAttribute('stroke-dasharray', bad ? 'none' : '0.25 0.12');
       svg.appendChild(pl);
+      if (bad) {
+        const t = document.createElementNS(SVGNS, 'text');
+        t.setAttribute('x', pts[0].x); t.setAttribute('y', H - pts[0].y - 0.15);
+        t.setAttribute('font-size', '0.5'); t.setAttribute('fill', '#e03030');
+        t.setAttribute('font-weight', '700');
+        t.textContent = 'LVS: ' + net.name;
+        svg.appendChild(t);
+      }
     }
   }
   for (const [iid, pins] of Object.entries(lastData.pins || {})) {
@@ -558,6 +569,8 @@ async function call(action, extra) {
   }
   if (action === 'verify') {
     lastViolations = (res.data.drc || {}).violations || [];
+    lastBadNets = new Set(
+      ((res.data.lvs || {}).unmatched_nets || []).map(n => String(n).toLowerCase()));
     drawOverlay();
     return showVerify(res.data);
   }
@@ -603,7 +616,11 @@ function showVerify(d) {
   html += '<tr><td>LVS</td><td>' +
     badge(d.lvs.match === true ? true : d.lvs.match === false ? false : null,
           lvsTxt) + '</td><td>' +
-    ((d.lvs.errors || []).join('; ')) + '</td></tr>';
+    ((d.lvs.errors || []).join('; ')) +
+    ((d.lvs.unmatched_nets || []).length ?
+      ' · diff nets: <b style="color:#e03030">' +
+      d.lvs.unmatched_nets.join(', ') + '</b>' : '') +
+    '</td></tr>';
   html += '</table>';
   o.innerHTML = html;
 }
