@@ -4,6 +4,8 @@
 Block IR, deterministic layout compiler, in-process DRC/LVS/PEX verification, and
 a local-first web canvas that AI agents can drive through MCP.
 
+**Live demo → https://kairos2425.github.io/layout-canvas/**
+
 ```
 Block IR (JSON) ── compile ──▶ gdsfactory ──▶ GDS
       │                            │
