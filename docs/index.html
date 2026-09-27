@@ -3,203 +3,305 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0b0c">
 <title>Layout Canvas — AI 原生模拟版图工作台</title>
 <meta name="description" content="Block IR → GDS → DRC/LVS → PEX。AI 原生的模拟版图画布：参数化模块、真实验证闭环、MCP 驱动、Virtuoso 导出。MIT 开源。">
 <style>
+  /* ============ a7code-style: dark + champagne-metal + spring reveals ============ */
   :root{
-    --bg:#0a0e14; --panel:#0f141d; --panel2:#131a26; --line:#1f2a3d;
-    --ink:#dbe4f0; --dim:#7d8ba1; --faint:#4a5568;
-    --acc:#5eead4; --acc2:#7dd3fc; --green:#34d399; --red:#f87171; --amber:#fbbf24;
-    --diff:#2fbf71; --poly:#e5484d; --cont:#f5f5f4; --li1:#8b949e;
+    --bg:#0b0b0c; --panel:#121214; --panel2:#17171a; --line:#232326;
+    --ink:#ece7e1; --dim:#9a938c; --faint:#5d584f;
+    --cham1:#f6d1ac; --cham2:#e8b27e; --cham3:#c98850; --silv:#eeeae5;
+    --green:#34d399; --red:#f87171;
+    --diff:#2fbf71; --poly:#e5484d; --cont:#f5f5f4;
     --met1:#38bdf8; --met2:#c084fc; --met3:#f472b6;
     --mono:ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
     --sans:"Segoe UI",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    --spring:cubic-bezier(.16,1,.3,1);
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html{scroll-behavior:smooth}
   body{background:var(--bg);color:var(--ink);font-family:var(--sans);
        overflow-x:hidden;line-height:1.6}
-  ::selection{background:var(--acc);color:#04201c}
+  ::selection{background:var(--cham2);color:#241204}
+  a{color:inherit}
 
-  /* ---------- backdrop grid ---------- */
-  #bg{position:fixed;inset:0;z-index:-1;
-      background:
-        radial-gradient(900px 500px at 80% -10%,rgba(94,234,212,.07),transparent 60%),
-        radial-gradient(700px 500px at 10% 110%,rgba(125,211,252,.06),transparent 60%),
-        var(--bg)}
+  /* layered warm glows (hero-depth) */
+  #bg{position:fixed;inset:0;z-index:-1;background:var(--bg)}
   #bg::before{content:"";position:absolute;inset:0;
-      background-image:linear-gradient(var(--line) 1px,transparent 1px),
-                       linear-gradient(90deg,var(--line) 1px,transparent 1px);
-      background-size:44px 44px;opacity:.28;
-      mask-image:radial-gradient(ellipse 90% 70% at 50% 20%,#000 30%,transparent 75%)}
+    background:
+      radial-gradient(1100px 640px at 78% -8%,rgba(246,209,172,.13),transparent 62%),
+      radial-gradient(800px 540px at 8% 108%,rgba(125,211,252,.05),transparent 62%),
+      radial-gradient(700px 500px at 95% 78%,rgba(201,136,80,.07),transparent 60%);}
+  #bg::after{content:"";position:absolute;inset:0;
+    background-image:linear-gradient(#ffffff09 1px,transparent 1px),
+                     linear-gradient(90deg,#ffffff09 1px,transparent 1px);
+    background-size:46px 46px;
+    mask-image:radial-gradient(ellipse 92% 68% at 50% 14%,#000 26%,transparent 72%);}
 
   .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
-  section{padding:88px 0}
-  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.22em;
-          color:var(--acc);text-transform:uppercase}
-  h1{font-size:clamp(38px,6vw,72px);line-height:1.05;font-weight:800;
-     letter-spacing:-.02em;margin:14px 0 20px}
-  h1 .grad{background:linear-gradient(92deg,var(--acc) 10%,var(--acc2) 55%,#c4b5fd);
-           -webkit-background-clip:text;background-clip:text;color:transparent}
-  h2{font-size:clamp(24px,3.4vw,38px);font-weight:750;letter-spacing:-.01em;margin:10px 0 14px}
-  .sub{color:var(--dim);font-size:clamp(15px,1.6vw,18px);max-width:640px}
+  section{padding:96px 0}
 
-  /* ---------- hero ---------- */
-  .hero{display:grid;grid-template-columns:1.05fr 1fr;gap:48px;align-items:center;
-        min-height:88vh;padding-top:60px}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.24em;
+          color:var(--cham2);text-transform:uppercase}
+  .kicker::before{content:"// ";color:var(--faint)}
+  h1{font-size:clamp(40px,6.4vw,76px);line-height:1.04;font-weight:800;
+     letter-spacing:-.025em;margin:16px 0 22px}
+  h2{font-size:clamp(24px,3.4vw,38px);font-weight:750;letter-spacing:-.015em;margin:10px 0 14px}
+  .sub{color:var(--dim);font-size:clamp(15px,1.6vw,18px);max-width:660px}
+
+  /* title-light-pass: metallic sweep on big title */
+  .metal{
+    background:linear-gradient(110deg,#eeeae5 8%,#8f8882 32%,#f6d1ac 50%,#e8b27e 58%,#8f8882 74%,#eeeae5 94%);
+    background-size:220% 100%;
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:titleLight 5.2s ease-in-out infinite}
+  @keyframes titleLight{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+
+  /* ============ nav ============ */
+  nav{position:fixed;top:0;left:0;right:0;z-index:50;
+      background:linear-gradient(#0b0b0cee,#0b0b0c99);backdrop-filter:blur(12px);
+      border-bottom:1px solid #23232666}
+  nav .wrap{display:flex;align-items:center;gap:26px;height:58px;font-size:13.5px}
+  nav .logo{font-family:var(--mono);font-weight:700;font-size:14px;letter-spacing:.04em;
+            color:var(--ink);text-decoration:none;display:flex;align-items:center;gap:9px}
+  nav .logo i{width:15px;height:15px;border-radius:4px;display:inline-block;
+    background:conic-gradient(from 200deg,var(--diff) 0 25%,var(--poly) 0 42%,var(--met1) 0 70%,var(--cham2) 0 100%);
+    box-shadow:0 0 12px #f6d1ac44}
+  nav a.nl{color:var(--dim);text-decoration:none;transition:.2s}
+  nav a.nl:hover{color:var(--ink)}
+  nav .navcta{margin-left:auto;font-family:var(--mono);font-size:12px;text-decoration:none;
+              color:#241204;background:linear-gradient(120deg,var(--cham1),var(--cham2));
+              padding:7px 15px;border-radius:8px;font-weight:700}
+  nav .navcta:hover{filter:brightness(1.1)}
+  @media(max-width:760px){nav a.nl{display:none}}
+
+  /* ============ hero ============ */
+  .hero{display:grid;grid-template-columns:1fr 1.02fr;gap:56px;align-items:center;
+        min-height:96vh;padding-top:110px;padding-bottom:60px}
   .badges{display:flex;gap:10px;flex-wrap:wrap;margin:26px 0}
-  .badge{font-family:var(--mono);font-size:11.5px;padding:5px 11px;border:1px solid var(--line);
-         border-radius:99px;color:var(--dim);background:var(--panel)}
-  .badge b{color:var(--acc);font-weight:600}
-  .cta{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:10px;
-       font-weight:650;font-size:14.5px;text-decoration:none;transition:.2s}
-  .btn-pri{background:var(--acc);color:#04201c}
-  .btn-pri:hover{filter:brightness(1.12);transform:translateY(-1px)}
-  .btn-sec{border:1px solid var(--line);color:var(--ink);background:var(--panel)}
-  .btn-sec:hover{border-color:var(--acc);color:var(--acc)}
-  .hint{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-top:18px}
+  .badge{font-family:var(--mono);font-size:11.5px;padding:5px 12px;border-radius:99px;
+         color:var(--dim);background:linear-gradient(#ffffff07,#ffffff02);
+         border:1px solid var(--line)}
+  .badge b{color:var(--cham2);font-weight:600}
+  .cta{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:13px 24px;border-radius:10px;
+       font-weight:650;font-size:14.5px;text-decoration:none;transition:.25s var(--spring)}
+  .btn-pri{background:linear-gradient(120deg,var(--cham1),var(--cham2));color:#241204;
+           box-shadow:0 8px 30px -8px #e8b27e66}
+  .btn-pri:hover{transform:translateY(-2px);filter:brightness(1.1);
+                 box-shadow:0 14px 40px -10px #e8b27e88}
+  .btn-sec{border:1px solid var(--line);color:var(--ink);background:#ffffff06}
+  .btn-sec:hover{border-color:#4a4438;color:var(--cham1);transform:translateY(-2px)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-top:20px}
   .hint b{color:var(--dim)}
+  .hero-left{animation:artEnter 1.1s var(--spring) both}
 
-  /* ---------- layout stage ---------- */
-  .stage{position:relative;border:1px solid var(--line);border-radius:16px;
-         background:linear-gradient(180deg,#0c121c,#0a0f16);overflow:hidden;
-         box-shadow:0 30px 80px -30px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.04)}
-  .stage-head{display:flex;align-items:center;gap:10px;padding:11px 14px;
-              border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--dim)}
-  .dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
-  .dot:nth-child(1){background:#f87171aa}.dot:nth-child(2){background:#fbbf24aa}
-  .dot:nth-child(3){background:#34d399aa}
-  .stage-head .fname{margin-left:auto;color:var(--faint)}
+  /* floating core — the die card */
+  .hero-core{perspective:1400px;animation:artEnter 1.2s .15s var(--spring) both}
+  @keyframes artEnter{0%{opacity:0;transform:scale(1.05) translateY(14px)}
+                      60%{opacity:.9}100%{opacity:1;transform:scale(1) translateY(0)}}
+  .die{position:relative;border-radius:20px;overflow:hidden;
+       background:linear-gradient(180deg,#14100d,#0d0b09);
+       border:1px solid #3a3227;
+       box-shadow:0 40px 90px -30px #000,0 0 0 1px #f6d1ac10 inset,
+                  0 0 80px -20px #e8b27e22;
+       transform:rotateX(6deg) rotateZ(-5deg);
+       animation:coreFloat 7s ease-in-out infinite}
+  @keyframes coreFloat{0%,100%{transform:rotateX(6deg) rotateZ(-5deg) translateY(0)}
+                       50%{transform:rotateX(6deg) rotateZ(-3.5deg) translateY(-12px)}}
+  .die-head{display:flex;align-items:center;gap:9px;padding:11px 15px;
+            border-bottom:1px solid #2c251d;font-family:var(--mono);font-size:12px;color:#8a7f72}
+  .die-head .d{width:9px;height:9px;border-radius:50%}
+  .die-head .d:nth-child(1){background:#f8717199}.die-head .d:nth-child(2){background:#fbbf2499}
+  .die-head .d:nth-child(3){background:#34d39999}
+  .die-head .fn{margin-left:auto;color:#5d584f}
   #cv{display:block;width:100%;height:auto;aspect-ratio:52/46}
-  .stage-foot{display:flex;align-items:center;gap:14px;padding:10px 14px;
-              border-top:1px solid var(--line);font-family:var(--mono);font-size:12px}
-  #phase{color:var(--acc2)}
+  .die-foot{display:flex;align-items:center;gap:14px;padding:10px 15px;
+            border-top:1px solid #2c251d;font-family:var(--mono);font-size:12px}
+  #phase{color:#f6d1ac}
   #vchip{margin-left:auto;display:inline-flex;gap:8px;align-items:center;
-         padding:3px 10px;border-radius:99px;font-size:11px;transition:.3s;
-         border:1px solid var(--line);color:var(--faint)}
+         padding:3px 11px;border-radius:99px;font-size:11px;transition:.3s;
+         border:1px solid #3a3227;color:var(--faint)}
   #vchip.ok{color:var(--green);border-color:#34d39955;background:#34d39912}
   #vchip.bad{color:var(--red);border-color:#f8717155;background:#f8717112}
-  .legend{display:flex;gap:14px;flex-wrap:wrap;padding:9px 14px 12px;
-          font-family:var(--mono);font-size:10.5px;color:var(--faint)}
-  .legend i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:-1px}
+  /* metal-light-pass streak sweeping the die */
+  .gleam{position:absolute;inset:-40%;pointer-events:none;z-index:3;
+         background:linear-gradient(105deg,transparent 42%,rgba(255,236,214,.16) 50%,transparent 58%);
+         transform:translateX(-250%) rotate(24deg);
+         animation:gleamPass 6.5s ease-in-out infinite}
+  @keyframes gleamPass{0%,18%{transform:translateX(-250%) rotate(24deg);opacity:0}
+    30%{opacity:.9}68%{transform:translateX(520%) rotate(24deg);opacity:.5}
+    80%,100%{transform:translateX(620%) rotate(24deg);opacity:0}}
 
-  /* ---------- flow ---------- */
-  .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:0;margin-top:44px;
-        border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel)}
-  .fstep{position:relative;padding:26px 20px;border-right:1px solid var(--line)}
+  /* ============ marquee ============ */
+  .marq{border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+        overflow:hidden;padding:15px 0;background:#0e0d0c88;
+        -webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);
+        mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+  .marq-in{display:inline-flex;gap:0;white-space:nowrap;animation:marq 34s linear infinite}
+  .marq span{font-family:var(--mono);font-size:13px;color:var(--faint);padding:0 26px}
+  .marq span b{color:var(--cham2);font-weight:500}
+  .marq i{color:#3a352e;font-style:normal}
+  @keyframes marq{to{transform:translateX(-50%)}}
+
+  /* ============ flow ============ */
+  .flow{display:grid;grid-template-columns:repeat(5,1fr);margin-top:46px;
+        border:1px solid var(--line);border-radius:16px;overflow:hidden;
+        background:linear-gradient(180deg,#121214,#0e0d0c)}
+  .fstep{position:relative;padding:28px 20px;border-right:1px solid var(--line);transition:.4s}
   .fstep:last-child{border-right:0}
   .fstep .n{font-family:var(--mono);font-size:11px;color:var(--faint)}
-  .fstep h3{font-size:15.5px;margin:8px 0 6px}
+  .fstep h3{font-size:15.5px;margin:9px 0 7px}
   .fstep p{font-size:12.5px;color:var(--dim);line-height:1.55}
-  .fstep::after{content:"→";position:absolute;right:-9px;top:26px;z-index:2;
+  .fstep::after{content:"→";position:absolute;right:-9px;top:28px;z-index:2;
                 color:var(--faint);font-family:var(--mono)}
   .fstep:last-child::after{display:none}
-  .fstep.lit{background:linear-gradient(180deg,rgba(94,234,212,.09),transparent)}
-  .fstep.lit h3{color:var(--acc)}
-  .fstep.lit .n{color:var(--acc)}
+  .fstep.lit{background:linear-gradient(180deg,rgba(246,209,172,.07),transparent)}
+  .fstep.lit h3{color:var(--cham1)}
+  .fstep.lit .n{color:var(--cham2)}
 
-  /* ---------- feature grid ---------- */
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:40px}
-  .card{border:1px solid var(--line);border-radius:14px;padding:22px;background:var(--panel);
-        transition:.25s}
-  .card:hover{border-color:#2b3b55;transform:translateY(-2px)}
-  .card .ic{font-family:var(--mono);font-size:12px;color:var(--acc);
-            border:1px solid #2b3b55;border-radius:8px;display:inline-flex;
-            padding:4px 8px;margin-bottom:12px;background:#0d1420}
-  .card h3{font-size:15.5px;margin-bottom:7px}
-  .card p{font-size:13px;color:var(--dim)}
+  /* ============ blocks gallery ============ */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:42px}
+  .bcard{position:relative;border:1px solid var(--line);border-radius:14px;
+         background:var(--panel);overflow:hidden;transition:.3s var(--spring)}
+  .bcard:hover{transform:translateY(-4px);border-color:#4a4034;
+               box-shadow:0 20px 50px -20px #000}
+  .bcard canvas{display:block;width:100%;height:120px;image-rendering:pixelated}
+  .bcard .cap{padding:12px 15px;border-top:1px solid var(--line)}
+  .bcard .cap b{font-size:13.5px;font-family:var(--mono)}
+  .bcard .cap span{float:right;font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .bcard .cap p{font-size:12px;color:var(--dim);margin-top:3px}
+  .bcard::after{content:"";position:absolute;inset:-40%;pointer-events:none;
+    background:linear-gradient(105deg,transparent 44%,rgba(246,209,172,.10) 50%,transparent 56%);
+    transform:translateX(-250%) rotate(24deg);transition:transform .8s ease}
+  .bcard:hover::after{transform:translateX(250%) rotate(24deg)}
 
-  /* ---------- wave + mcp ---------- */
-  .duo{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:40px}
-  .panel{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+  /* ============ duo panels ============ */
+  .duo{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:42px}
+  .panel{position:relative;border:1px solid var(--line);border-radius:14px;
+         background:var(--panel);overflow:hidden}
   .panel-head{padding:12px 16px;border-bottom:1px solid var(--line);
               font-family:var(--mono);font-size:12px;color:var(--dim);
-              display:flex;gap:8px;align-items:center}
-  .panel-head .tag{color:var(--acc);border:1px solid #2b3b55;border-radius:5px;
-                   padding:1px 7px;font-size:10.5px}
-  #wave{display:block;width:100%;height:230px}
-  #term{display:block;width:100%;height:230px;padding:14px 16px;overflow:hidden;
-        font-family:var(--mono);font-size:12px;line-height:1.85;color:#9fb0c7;white-space:pre-wrap}
-  #term .p{color:var(--acc)} #term .c{color:var(--faint)}
-  #term .ok{color:var(--green)} #term .k{color:var(--acc2)}
+              display:flex;gap:9px;align-items:center}
+  .panel-head .tag{color:var(--cham2);border:1px solid #4a4034;border-radius:5px;
+                   padding:1px 8px;font-size:10.5px}
+  #wave{display:block;width:100%;height:232px}
+  /* code-breathe + scan-pass on terminal */
+  .termbox{position:relative;height:232px;overflow:hidden}
+  #term{padding:15px 17px;font-family:var(--mono);font-size:12px;
+        line-height:1.9;color:#a49a90;white-space:pre-wrap;
+        animation:codeBreathe 6s ease-in-out infinite;transform-origin:top left}
+  @keyframes codeBreathe{0%,100%{opacity:.88}50%{opacity:1}}
+  .scanline{position:absolute;left:0;right:0;top:0;height:26px;pointer-events:none;
+    background:linear-gradient(180deg,transparent,#f6d1ac14 50%,transparent);
+    animation:scanPass 5.5s ease-in-out infinite}
+  @keyframes scanPass{0%,8%{transform:translateY(-30px);opacity:0}
+    22%{opacity:.8}72%{transform:translateY(200px);opacity:.35}
+    88%,100%{transform:translateY(230px);opacity:0}}
+  #term .p{color:var(--cham1)} #term .c{color:var(--faint)}
+  #term .ok{color:var(--green)} #term .k{color:#93c5fd}
 
-  /* ---------- stats ---------- */
-  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:40px}
-  .stat{border:1px solid var(--line);border-radius:14px;padding:24px;background:var(--panel);text-align:center}
-  .stat .v{font-family:var(--mono);font-size:clamp(28px,3.6vw,44px);font-weight:700;
-           color:var(--acc);line-height:1.1}
-  .stat .l{font-size:12.5px;color:var(--dim);margin-top:6px}
+  /* ============ stats ============ */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:42px}
+  .stat{border:1px solid var(--line);border-radius:14px;padding:26px 18px;text-align:center;
+        background:linear-gradient(180deg,#141312,#0e0d0c)}
+  .stat .v{font-family:var(--mono);font-size:clamp(28px,3.6vw,46px);font-weight:700;line-height:1.1;
+    background:linear-gradient(120deg,var(--cham1),var(--cham3));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .stat .l{font-size:12.5px;color:var(--dim);margin-top:7px}
 
-  /* ---------- footer ---------- */
-  footer{border-top:1px solid var(--line);padding:44px 0;color:var(--dim);
+  /* ============ install strip ============ */
+  .install{margin-top:42px;border:1px solid var(--line);border-radius:14px;
+           background:var(--panel);padding:22px 24px;font-family:var(--mono);
+           font-size:13.5px;overflow-x:auto}
+  .install .ln{display:flex;gap:12px;padding:4px 0;white-space:nowrap}
+  .install .ln i{color:var(--faint);font-style:normal;user-select:none}
+  .install .ln .c1{color:var(--cham1)} .install .ln .c2{color:#93c5fd}
+  .install .cmt{color:var(--faint)}
+
+  footer{border-top:1px solid var(--line);padding:48px 0;color:var(--dim);
          font-size:13px;text-align:center}
-  footer a{color:var(--acc2);text-decoration:none}
-  .foot-links{display:flex;gap:22px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+  footer a{color:var(--cham2);text-decoration:none}
+  .foot-links{display:flex;gap:24px;justify-content:center;margin-bottom:16px;flex-wrap:wrap}
+
+  /* scroll spring reveals */
+  .rv{opacity:0;transform:translateY(26px) scale(.985);
+      transition:opacity .7s ease,transform .9s var(--spring)}
+  .rv.on{opacity:1;transform:none}
+  .rv.d1{transition-delay:.07s}.rv.d2{transition-delay:.14s}.rv.d3{transition-delay:.21s}
 
   @media(max-width:900px){
-    .hero{grid-template-columns:1fr;min-height:0}
+    .hero{grid-template-columns:1fr;min-height:0;padding-top:96px}
     .flow{grid-template-columns:1fr 1fr}
-    .fstep{border-bottom:1px solid var(--line)}
-    .fstep::after{display:none}
-    .grid{grid-template-columns:1fr 1fr}
-    .duo{grid-template-columns:1fr}
-    .stats{grid-template-columns:repeat(2,1fr)}
-  }
+    .fstep{border-bottom:1px solid var(--line)}.fstep::after{display:none}
+    .grid{grid-template-columns:1fr 1fr}.duo{grid-template-columns:1fr}
+    .stats{grid-template-columns:repeat(2,1fr)}}
   @media(max-width:560px){.grid{grid-template-columns:1fr}.flow{grid-template-columns:1fr}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
+    .rv{opacity:1;transform:none}}
 </style>
 </head>
 <body>
 <div id="bg"></div>
 
+<nav><div class="wrap">
+  <a class="logo" href="#"><i></i>layout-canvas</a>
+  <a class="nl" href="#flow">流程</a>
+  <a class="nl" href="#blocks">模块库</a>
+  <a class="nl" href="#live">实测</a>
+  <a class="nl" href="#start">上手</a>
+  <a class="navcta" href="https://github.com/Kairos2425/layout-canvas">GitHub ↗</a>
+</div></nav>
+
 <!-- ============ HERO ============ -->
 <header class="wrap hero">
-  <div>
-    <div class="kicker">AI-native analog layout · MIT open source</div>
-    <h1>Layout Canvas<br><span class="grad">会说电路语言的版图画布</span></h1>
-    <p class="sub">不是画图工具，是<b>编译器</b>：JSON 设计描述 → 参数化模块 → GDS，
-      再做真实 DRC / LVS / 版图后仿真。画布给人类看，MCP 给 AI agent 开。</p>
+  <div class="hero-left">
+    <div class="kicker">AI-native analog layout · MIT</div>
+    <h1><span class="metal">Layout Canvas</span><br>会说电路语言的<br><span class="metal">版图画布</span></h1>
+    <p class="sub">不是画图工具，是<b>编译器</b>。JSON 设计 → 参数化模块 → GDS →
+      真实 DRC / LVS / 版图后仿真。画布给人类看，MCP 给 AI agent 开。</p>
     <div class="badges">
-      <span class="badge"><b>sky130</b> + <b>ihp_sg13g2</b> 双 PDK</span>
-      <span class="badge"><b>28</b> 个 MCP 工具</span>
-      <span class="badge"><b>KLayout</b> 内嵌验证引擎</span>
-      <span class="badge"><b>ngspice</b> 真实器件模型</span>
+      <span class="badge"><b>sky130</b> · <b>ihp_sg13g2</b> 双 PDK</span>
+      <span class="badge"><b>28</b> MCP tools</span>
+      <span class="badge"><b>KLayout</b> 内嵌引擎</span>
+      <span class="badge"><b>ngspice</b> 真实模型</span>
     </div>
     <div class="cta">
       <a class="btn btn-pri" href="https://github.com/Kairos2425/layout-canvas">GitHub 仓库 ↗</a>
-      <a class="btn btn-sec" href="#demo">看它怎么工作</a>
+      <a class="btn btn-sec" href="#flow">看它怎么工作</a>
     </div>
-    <div class="hint">$ <b>pip install -e .</b> && <b>layout-canvas web</b> → http://127.0.0.1:8080</div>
+    <div class="hint">$ <b>pip install -e .</b> && <b>layout-canvas web</b> → 127.0.0.1:8080</div>
   </div>
 
-  <div class="stage">
-    <div class="stage-head">
-      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-      layout-canvas — canvas
-      <span class="fname">diff_pair.gds · sky130</span>
-    </div>
-    <canvas id="cv" width="1040" height="920"></canvas>
-    <div class="stage-foot">
-      <span id="phase">placing blocks…</span>
-      <span id="vchip">◌ verifying</span>
-    </div>
-    <div class="legend">
-      <span><i style="background:var(--diff)"></i>active</span>
-      <span><i style="background:var(--poly)"></i>poly</span>
-      <span><i style="background:var(--cont)"></i>contact</span>
-      <span><i style="background:var(--met1)"></i>met1</span>
-      <span><i style="background:var(--met2)"></i>met2</span>
-      <span><i style="background:var(--met3)"></i>met3</span>
+  <div class="hero-core">
+    <div class="die">
+      <div class="gleam"></div>
+      <div class="die-head">
+        <span class="d"></span><span class="d"></span><span class="d"></span>
+        layout-canvas — canvas
+        <span class="fn">diff_pair.gds · sky130</span>
+      </div>
+      <canvas id="cv" width="1040" height="920"></canvas>
+      <div class="die-foot">
+        <span id="phase">placing blocks…</span>
+        <span id="vchip">◌ verifying</span>
+      </div>
     </div>
   </div>
 </header>
 
+<!-- ============ MARQUEE ============ -->
+<div class="marq"><div class="marq-in" id="marq">
+  <span><b>sky130</b>.diff_pair</span><i>◆</i><span><b>sky130</b>.current_mirror</span><i>◆</i><span><b>sky130</b>.ota_5t</span><i>◆</i><span><b>sky130</b>.strongarm</span><i>◆</i><span><b>sky130</b>.cap_array</span><i>◆</i><span><b>sky130</b>.guard_ring</span><i>◆</i><span><b>ihp_sg13g2</b>.diff_pair</span><i>◆</i><span><b>ihp_sg13g2</b>.current_mirror</span><i>◆</i><span><b>ihp_sg13g2</b>.ota_5t</span><i>◆</i><span><b>ihp_sg13g2</b>.guard_ring</span><i>◆</i><span>verify_design</span><i>◆</i><span>run_simulation <b>pex</b></span><i>◆</i><span>export_virtuoso</span><i>◆</i><span>net-diff highlight</span><i>◆</i><span>fail-closed</span><i>◆</i>
+</div></div>
+
 <!-- ============ FLOW ============ -->
-<section class="wrap" id="demo">
-  <div class="kicker">the loop</div>
+<section class="wrap" id="flow">
+  <div class="rv"><div class="kicker">the loop</div>
   <h2>设计 → 验证，一条不骗人的闭环</h2>
-  <p class="sub">每一步都是真工具结果。跑不出来就报 <code>unavailable</code>——永不给假绿。</p>
-  <div class="flow" id="flow">
+  <p class="sub">每一步都是真工具结果。跑不出来就报 <code>unavailable</code>——永不给假绿。</p></div>
+  <div class="flow rv d1" id="flowrow">
     <div class="fstep"><div class="n">01 / IR</div><h3>Block IR</h3>
       <p>Pydantic 类型化设计描述：实例、参数、布局、网络、端口。可序列化、可 diff、可交给 agent 改。</p></div>
     <div class="fstep"><div class="n">02 / compile</div><h3>参数化模块</h3>
@@ -207,57 +309,65 @@
     <div class="fstep"><div class="n">03 / DRC</div><h3>规则检查</h3>
       <p>KLayout 内嵌引擎做宽度/间距/via 包围检查，违规红框直接画回画布原位。</p></div>
     <div class="fstep"><div class="n">04 / LVS</div><h3>版图对原理图</h3>
-      <p>LayoutToNetlist 真实提取 + 拓扑比对；不匹配的网逐条定位、画布高亮。</p></div>
+      <p>LayoutToNetlist 真实提取 + 拓扑比对；失配网逐条定位、画布高亮。</p></div>
     <div class="fstep"><div class="n">05 / PEX</div><h3>版图后仿真</h3>
       <p>提取网表直接跑 foundry 模型（BSIM4 / PSP103），内部节点可探测，波形回显。</p></div>
   </div>
 </section>
 
-<!-- ============ FEATURES ============ -->
-<section class="wrap">
-  <div class="kicker">capabilities</div>
-  <h2>为 agent 而生，为人所见</h2>
-  <div class="grid">
-    <div class="card"><span class="ic">MCP ×28</span><h3>Agent 全权操作</h3>
-      <p>open_design → transact → verify → simulate → export_virtuoso——从建图到交付，AI 走完整流程，每步有结构化回执。</p></div>
-    <div class="card"><span class="ic">RVE-style</span><h3>违规画回画布</h3>
-      <p>DRC bbox 红框叠加版图原位，LVS 失配网粗线高亮——对标 Calibre RVE 的 debug 体验。</p></div>
-    <div class="card"><span class="ic">fail-closed</span><h3>验证不撒谎</h3>
-      <p>缺工具报 unavailable，不匹配报真实网差——验收哲学写进 ADR：绝不出具编造的通过。</p></div>
-    <div class="card"><span class="ic">.il / .scs</span><h3>Virtuoso 互通</h3>
-      <p>GDS → SKILL 重建脚本 + Spectre 网表导出，进得了 Cadence 流程；也接 KLayout / ngspice / netgen。</p></div>
-    <div class="card"><span class="ic">local-first</span><h3>数据不出机</h3>
-      <p>Web 绑 127.0.0.1，无遥测无云依赖。私有 PDK 走环境变量注入，永不入库。</p></div>
-    <div class="card"><span class="ic">TX session</span><h3>事务化编辑</h3>
-      <p>快照 / 撤销 / 原子事务的编辑会话——agent 批量改图可整体回滚，不留半坏状态。</p></div>
+<!-- ============ BLOCKS ============ -->
+<section class="wrap" id="blocks">
+  <div class="rv"><div class="kicker">block library</div>
+  <h2>参数化模拟模块 · 双 PDK</h2>
+  <p class="sub">每个块都是代码生成的真实几何：指叉、共心保护环、栅绑带、via 栈——参数化到 finger 数与器件尺寸。</p></div>
+  <div class="grid" id="bgrid">
+    <div class="bcard rv"><canvas data-b="diff" width="320" height="120"></canvas>
+      <div class="cap"><b>diff_pair</b><span>sky130 · ihp</span><p>共心指叉差分对 + 栅绑带 + 保护环</p></div></div>
+    <div class="bcard rv d1"><canvas data-b="mirror" width="320" height="120"></canvas>
+      <div class="cap"><b>current_mirror</b><span>sky130 · ihp</span><p>共心电流镜，栅自接 bias</p></div></div>
+    <div class="bcard rv d2"><canvas data-b="ota" width="320" height="120"></canvas>
+      <div class="cap"><b>ota_5t</b><span>sky130 · ihp</span><p>五管 OTA：差分对 + 镜像负载 + 尾管</p></div></div>
+    <div class="bcard rv"><canvas data-b="strongarm" width="320" height="120"></canvas>
+      <div class="cap"><b>strongarm</b><span>sky130</span><p>StrongArm 比较器，clk 栅行</p></div></div>
+    <div class="bcard rv d1"><canvas data-b="cap" width="320" height="120"></canvas>
+      <div class="cap"><b>cap_array</b><span>sky130</span><p>MIM 电容阵，met2/met3 双层汇流</p></div></div>
+    <div class="bcard rv d2"><canvas data-b="ring" width="320" height="120"></canvas>
+      <div class="cap"><b>guard_ring</b><span>sky130 · ihp</span><p>ptap/ntap 保护环，连续接触条</p></div></div>
   </div>
 </section>
 
-<!-- ============ PEX + MCP ============ -->
-<section class="wrap">
-  <div class="kicker">live signals</div>
-  <h2>后仿波形与 agent 日志</h2>
+<!-- ============ LIVE ============ -->
+<section class="wrap" id="live">
+  <div class="rv"><div class="kicker">live signals</div>
+  <h2>后仿波形 × agent 会话</h2>
+  <p class="sub">左边是提取网表跑 ngspice 的差分输出收敛曲线（含内部节点 <code>xd1.tail</code>）；右边是 agent 通过 MCP 走完整闭环的真实工具序列。</p></div>
   <div class="duo">
-    <div class="panel">
-      <div class="panel-head"><span class="tag">PEX</span> ngspice tran · v(outp) v(outn) v(xd1.tail)</div>
-      <canvas id="wave" width="560" height="230"></canvas>
-    </div>
-    <div class="panel">
-      <div class="panel-head"><span class="tag">MCP</span> agent session · stdio</div>
-      <div id="term"></div>
-    </div>
+    <div class="panel rv"><div class="panel-head"><span class="tag">PEX</span> ngspice tran · v(outp) v(outn) v(xd1.tail)</div>
+      <canvas id="wave" width="560" height="232"></canvas></div>
+    <div class="panel rv d1"><div class="panel-head"><span class="tag">MCP</span> agent session · stdio</div>
+      <div class="termbox"><div id="term"></div><div class="scanline"></div></div></div>
   </div>
 </section>
 
 <!-- ============ STATS ============ -->
 <section class="wrap">
-  <div class="kicker">numbers</div>
-  <h2>验证过的，才写在这</h2>
+  <div class="rv"><div class="kicker">numbers</div><h2>验证过的，才写在这</h2></div>
   <div class="stats">
-    <div class="stat"><div class="v" data-n="114">0</div><div class="l">pytest 全绿（含真实 ngspice 冒烟）</div></div>
-    <div class="stat"><div class="v" data-n="28">0</div><div class="l">MCP 工具</div></div>
-    <div class="stat"><div class="v" data-n="10">0</div><div class="l">模拟单元 × 双 PDK</div></div>
-    <div class="stat"><div class="v" data-n="20">0</div><div class="l">参数变体 LVS 全 MATCH</div></div>
+    <div class="stat rv"><div class="v" data-n="114">0</div><div class="l">pytest 全绿（含真实 ngspice 冒烟）</div></div>
+    <div class="stat rv d1"><div class="v" data-n="28">0</div><div class="l">MCP 工具</div></div>
+    <div class="stat rv d2"><div class="v" data-n="10">0</div><div class="l">模拟单元 × 双 PDK</div></div>
+    <div class="stat rv d3"><div class="v" data-n="20">0</div><div class="l">参数变体 LVS 全 MATCH</div></div>
+  </div>
+</section>
+
+<!-- ============ START ============ -->
+<section class="wrap" id="start">
+  <div class="rv"><div class="kicker">get started</div>
+  <h2>三条命令开跑</h2></div>
+  <div class="install rv d1">
+    <div class="ln"><i>$</i><span><span class="c1">pip install -e ".[dev]"</span> <span class="c2">klayout</span></span><span class="cmt"># 内嵌验证引擎</span></div>
+    <div class="ln"><i>$</i><span class="c1">layout-canvas web</span><span class="cmt"># → http://127.0.0.1:8080 画布</span></div>
+    <div class="ln"><i>$</i><span class="c1">layout-canvas mcp</span><span class="cmt"># → agent 接入（Claude / Devin / 任意 MCP client）</span></div>
   </div>
 </section>
 
@@ -273,222 +383,178 @@
 
 <script>
 "use strict";
-/* ============================================================
-   Layout animation: a sky130-style diff_pair being assembled
-   layer by layer, routed, DRC-scanned, VERIFIED. Loops forever.
-   ============================================================ */
-const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
-const W = cv.width, H = cv.height;
-const phaseEl = document.getElementById("phase"), chip = document.getElementById("vchip");
-const C = {diff:"#2fbf71",poly:"#e5484d",cont:"#f5f5f4",li1:"#8b949e",
-           met1:"#38bdf8",met2:"#c084fc",met3:"#f472b6",tap:"#fbbf24"};
+/* ================================================================
+   1) HERO DIE — sky130 diff_pair assembled layer-by-layer, then
+      routed → DRC-scanned (violation flash & fix) → LVS → VERIFIED
+   ================================================================ */
+const cv=document.getElementById("cv"),ctx=cv.getContext("2d");
+const W=cv.width,H=cv.height;
+const phaseEl=document.getElementById("phase"),chip=document.getElementById("vchip");
+const C={diff:"#2fbf71",poly:"#e5484d",cont:"#f5f5f4",met1:"#38bdf8",
+         met2:"#c084fc",met3:"#f472b6",tap:"#e8b27e",acc2:"#f6d1ac"};
+const GX=70,GY=80,U=10,X=v=>GX+v*U,Y=v=>GY+v*U;
 
-/* geometry in "um" — stylized like a real diff pair: ring + 2 rows of
-   fingers + poly gates + contact grids + straps + risers + vias */
-const GX=70, GY=80;              // cell origin
-const U=10;                      // um→px
-const X=v=>GX+v*U, Y=v=>GY+v*U;
+const R={bars:[[1,1,48,1.2],[1,1,1.2,30],[48,1,1.2,30],[1,29.8,48,1.2]],contacts:[]};
+for(let x=3;x<47;x+=2.4){R.contacts.push([x,1.25],[x,29.95]);}
+for(let y=3.4;y<28;y+=2.4){R.contacts.push([1.15,y],[48.15,y]);}
 
-function ring(){            // guard ring: 4 corner-joined bars (ptap + cont grid)
-  const b=[[1.0,1.0,48,1.2],[1.0,1.0,1.2,30],[48,1.0,1.2,30],[1.0,29.8,48,1.2]];
-  const cs=[];
-  for(let x=3;x<47;x+=2.4){cs.push([x,1.25],[x,29.95]);}
-  for(let y=3.4;y<28;y+=2.4){cs.push([1.15,y],[48.15,y]);}
-  return {bars:b,contacts:cs};
-}
-const R=ring();
+const FINGERS=4,FW=2.0,FSP=1.4,FY0=8,FH=6.4,FY1=18.4;
+const fingers=[],gates=[],contacts=[];
+for(let i=0;i<FINGERS;i++){const fx=5+i*(FW+FSP);
+  fingers.push({x:fx,y:FY0,w:FW,h:FH},{x:fx,y:FY1,w:FW,h:FH});
+  gates.push({x:fx+.3,y:6.6,w:1.4,h:16.6});
+  for(let k=0;k<2;k++){
+    contacts.push({x:fx+.28+k,y:FY0+1.4,w:.4,h:.4},{x:fx+.28+k,y:FY0+4.4,w:.4,h:.4},
+                  {x:fx+.28+k,y:FY1+1.4,w:.4,h:.4},{x:fx+.28+k,y:FY1+4.4,w:.4,h:.4});}}
+const taps=[{x:13,y:4.2,w:3,h:2},{x:27,y:4.2,w:3,h:2}];
+const straps=[{x:4.4,y:FY0+1.1,w:24,h:1,c:C.met1},{x:4.4,y:FY0+4.1,w:24,h:1,c:C.met1},
+              {x:4.4,y:FY1+1.1,w:24,h:1,c:C.met1},{x:4.4,y:FY1+4.1,w:24,h:1,c:C.met1}];
+const risers=[{x:32,y:FY0+1.1,w:1,h:7,c:C.met1},{x:35,y:FY1+4.1,w:1,h:1,c:C.met1}];
+const vias=[{x:32.1,y:FY0+2,w:.8,h:.8},{x:35.1,y:FY1+4.2,w:.8,h:.8},{x:32.1,y:FY1+2,w:.8,h:.8}];
+const met2=[{x:31.9,y:FY0+1.9,w:1.2,h:15,c:C.met2},{x:34.9,y:FY1+4,w:1.2,h:1.4,c:C.met2}];
+const routes=[{pts:[[33,16.9],[44,16.9],[44,24],[46.5,24]],c:C.met2},
+              {pts:[[36,24.7],[44,24.7]],c:C.met2},
+              {pts:[[14.5,5.2],[8,5.2],[8,1.6]],c:C.met3},
+              {pts:[[28.5,5.2],[42,5.2],[42,1.6]],c:C.met3}];
+const VIOL={x:4.4,y:FY0+1.1,w:24,h:1};
 
-const FINGERS=4, FW=2.0, FSPACE=1.4, FY0=8.0, FH=6.4, FH2=6.4, FY1=18.4;
-const fingers=[];           // diffusion strips, two rows (A top / B bottom)
-for(let i=0;i<FINGERS;i++){
-  const fx=5+i*(FW+FSPACE);
-  fingers.push({x:fx,y:FY0,w:FW,h:FH});      // row A
-  fingers.push({x:fx,y:FY1,w:FW,h:FH2});     // row B
-}
-const gates=[];             // poly strips across both rows + tap pads
-for(let i=0;i<FINGERS;i++){
-  const fx=5+i*(FW+FSPACE);
-  gates.push({x:fx+0.3,y:6.6,w:1.4,h:16.6}); // through both rows
-}
-const taps=[{x:13,y:4.2,w:3.0,h:2.0},{x:27,y:4.2,w:3.0,h:2.0}]; // gate tap pads
-const contacts=[];          // cont squares on each finger, 2 columns
-for(const f of fingers) for(let k=0;k<2;k++)
-  contacts.push({x:f.x+0.28+k*1.0,y:f.y+1.4,w:0.4,h:0.4},
-                {x:f.x+0.28+k*1.0,y:f.y+4.4,w:0.4,h:0.4});
-const straps=[              // met1 horizontal straps over each row
-  {x:4.4,y:FY0+1.1,w:24,h:1.0,c:C.met1},{x:4.4,y:FY0+4.1,w:24,h:1.0,c:C.met1},
-  {x:4.4,y:FY1+1.1,w:24,h:1.0,c:C.met1},{x:4.4,y:FY1+4.1,w:24,h:1.0,c:C.met1},
-];
-const risers=[              // met1 vertical risers collecting straps
-  {x:32,y:FY0+1.1,w:1.0,h:7.0,c:C.met1},
-  {x:35,y:FY1+4.1,w:1.0,h:1.0,c:C.met1},
-];
-const vias=[{x:32.1,y:FY0+2.0,w:0.8,h:0.8},{x:35.1,y:FY1+4.2,w:0.8,h:0.8},
-            {x:32.1,y:FY1+2.0,w:0.8,h:0.8}];
-const met2=[{x:31.9,y:FY0+1.9,w:1.2,h:15.0,c:C.met2},           // common drain riser
-            {x:34.9,y:FY1+4.0,w:1.2,h:1.4,c:C.met2}];
-const routes=[              // stylized top-level routes (met2/met3 glow lines)
-  {pts:[[33,16.9],[44,16.9],[44,24],[46.5,24]],c:C.met2},
-  {pts:[[36,24.7],[44,24.7]],c:C.met2},
-  {pts:[[14.5,5.2],[8,5.2],[8,1.6]],c:C.met3},
-  {pts:[[28.5,5.2],[42,5.2],[42,1.6]],c:C.met3},
-];
-
-/* violation marker used in the "scan finds → fix" beat */
-const VIOL={x:4.4,y:FY0+1.1,w:24,h:1.0};
-
-const T=10000;                 // loop period ms
-function phaseAt(t){
-  const s=[["placing blocks",2100],["drawing gates",1400],["contacts & straps",1600],
-           ["top-level routing",1300],["DRC scan",1600],["LVS compare",900],["VERIFIED",1400]];
-  let acc=0;
-  for(let i=0;i<s.length;i++){acc+=s[i][1];if(t<acc)return i;}
-  return s.length-1;
-}
+const SEGT=[2100,1400,1600,1300,1600,900,1400],T=SEGT.reduce((a,b)=>a+b,0);
 const PH=["placing blocks","drawing gates","contacts & straps","top-level routing",
           "DRC scan","LVS compare","VERIFIED"];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const ease=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
-const clip=(v,a,b)=>Math.max(a,Math.min(b,v));
-function fadeIn(t,a,b){return clip((t-a)/(b-a),0,1);}
-
-function rect(r,c,a=1){ctx.globalAlpha=a;ctx.fillStyle=c;
-  ctx.fillRect(X(r.x),Y(r.y),r.w*U,r.h*U);ctx.globalAlpha=1;}
-function strokerect(r,c,a=1){ctx.globalAlpha=a;ctx.strokeStyle=c;ctx.lineWidth=1.4;
-  ctx.strokeRect(X(r.x),Y(r.y),r.w*U,r.h*U);ctx.globalAlpha=1;}
-function grow(r,c,p){          // rect grows from center-left → looks "placed"
-  if(p<=0)return;const w=r.w*ease(p),h=r.h*Math.min(1,p*1.6);
+function phaseAt(t){let a=0;for(let i=0;i<SEGT.length;i++){a+=SEGT[i];if(t<a)return i}return SEGT.length-1}
+function segStart(i){let s=0;while(i-->0)s+=SEGT[i];return s}
+function rect(r,c,a=1){ctx.globalAlpha=a;ctx.fillStyle=c;ctx.fillRect(X(r.x),Y(r.y),r.w*U,r.h*U);ctx.globalAlpha=1}
+function srect(r,c,a=1){ctx.globalAlpha=a;ctx.strokeStyle=c;ctx.lineWidth=1.5;ctx.strokeRect(X(r.x),Y(r.y),r.w*U,r.h*U);ctx.globalAlpha=1}
+function grow(r,c,p){if(p<=0)return;const w=r.w*ease(p),h=r.h*Math.min(1,p*1.6);
   ctx.globalAlpha=Math.min(1,p*2);ctx.fillStyle=c;
-  ctx.fillRect(X(r.x),Y(r.y)+(r.h*U-h*U)/2,w*U,h*U);ctx.globalAlpha=1;}
-function line(pts,c,p,wd=2.6){
-  if(p<=0)return;ctx.globalAlpha=.9;ctx.strokeStyle=c;ctx.lineWidth=wd;
-  ctx.lineJoin="round";ctx.shadowColor=c;ctx.shadowBlur=8*p;
-  ctx.beginPath();
-  let total=0;const seg=[];
-  for(let i=0;i<pts.length-1;i++){const d=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]);
-    seg.push(d);total+=d;}
-  let d=p*total;ctx.moveTo(X(pts[0][0]),Y(pts[0][1]));
-  for(let i=0;i<seg.length;i++){
-    const s=seg[i];if(d>=s){ctx.lineTo(X(pts[i+1][0]),Y(pts[i+1][1]));d-=s;}
-    else{const f=d/s;ctx.lineTo(X(pts[i][0]+(pts[i+1][0]-pts[i][0])*f),
-        Y(pts[i][1]+(pts[i+1][1]-pts[i][1])*f));break;}
-  }
-  ctx.stroke();ctx.shadowBlur=0;ctx.globalAlpha=1;
-}
+  ctx.fillRect(X(r.x),Y(r.y)+(r.h*U-h*U)/2,w*U,h*U);ctx.globalAlpha=1}
+function wire(pts,c,p,wd=2.6){if(p<=0)return;ctx.globalAlpha=.92;ctx.strokeStyle=c;
+  ctx.lineWidth=wd;ctx.lineJoin="round";ctx.shadowColor=c;ctx.shadowBlur=8*p;
+  ctx.beginPath();let tot=0;const sg=[];
+  for(let i=0;i<pts.length-1;i++){const d=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]);sg.push(d);tot+=d}
+  let d=p*tot;ctx.moveTo(X(pts[0][0]),Y(pts[0][1]));
+  for(let i=0;i<sg.length;i++){const s=sg[i];
+    if(d>=s){ctx.lineTo(X(pts[i+1][0]),Y(pts[i+1][1]));d-=s}
+    else{const f=d/s;ctx.lineTo(X(pts[i][0]+(pts[i+1][0]-pts[i][0])*f),Y(pts[i][1]+(pts[i+1][1]-pts[i][1])*f));break}}
+  ctx.stroke();ctx.shadowBlur=0;ctx.globalAlpha=1}
+
 function draw(t){
   ctx.clearRect(0,0,W,H);
-  // faint die boundary
-  ctx.strokeStyle="#1f2a3d";ctx.lineWidth=1;ctx.strokeRect(X(0),Y(0),50*U,32*U);
-  const ph=phaseAt(t);
-  const segT=[2100,1400,1600,1300,1600,900,1400];
-  let segStart=0;for(let i=0;i<ph;i++)segStart+=segT[i];
-  const segP=clip((t-segStart)/segT[ph],0,1);
-  const allDone=ph>=6;
+  ctx.strokeStyle="#3a352e";ctx.lineWidth=1;ctx.strokeRect(X(0),Y(0),50*U,32*U);
+  const ph=phaseAt(t),sp=clamp((t-segStart(ph))/SEGT[ph],0,1),done=ph>=6;
 
-  /* phase 0 — ring + diffusion */
-  if(ph>=0){const p=clip(t/2100,0,1);
-    for(let i=0;i<R.bars.length;i++){const b=R.bars[i];
-      grow({x:b[0],y:b[1],w:b[2],h:b[3]},C.tap,clip(p*1.4-i*.12,0,1));}
-    fingers.forEach((f,i)=>grow(f,C.diff,clip(p*1.6-.25-i*.09,0,1)));
-    if(p>.55)R.contacts.forEach((c,i)=>{const q=clip((p-.55)*4-i*.015,0,1);
-      if(q>0)rect({x:c[0],y:c[1],w:.45,h:.45},C.cont,q*.85);});
-    taps.forEach((tp,i)=>grow(tp,C.poly,clip(p*1.5-.4-i*.15,0,1)));}
-  /* phase 1 — poly gates sweep */
-  if(ph>=1){gates.forEach((g,i)=>grow(g,C.poly,clip(segP*1.5-i*.14,0,1)));}
-  /* phase 2 — contacts + straps + risers + vias + met2 */
-  if(ph>=2){contacts.forEach((c,i)=>{const q=clip(segP*2-i*.02,0,1);
-      if(q>0)rect(c,C.cont,q);});
-    straps.forEach((s,i)=>grow(s,s.c,clip(segP*1.4-.3-i*.1,0,1)));
-    risers.forEach(s=>grow(s,s.c,clip(segP*1.4-.5,0,1)));
-    vias.forEach((v,i)=>{const q=clip(segP*1.6-.7-i*.1,0,1);
-      if(q>0)strokerect(v,C.cont,q*.9);});
-    met2.forEach(s=>grow(s,s.c,clip(segP*1.3-.6,0,1)));}
-  /* phase 3 — routes */
-  if(ph>=3){routes.forEach((r,i)=>line(r.pts,r.c,clip(segP*1.4-i*.2,0,1)));}
-  /* phase 4 — DRC scanline + a violation flash then fix */
-  if(ph>=4){
-    const sp=segP, sx=X(0)+sp*50*U;
-    ctx.globalAlpha=.5;ctx.fillStyle="#7dd3fc22";ctx.fillRect(X(0),0,sx-X(0),32*U);
-    ctx.globalAlpha=1;ctx.strokeStyle=C.acc2||"#7dd3fc";ctx.lineWidth=2;
-    ctx.shadowColor="#7dd3fc";ctx.shadowBlur=14;
+  if(ph>=0){const p=clamp(t/2100,0,1);
+    R.bars.forEach((b,i)=>grow({x:b[0],y:b[1],w:b[2],h:b[3]},C.tap,clamp(p*1.4-i*.12,0,1)));
+    fingers.forEach((f,i)=>grow(f,C.diff,clamp(p*1.6-.25-i*.09,0,1)));
+    if(p>.55)R.contacts.forEach((c,i)=>{const q=clamp((p-.55)*4-i*.015,0,1);
+      if(q>0)rect({x:c[0],y:c[1],w:.45,h:.45},C.cont,q*.85)});
+    taps.forEach((tp,i)=>grow(tp,C.poly,clamp(p*1.5-.4-i*.15,0,1)));}
+  if(ph>=1)gates.forEach((g,i)=>grow(g,C.poly,clamp(sp*1.5-i*.14,0,1)));
+  if(ph>=2){contacts.forEach((c,i)=>{const q=clamp(sp*2-i*.02,0,1);if(q>0)rect(c,C.cont,q)});
+    straps.forEach((s,i)=>grow(s,s.c,clamp(sp*1.4-.3-i*.1,0,1)));
+    risers.forEach(s=>grow(s,s.c,clamp(sp*1.4-.5,0,1)));
+    vias.forEach((v,i)=>{const q=clamp(sp*1.6-.7-i*.1,0,1);if(q>0)srect(v,C.cont,q*.9)});
+    met2.forEach(s=>grow(s,s.c,clamp(sp*1.3-.6,0,1)));}
+  if(ph>=3)routes.forEach((r,i)=>wire(r.pts,r.c,clamp(sp*1.4-i*.2,0,1)));
+  if(ph>=4){const sx=X(0)+sp*50*U;
+    ctx.fillStyle="rgba(246,209,172,.05)";ctx.fillRect(X(0),0,sx-X(0),32*U);
+    ctx.strokeStyle="#f6d1ac";ctx.lineWidth=2;ctx.shadowColor="#f6d1ac";ctx.shadowBlur=14;
     ctx.beginPath();ctx.moveTo(sx,0);ctx.lineTo(sx,Y(32));ctx.stroke();ctx.shadowBlur=0;
-    // one real marker appears mid-scan, then resolves
     if(sp>.3&&sp<.75){const a=Math.sin(sp*40)*.5+.5;
-      strokerect({x:VIOL.x-0.15,y:VIOL.y-0.15,w:VIOL.w+0.3,h:VIOL.h+0.3},C.red,.5+a*.5);
-      ctx.fillStyle=C.red;ctx.font="600 13px "+getComputedStyle(document.body).fontFamily;
-      ctx.fillText("met1.s.2  spacing 0.15µm < 0.18µm",X(VIOL.x),Y(VIOL.y)-8);}
-  }
-  /* phase 5 — LVS: net labels pulse on */
-  if(ph>=5){
-    const q=clip(Math.sin(segP*Math.PI),0,1);
+      srect({x:VIOL.x-.15,y:VIOL.y-.15,w:VIOL.w+.3,h:VIOL.h+.3},C.red,.5+a*.5);
+      ctx.fillStyle=C.red;ctx.font="600 13px ui-monospace,monospace";
+      ctx.fillText("met1.s.2  spacing 0.15µm < 0.18µm",X(VIOL.x),Y(VIOL.y)-8);}}
+  if(ph>=5){const q=clamp(Math.sin(sp*Math.PI),0,1);
     ctx.font="600 14px ui-monospace,monospace";ctx.textBaseline="middle";
-    [["inp",12,4.0],["inn",28,4.0],["out",45,23.5],["vdd",45,16.4]]
-      .forEach((l,i)=>{const a=clip(q*1.4-i*.15,0,1);
-        ctx.globalAlpha=a;ctx.fillStyle="#0a0e14";
-        const w=ctx.measureText(l[0]).width+12;
-        ctx.fillStyle="#34d399";ctx.globalAlpha=a*.92;
-        ctx.beginPath();ctx.roundRect(X(l[1])-6,Y(l[2])-11,w,22,5);ctx.fill();
-        ctx.fillStyle="#04201c";ctx.fillText(l[0],X(l[1]),Y(l[2])+1);ctx.globalAlpha=1;});
-  }
-  /* phase 6 — done, subtle glow pulse */
-  if(allDone){ctx.globalAlpha=.05+Math.sin(t/300)*.02;
-    ctx.strokeStyle=C.acc;ctx.lineWidth=3;
+    [["inp",12,4.0],["inn",28,4.0],["out",45,23.5],["vdd",45,16.4]].forEach((l,i)=>{
+      const a=clamp(q*1.4-i*.15,0,1);ctx.globalAlpha=a*.92;ctx.fillStyle="#34d399";
+      const w=ctx.measureText(l[0]).width+12;
+      ctx.beginPath();ctx.roundRect(X(l[1])-6,Y(l[2])-11,w,22,5);ctx.fill();
+      ctx.fillStyle="#06281c";ctx.fillText(l[0],X(l[1]),Y(l[2])+1);ctx.globalAlpha=1;});}
+  if(done){ctx.globalAlpha=.06+Math.sin(t/300)*.02;ctx.strokeStyle=C.acc2;ctx.lineWidth=3;
     ctx.strokeRect(X(0),Y(0),50*U,32*U);ctx.globalAlpha=1;}
 
-  /* chrome */
-  phaseEl.textContent=PH[ph]+(ph<6?"…":"");
-  if(ph>=6){chip.className="ok";chip.textContent="✓ DRC 0 · LVS MATCH";}
-  else if(ph===4&&segP>.3&&segP<.75){chip.className="bad";chip.textContent="✗ 1 violation → fixing";}
-  else{chip.className="";chip.textContent="◌ verifying";}
-  if(ph===5){chip.className="ok";chip.textContent="◌ LVS comparing…";}
+  phaseEl.textContent=PH[ph]+(done?"":"…");
+  if(done){chip.className="ok";chip.textContent="✓ DRC 0 · LVS MATCH"}
+  else if(ph===5){chip.className="ok";chip.textContent="◌ LVS comparing…"}
+  else if(ph===4&&sp>.3&&sp<.75){chip.className="bad";chip.textContent="✗ 1 violation → fixing"}
+  else{chip.className="";chip.textContent="◌ verifying"}
 }
 let t0=performance.now();
-function loop(now){const t=(now-t0)%T;draw(t);requestAnimationFrame(loop);}
-requestAnimationFrame(loop);
+(function loop(n){draw((n-t0)%T);requestAnimationFrame(loop)})(t0);
 
-/* ============================================================
-   PEX waveform canvas — settling differential outputs + tail
-   ============================================================ */
-const wv=document.getElementById("wave"),wctx=wv.getContext("2d");
-const WW=wv.width=wv.offsetWidth*2||1120,HH=wv.height=460;
-wv.style.height="230px";
-function waveFrame(now){
-  const t=now/1000;wctx.clearRect(0,0,WW,HH);
-  // grid
-  wctx.strokeStyle="#1f2a3d";wctx.lineWidth=1;
-  for(let x=0;x<WW;x+=WW/12){wctx.beginPath();wctx.moveTo(x,0);wctx.lineTo(x,HH);wctx.stroke();}
-  for(let y=0;y<HH;y+=HH/5){wctx.beginPath();wctx.moveTo(0,y);wctx.lineTo(WW,y);wctx.stroke();}
+/* ================================================================
+   2) BLOCK GALLERY — mini procedurally-drawn layout thumbnails
+   ================================================================ */
+const lc={diff:C.diff,poly:C.poly,cont:C.cont,met1:C.met1,met2:C.met2,
+          met3:C.met3,tap:C.tap};
+function thumb(cvEl,kind){
+  const c=cvEl.getContext("2d"),w=cvEl.width,h=cvEl.height;
+  c.fillStyle="#0e0d0c";c.fillRect(0,0,w,h);
+  const R2=(x,y,ww,hh,col,a=1)=>{c.globalAlpha=a;c.fillStyle=col;c.fillRect(x,y,ww,hh);c.globalAlpha=1};
+  const dot=(x,y,s=3)=>R2(x,y,s,s,lc.cont,.9);
+  if(kind==="ring"){
+    R2(14,14,w-28,8,lc.tap);R2(14,h-22,w-28,8,lc.tap);
+    R2(14,14,8,h-28,lc.tap);R2(w-22,14,8,h-28,lc.tap);
+    for(let x=20;x<w-24;x+=14){dot(x,16);dot(x,h-19)}
+    for(let y=20;y<h-24;y+=12){dot(16,y);dot(w-19,y)}
+  }else if(kind==="cap"){
+    for(let i=0;i<4;i++)for(let j=0;j<2;j++)
+      R2(26+i*68,22+j*44,52,34,i%2?lc.met2:lc.met1,.85);
+    R2(20,14,w-40,4,lc.met2);R2(20,h-18,w-40,4,lc.met2);
+    for(let i=0;i<4;i++)R2(30+i*68,18,10,h-36,lc.met3,.25);
+  }else{
+    const rows=kind==="mirror"?1:2,fin=kind==="ota"?8:kind==="strongarm"?10:6;
+    const fh=rows===1?60:26,x0=18,gap=8,fw=(w-36-(fin-1)*gap)/fin;
+    for(let r=0;r<rows;r++){const fy=rows===1?30:26+r*38;
+      for(let i=0;i<fin;i++){const fx=x0+i*(fw+gap);
+        R2(fx,fy,fw,fh,lc.diff,.9);
+        if(kind!=="mirror"||r===0)R2(fx+fw*.3,fy-8,fw*.4,fh+16,lc.poly,.95);
+        dot(fx+3,fy+5);dot(fx+fw-6,fy+5);dot(fx+3,fy+fh-8);dot(fx+fw-6,fy+fh-8);}
+      R2(x0-6,fy+6,w-72+6+6,3.4,lc.met1);R2(x0-6,fy+fh-10,w-72+6+6,3.4,lc.met1);}
+    if(kind==="strongarm")R2(x0-6,h-24,w-12,4,lc.met3,.8);
+    if(kind==="ota"){R2(x0-6,8,w-12,3,lc.met2,.7);R2(x0-6,h-20,w-12,3,lc.met2,.7);}
+  }
+}
+document.querySelectorAll("#bgrid canvas").forEach(el=>thumb(el,el.dataset.b));
+
+/* ================================================================
+   3) PEX WAVEFORM — settling diff outputs + tail node
+   ================================================================ */
+const wv=document.getElementById("wave"),wc=wv.getContext("2d");
+function sizeWave(){wv.width=wv.offsetWidth*2||1120;wv.height=464}
+sizeWave();
+(function wf(now){
+  const WW=wv.width,HH=wv.height,t=now/1000;
+  wc.clearRect(0,0,WW,HH);
+  wc.strokeStyle="#232326";wc.lineWidth=1;
+  for(let x=0;x<WW;x+=WW/12){wc.beginPath();wc.moveTo(x,0);wc.lineTo(x,HH);wc.stroke()}
+  for(let y=0;y<HH;y+=HH/5){wc.beginPath();wc.moveTo(0,y);wc.lineTo(WW,y);wc.stroke()}
   const sweep=(t*.14)%1.3;
   function trace(f,color,lbl,lx){
-    wctx.strokeStyle=color;wctx.lineWidth=2.6;wctx.shadowColor=color;wctx.shadowBlur=9;
-    wctx.beginPath();let started=false;
-    for(let px=0;px<WW;px+=3){
-      const tt=px/WW*8e-6, gx=px/WW;   // 0-8us
-      if(gx>sweep)break;
-      const v=f(tt);const py=HH-((v-0.1)/1.8)*HH*0.92-HH*0.04;
-      if(!started){wctx.moveTo(px,py);started=true;}else wctx.lineTo(px,py);
-    }
-    wctx.stroke();wctx.shadowBlur=0;
-    wctx.fillStyle=color;wctx.font="600 20px ui-monospace,monospace";
-    wctx.fillText(lbl,lx,30);}
-  // outp / outn settle to ~0.85V with ripple; tail rises to ~0.6V
-  trace(tt=>0.85+0.32*Math.exp(-tt*4e5)*Math.cos(tt*9e5*6.283)+0.02*Math.sin(tt*3e5),"#34d399","v(outp)",24);
-  trace(tt=>0.85-0.32*Math.exp(-tt*4e5)*Math.cos(tt*9e5*6.283),"#7dd3fc","v(outn)",140);
-  trace(tt=>0.60-0.28*Math.exp(-tt*6e5),"#fbbf24","v(xd1.tail)",270);
-  // sweep cursor
-  const cx=sweep*WW;
-  if(sweep<=1){wctx.strokeStyle="#dbe4f055";wctx.lineWidth=1;
-    wctx.beginPath();wctx.moveTo(cx,0);wctx.lineTo(cx,HH);wctx.stroke();}
-  wctx.fillStyle="#4a5568";wctx.font="16px ui-monospace,monospace";
-  wctx.fillText("0",12,HH-8);wctx.fillText("8 µs",WW-56,HH-8);
-  requestAnimationFrame(waveFrame);
-}
-requestAnimationFrame(waveFrame);
+    wc.strokeStyle=color;wc.lineWidth=2.6;wc.shadowColor=color;wc.shadowBlur=9;
+    wc.beginPath();let st=false;
+    for(let px=0;px<WW;px+=3){const tt=px/WW*8e-6,gx=px/WW;if(gx>sweep)break;
+      const py=HH-((f(tt)-0.1)/1.8)*HH*.92-HH*.04;
+      if(!st){wc.moveTo(px,py);st=true}else wc.lineTo(px,py);}
+    wc.stroke();wc.shadowBlur=0;
+    wc.fillStyle=color;wc.font="600 20px ui-monospace,monospace";wc.fillText(lbl,lx,32);}
+  trace(tt=>.85+.32*Math.exp(-tt*4e5)*Math.cos(tt*9e5*6.283)+.02*Math.sin(tt*3e5),"#34d399","v(outp)",24);
+  trace(tt=>.85-.32*Math.exp(-tt*4e5)*Math.cos(tt*9e5*6.283),"#93c5fd","v(outn)",150);
+  trace(tt=>.60-.28*Math.exp(-tt*6e5),"#e8b27e","v(xd1.tail)",290);
+  if(sweep<=1){const cx=sweep*WW;wc.strokeStyle="#dbe4f040";
+    wc.beginPath();wc.moveTo(cx,0);wc.lineTo(cx,HH);wc.stroke();}
+  wc.fillStyle="#5d584f";wc.font="15px ui-monospace,monospace";
+  wc.fillText("0",12,HH-10);wc.fillText("8 µs",WW-60,HH-10);
+  requestAnimationFrame(wf);
+})(performance.now());
 
-/* ============================================================
-   MCP terminal — typed agent session, loops
-   ============================================================ */
-const TERM=[
-  ["p","> open_design(diffamp)"],["c","# agent session · layout-canvas mcp"],
+/* ================================================================
+   4) MCP TERMINAL — typed agent session
+   ================================================================ */
+const TERM=[["p","> open_design(diffamp)"],["c","# agent session · layout-canvas mcp"],
   ["k","  session s_01 · sky130 · 1 instance"],
   ["p","> verify_design()"],
   ["k","  extract: 16 devices · drc: 0 violations · lvs: MATCH"],
@@ -498,38 +564,40 @@ const TERM=[
   ["ok","  → waves: out, xd1.tail"],
   ["p","> export_virtuoso(library=\"canvas_lib\")"],
   ["k","  skill: 660 lines · spectre: 32 lines"],
-  ["ok","  → hand-off ready"],
-];
-const termEl=document.getElementById("term");
-let li=0,ci=0,lines=[];
-function termTick(){
-  const [cls,txt]=TERM[li];
-  ci+=1;
-  const cur=txt.slice(0,ci);
-  termEl.innerHTML=lines.map(l=>`<div class="${l[0]}">${l[1]}</div>`).join("")
-    +`<div class="${cls}">${cur}<span style="opacity:.6">▊</span></div>`;
-  if(ci>=txt.length){lines.push([cls,txt]);li=(li+1)%TERM.length;ci=0;
-    if(li===0){setTimeout(()=>{lines=[];termTick();},2600);return;}
-    setTimeout(termTick,cls==="p"?160:430);return;}
-  setTimeout(termTick,14+Math.random()*22);
-}
+  ["ok","  → hand-off ready"]];
+const termEl=document.getElementById("term");let li=0,ci=0,tlines=[];
+function termTick(){const[cls,txt]=TERM[li];ci++;
+  termEl.innerHTML=tlines.map(l=>`<div class="${l[0]}">${l[1]}</div>`).join("")
+    +`<div class="${cls}">${txt.slice(0,ci)}<span style="opacity:.6">▊</span></div>`;
+  if(ci>=txt.length){tlines.push([cls,txt]);li=(li+1)%TERM.length;ci=0;
+    if(li===0){setTimeout(()=>{tlines=[];termTick()},2800);return}
+    setTimeout(termTick,cls==="p"?170:430);return}
+  setTimeout(termTick,13+Math.random()*24)}
 termTick();
 
-/* ============================================================
-   Flow step highlight + stat counters (on view)
-   ============================================================ */
+/* ================================================================
+   5) flow highlight · scroll spring reveals · counters · marquee dup
+   ================================================================ */
 const steps=document.querySelectorAll(".fstep");let fi=0;
 setInterval(()=>{steps.forEach(s=>s.classList.remove("lit"));
-  steps[fi%steps.length].classList.add("lit");fi++;},1600);
+  steps[fi%steps.length].classList.add("lit");fi++},1600);
 
 const io=new IntersectionObserver(es=>es.forEach(e=>{
-  if(!e.isIntersecting)return;const el=e.target;io.unobserve(el);
+  if(!e.isIntersecting)return;e.target.classList.add("on");io.unobserve(e.target)}),
+  {threshold:.18});
+document.querySelectorAll(".rv").forEach(el=>io.observe(el));
+
+const cio=new IntersectionObserver(es=>es.forEach(e=>{
+  if(!e.isIntersecting)return;const el=e.target;cio.unobserve(el);
   const n=+el.dataset.n,st=performance.now();
-  (function up(now){const p=Math.min(1,(now-st)/1100);
+  (function up(now){const p=Math.min(1,(now-st)/1200);
     el.textContent=Math.round(n*(1-Math.pow(1-p,3)));
-    if(p<1)requestAnimationFrame(up);})(st);
+    if(p<1)requestAnimationFrame(up)})(st);
 }),{threshold:.6});
-document.querySelectorAll(".stat .v").forEach(el=>io.observe(el));
+document.querySelectorAll(".stat .v").forEach(el=>cio.observe(el));
+
+/* seamless marquee: duplicate content once */
+const mq=document.getElementById("marq");mq.innerHTML+=mq.innerHTML;
 </script>
 </body>
 </html>
