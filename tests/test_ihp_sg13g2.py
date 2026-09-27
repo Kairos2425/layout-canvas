@@ -68,17 +68,12 @@ def test_ihp_pdk_descriptor():
 
 # --- Real foundry-model smoke (ngspice + IHP open PDK) --------------------
 
-_MODELS_DIR = Path(
-    os.environ.get(
-        "LAYOUT_CANVAS_IHP_MODELS",
-        r"E:\Agentic TCAD\PDK\official_sources\IHP-Open-PDK\ihp-sg13g2\libs.tech\ngspice\models",
-    )
-)
-_OSDI_DIRS = [
-    Path(os.environ["LAYOUT_CANVAS_OSDI_DIR"]),
-] if os.environ.get("LAYOUT_CANVAS_OSDI_DIR") else [
-    Path(r"E:\Reliability-PINN-Lab\.tmp\ngspice47\Spice64\lib\ngspice"),
-]
+# IHP foundry models are not redistributed — point the env vars at a local
+# IHP-Open-PDK ngspice install; the real-model smoke test skips otherwise.
+_MODELS_DIR = Path(os.environ["LAYOUT_CANVAS_IHP_MODELS"]) \
+    if os.environ.get("LAYOUT_CANVAS_IHP_MODELS") else None
+_OSDI_DIRS = [Path(os.environ["LAYOUT_CANVAS_OSDI_DIR"])] \
+    if os.environ.get("LAYOUT_CANVAS_OSDI_DIR") else []
 
 
 def _ngspice() -> str | None:
@@ -88,6 +83,7 @@ def _ngspice() -> str | None:
 def _ihp_ready() -> bool:
     return (
         _ngspice() is not None
+        and _MODELS_DIR is not None
         and (_MODELS_DIR / "cornerMOSlv.lib").is_file()
         and any((d / "psp103.osdi").is_file() for d in _OSDI_DIRS)
     )

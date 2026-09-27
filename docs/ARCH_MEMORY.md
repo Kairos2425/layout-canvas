@@ -43,7 +43,7 @@
 8. **契约文档化 (ADR)**：
    - `docs/adr/0001-0006` 冻结：事务边界、验证 fail-closed、显式连接性、
      项目文件协议、仿真契约、PDK 描述层与 cell abstract。
-   - 对标参照：E:\analog-canvas-review-20260905（开源 analog-canvas 全量 clone）；
+   - 对标参照：`github.com/cascode-ai/analog-canvas`（开源 analog-canvas）；
      落地规划见 docs/PRODUCT_PLAN_ANALOG_CANVAS.md。
 
 ---

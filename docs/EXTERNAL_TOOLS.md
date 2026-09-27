@@ -73,35 +73,34 @@ extraction, `NetlistComparer` — with no external binary:
 ## Binary overrides
 
 Adapters check `LAYOUT_CANVAS_<TOOL>` env vars before PATH, e.g.
-`LAYOUT_CANVAS_NGSPICE=E:\...\ngspice.exe`. Use this for tools that are
+`LAYOUT_CANVAS_NGSPICE=/opt/ngspice/bin/ngspice`. Use this for tools that are
 installed but not on PATH.
 
-## Current host status (verified 2026-09-15)
+## Host setup (environment variables)
 
-- **ngspice-47**: `E:\Reliability-PINN-Lab\.tmp\ngspice47\Spice64\bin\ngspice.exe`
-  (not on PATH — set `LAYOUT_CANVAS_NGSPICE` or add `...\bin` to PATH).
-  Real `.op` smoke verified end-to-end: diff_pair compiled → illustrative
-  model deck → ngspice batch → DC solution (`tests/test_sim.py::
-  test_real_ngspice_op_smoke`, auto-skips when no binary).
-- **IHP SG13G2 open PDK**: `E:\Agentic TCAD\PDK\official_sources\IHP-Open-PDK\
-  ihp-sg13g2` — real ngspice corner decks (`libs.tech/ngspice/models/
-  cornerMOSlv.lib` etc.), KLayout tech, netgen and magic setups. Registered
-  as PDK descriptor `ihp_sg13g2` with verified layer map, plus a real block
-  package (`blocks/ihp_sg13g2/`: diff_pair, current_mirror, ota_5t,
-  guard_ring) emitting `X`-instantiated `sg13_lv_nmos/pmos` PSP wrappers.
-  **Real foundry-model `.op` verified end-to-end** (see recipe below).
+- **ngspice**: install ngspice ≥40 and put it on PATH, or set
+  `LAYOUT_CANVAS_NGSPICE` to the binary. The real-model smoke test
+  (`tests/test_sim.py::test_real_ngspice_op_smoke`) auto-skips without one.
+- **IHP SG13G2 open PDK**: clone `IHP-GmbH/IHP-Open-PDK` and set
+  `LAYOUT_CANVAS_IHP_MODELS=<repo>/ihp-sg13g2/libs.tech/ngspice/models`
+  (provides `cornerMOSlv.lib`) and
+  `LAYOUT_CANVAS_OSDI_DIR=<dir containing psp103.osdi>` (usually the
+  ngspice `lib/ngspice` directory). Registered as PDK descriptor
+  `ihp_sg13g2` with verified layer map, plus a real block package
+  (`blocks/ihp_sg13g2/`: diff_pair, current_mirror, ota_5t, guard_ring)
+  emitting `X`-instantiated `sg13_lv_nmos/pmos` PSP wrappers.
 
 ## IHP SG13G2 simulation recipe (verified)
 
 SG13G2 MOS devices are PSP 103.6 subckt wrappers, not BSIM models. A working
-deck needs all of the following — verified 2026-09-15 against ngspice-47:
+deck needs all of the following — verified against ngspice-47:
 
 ```spice
 .control
-pre_osdi E:/Reliability-PINN-Lab/.tmp/ngspice47/Spice64/lib/ngspice/psp103.osdi
-pre_osdi E:/Reliability-PINN-Lab/.tmp/ngspice47/Spice64/lib/ngspice/psp103_nqs.osdi
+pre_osdi <osdi_dir>/psp103.osdi
+pre_osdi <osdi_dir>/psp103_nqs.osdi
 .endc
-.lib "E:/Agentic TCAD/PDK/.../ngspice/models/cornerMOSlv.lib" mos_tt
+.lib "<ihp_models>/cornerMOSlv.lib" mos_tt
 .param pre_layout=1
 ```
 
@@ -124,11 +123,7 @@ binary/models absent).
   instantiate the canonical `sky130_fd_pr__nfet_01v8`/`pfet_01v8` subckts
   (X-cards, `nf=` fingers). **Real foundry BSIM4 `.op` verified**
   (`tests/test_sim.py::test_real_sky130_tt_op_smoke`, VDD current = tail
-  current as expected). The on-disk `skywater-pdk` repo has empty library
-  submodules; the bundled files remove that dependency for MOS decks.
-- **Commercial PDKs on disk** (Spectre `.scs` decks, need license + Spectre):
-  SMIC 0.18 (`PDK\installed\smic018mmrf`, `smic18eeprom`), TSMC 0.18
-  (`PDK\TSMC180\...\tsmc18_models\models\spectre\`).
+  current as expected).
 - **In-process verification**: `klayout==0.30.12` (pip, in `.venv`) gives real
   DRC/LVS without external binaries — device extraction, geometry checks and
   `NetlistComparer` all verified on compiled GDS

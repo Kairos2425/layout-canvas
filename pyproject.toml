@@ -5,9 +5,9 @@ build-backend = "hatchling.build"
 [project]
 name = "layout-canvas"
 version = "0.0.1"
-description = "Block-level, AI-native IC layout canvas: Block IR + parametric Sky130 blocks + KLayout DRC, built on gdsfactory."
+description = "Block-level, AI-native analog layout canvas: Block IR + parametric blocks + DRC/LVS/PEX verification + Virtuoso export."
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = { text = "MIT" }
 requires-python = ">=3.11"
 authors = [{ name = "layout-canvas contributors" }]
 dependencies = [

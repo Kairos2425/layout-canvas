@@ -61,4 +61,5 @@ def _build(width: float) -> gf.Component:
 
 ## License
 
-All contributions to core IR, compiler, and open-source block libraries are licensed under Apache-2.0.
+All contributions are licensed under MIT — see `LICENSE`. Bundled Sky130 model
+files under `examples/models/sky130/` remain Apache-2.0 (upstream SkyWater).

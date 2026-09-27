@@ -3,7 +3,7 @@
 > 日期：2026-09-14
 > 参照对象：`analog-canvas.tokenzhang.com` = 开源仓库 `github.com/cascode-ai/analog-canvas`
 > （内部名 interactive-circuit-maker，张智帅 Zhishuai Zhang / 清华 EE → ETH Zürich）
-> 本地参照副本：`E:\analog-canvas-review-20260905`（全量 clone，含 ADR/spec/测试体系）
+> 参照来源：`github.com/cascode-ai/analog-canvas`（开源仓库，含 ADR/spec/测试体系）
 
 ---
 
@@ -136,7 +136,7 @@ layout-canvas 侧的内化等价物（本轮已落地）：
 
 ## 6. 参考锚点（读代码/文档的入口）
 
-- 变更边界设计：`E:\analog-canvas-review-20260905\packages\edit-engine\`
+- 变更边界设计：`analog-canvas` 仓库 `packages/edit-engine/`
 - Agent 协议：`docs\specs\agent-api.md`、`docs\agent\workflow.md`（8 步 layout loop）
 - 验证 fail-closed：`docs\adr\0055-simulation-is-part-of-the-product.md`
 - 连接性哲学：`docs\specs\connectivity-and-routing.md`、ADR 0052

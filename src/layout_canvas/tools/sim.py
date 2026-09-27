@@ -239,11 +239,13 @@ def default_model_prelude(pdk: str) -> str:
             return f'.include "{lib.as_posix()}"'
         return ""
     if pdk == "ihp_sg13g2":
-        models = Path(os.environ.get(
-            "LAYOUT_CANVAS_IHP_MODELS",
-            r"E:\Agentic TCAD\PDK\official_sources\IHP-Open-PDK"
-            r"\ihp-sg13g2\libs.tech\ngspice\models"))
-        mos = models / "cornerMOSlv.lib"
+        # IHP models are not redistributed — point LAYOUT_CANVAS_IHP_MODELS
+        # at the ngspice model dir of a local IHP-Open-PDK checkout
+        # (ihp-sg13g2/libs.tech/ngspice/models).
+        models_env = os.environ.get("LAYOUT_CANVAS_IHP_MODELS")
+        if not models_env:
+            return ""
+        mos = Path(models_env) / "cornerMOSlv.lib"
         if not mos.is_file():
             return ""
         return (f'.lib "{mos.as_posix()}" mos_tt\n'
@@ -254,16 +256,16 @@ def default_model_prelude(pdk: str) -> str:
 def default_control_prelude(pdk: str) -> list[str]:
     """.control lines that must run before the analysis (OSDI loads etc.)."""
     if pdk == "ihp_sg13g2":
-        osdi_dirs = ([Path(os.environ["LAYOUT_CANVAS_OSDI_DIR"])]
-                     if os.environ.get("LAYOUT_CANVAS_OSDI_DIR")
-                     else [Path(r"E:\Reliability-PINN-Lab\.tmp\ngspice47"
-                                r"\Spice64\lib\ngspice")])
+        # PSP103 is OSDI-compiled; LAYOUT_CANVAS_OSDI_DIR points at the
+        # directory containing psp103.osdi (e.g. an ngspice lib dir).
+        osdi_env = os.environ.get("LAYOUT_CANVAS_OSDI_DIR")
+        if not osdi_env:
+            return []
         lines = []
-        for d in osdi_dirs:
-            for name in ("psp103.osdi", "psp103_nqs.osdi"):
-                f = d / name
-                if f.is_file():
-                    lines.append(f"pre_osdi {f.as_posix()}")
+        for name in ("psp103.osdi", "psp103_nqs.osdi"):
+            f = Path(osdi_env) / name
+            if f.is_file():
+                lines.append(f"pre_osdi {f.as_posix()}")
         return lines
     return []
 
