@@ -27,7 +27,7 @@ Block IR (JSON) ── compile ──▶ gdsfactory ──▶ GDS
 | **LVS** | `LayoutToNetlist` extraction + `NetlistComparer` topology match; passive blocks get connectivity-semantics comparison; mismatched nets are localized and highlighted |
 | **PEX sim** | Extracted netlist → BSIM4/PSP foundry models via ngspice; internal-node probes (`xd1.tail`), custom testbenches |
 | **Export** | Virtuoso SKILL (shapes/instances) + Spectre netlist, GDS/OASIS, SPICE |
-| **Interfaces** | CLI · local web canvas · MCP stdio server (28 tools) |
+| **Interfaces** | CLI · local web canvas · MCP stdio server (29 tools) |
 
 ## Install
 
