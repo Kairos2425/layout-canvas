@@ -1,0 +1,10 @@
+﻿# Cloudflare Workers static-assets deployment of the promo/docs site.
+#   npx wrangler deploy -c deploy/cloudflare/wrangler.toml
+# Serves docs/ (same source as GitHub Pages); *.md excluded via docs/.assetsignore.
+name = "layout-canvas"
+compatibility_date = "2026-09-01"
+
+[assets]
+directory = "../../docs"
+html_handling = "auto-trailing-slash"
+not_found_handling = "none"

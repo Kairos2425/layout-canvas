@@ -6,7 +6,15 @@ and environment bindings injected at runtime rather than baked into images.
 
 ## Channels
 
-- **Production**: the only hosted channel. Served by the container built from
+- **Public site** (static promo + docs entry, `docs/index.html`): served from
+  two mirrors of the same source —
+  - GitHub Pages: https://kairos2425.github.io/layout-canvas/ (auto on push to `main`)
+  - Cloudflare Workers static assets: https://layout-canvas.79402635.workers.dev
+    — `npx wrangler deploy -c deploy/cloudflare/wrangler.toml` (needs a
+    wrangler login with `workers:write`; `docs/.assetsignore` keeps markdown
+    out of the bundle). No server code runs there — the app itself stays
+    local-first.
+- **Production** (the app): the only hosted channel. Served by the container built from
   `deploy/Dockerfile` behind `deploy/compose.yaml`. Local commits never reach
   it — a release is a deliberate act.
 - **Local**: `layout-canvas web` on a developer machine. The same code path
