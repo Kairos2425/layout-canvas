@@ -461,6 +461,37 @@ class LayoutCanvasMCPServer:
                 },
             },
             {
+                "name": "import_gds",
+                "description": "Import a Virtuoso stream-out GDS as an instantiable cell block registered under 'alias'. Pins are discovered from pin-layer labels (the GDS must carry pin labels, e.g. met*/pn texts). spice_path is optional — without it the cell is layout-only and simulation/LVS stay fail-closed.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "alias": {
+                            "type": "string",
+                            "description": "Block name parents will reference, e.g. 'ext.inv_v1'",
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "Path to the GDS/OASIS file on disk.",
+                        },
+                        "pdk": {
+                            "type": "string",
+                            "default": "sky130",
+                            "description": "PDK name used to resolve pin-label layers (e.g. 'sky130', 'ihp_sg13g2').",
+                        },
+                        "cell_name": {
+                            "type": "string",
+                            "description": "Top cell to import; required when the GDS has multiple top cells.",
+                        },
+                        "spice_path": {
+                            "type": "string",
+                            "description": "Optional SPICE netlist containing '.subckt <cell_name>' with matching pin count; enables simulation/LVS.",
+                        },
+                    },
+                    "required": ["alias", "path"],
+                },
+            },
+            {
                 "name": "probe_environment",
                 "description": "Probe the host for EDA tools: simulators (ngspice/Xyce/LTspice/Spectre/HSPICE/Eldo), DRC (KLayout/Magic/Calibre), LVS (Netgen). Returns availability, version, and license gating per tool — all detection, no verdicts.",
                 "inputSchema": {
@@ -767,6 +798,21 @@ class LayoutCanvasMCPServer:
                 "ports": [p.name for p in block.spec.ports],
                 "pdk": block.spec.pdk,
             }
+
+        elif name == "import_gds":
+            from layout_canvas.blocks.gds_cell import import_summary, register_gds_cell
+
+            spice_text = None
+            if args.get("spice_path"):
+                spice_text = Path(args["spice_path"]).read_text(encoding="utf-8")
+            block = register_gds_cell(
+                args["alias"],
+                args["path"],
+                pdk=args.get("pdk", "sky130"),
+                cell_name=args.get("cell_name"),
+                spice_text=spice_text,
+            )
+            return import_summary(block)
 
         elif name == "save_project":
             session = self._get_session(args.get("session_id"))

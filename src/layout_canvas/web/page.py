@@ -126,6 +126,9 @@ PAGE = """<!doctype html>
 <div id="main">
 <aside id="left">
   <h3>Blocks</h3>
+  <button class="btn" style="width:100%;margin-bottom:8px"
+          onclick="document.getElementById('gdsFile').click()">Import GDS</button>
+  <input type="file" id="gdsFile" accept=".gds,.oas" style="display:none">
   <div id="palette"></div>
   <h3>Layers</h3>
   <div id="layerList" style="font:10.5px ui-monospace;color:var(--mut)"></div>
@@ -547,6 +550,32 @@ async function addBlock(name) {
     instance: {id: id, block: name, params: params}}]);
   selInst = id; setRev();
 }
+
+// ---------- external GDS import ----------
+// Reads the picked file as base64, asks for a block alias, then registers
+// it server-side and refreshes the palette so it can be placed.
+document.getElementById('gdsFile').addEventListener('change', async (ev) => {
+  const f = ev.target.files[0];
+  ev.target.value = '';
+  if (!f) return;
+  const buf = await f.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 8192)
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  const gds_b64 = btoa(bin);
+  const stem = f.name.replace(/[.][^.]*$/, '').replace(/[^A-Za-z0-9_.]/g, '_');
+  askValue('Block alias for ' + f.name + ':', 'ext.' + stem, async (alias) => {
+    if (!alias) return;
+    const res = await api('import_gds',
+      {alias: alias, pdk: ir().pdk, gds_b64: gds_b64});
+    if (res.status !== 'ok') return showErr(res);
+    await loadPalette();
+    tab('output');
+    document.getElementById('out').textContent =
+      JSON.stringify(res.data, null, 2);
+  });
+});
 
 // ---------- actions ----------
 function showErr(res) {

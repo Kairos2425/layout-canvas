@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -151,12 +152,46 @@ def _gallery_api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {"status": "error", "error": f"unknown gallery action {action!r}"}
 
 
+def _import_gds_api(payload: dict[str, Any]) -> dict[str, Any]:
+    """Import a base64-encoded GDS/OASIS as an instantiable cell block."""
+    import base64
+    import tempfile
+
+    from layout_canvas.blocks.gds_cell import import_summary, register_gds_cell
+
+    alias = str(payload.get("alias") or "").strip()
+    if not alias or not re.fullmatch(r"[A-Za-z0-9_.\-]+", alias):
+        return {"status": "error",
+                "error": "import_gds needs 'alias' matching [A-Za-z0-9_.-]+"}
+    try:
+        raw = base64.b64decode(payload.get("gds_b64") or "", validate=True)
+    except Exception:
+        return {"status": "error", "error": "gds_b64 is not valid base64"}
+    if not raw:
+        return {"status": "error", "error": "empty GDS payload"}
+    try:
+        gds = Path(tempfile.mkdtemp(prefix="lc_gds_")) / f"{alias}.gds"
+        gds.write_bytes(raw)
+        block = register_gds_cell(
+            alias,
+            gds,
+            pdk=str(payload.get("pdk") or "sky130"),
+            cell_name=payload.get("cell_name"),
+            spice_text=payload.get("spice_text"),
+        )
+        return {"status": "ok", "data": import_summary(block)}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
 def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Handle one API call; errors come back structured, never as a 500."""
     if action.startswith("session/"):
         return _session_api(action.split("/", 1)[1], payload)
     if action.startswith("gallery/"):
         return _gallery_api(action.split("/", 1)[1], payload)
+    if action == "import_gds":
+        return _import_gds_api(payload)
     raw = payload.get("ir_json")
     try:
         design = Design.model_validate_json(raw) if isinstance(raw, str) else Design.model_validate(raw)

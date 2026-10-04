@@ -128,6 +128,42 @@ res = simulate_extracted(
 `verify_design` is fail-closed: missing engines report
 `unavailable`, mismatches report real bboxes / net diffs.
 
+### Import external GDS (Virtuoso stream-out)
+
+A foreign cell can be registered as an instantiable block. Pins are read
+from the GDS's pin-layer labels (the PDK's pin-label datatype — sky130
+`(layer,16)`, IHP `(layer,2)`); each label becomes an `inout` port on the
+matching drawing layer.
+
+```python
+from layout_canvas.blocks.gds_cell import register_gds_cell
+
+block = register_gds_cell(
+    "ext.inv_v1",
+    "inv_v1.gds",
+    pdk="sky130",
+    cell_name="inv_v1",          # optional unless the GDS has >1 top cell
+    spice_text=open("inv_v1.sp").read(),  # optional; must contain '.subckt inv_v1' with a matching pin count
+)
+# afterwards: block "ext.inv_v1" is instantiable in any parent design
+```
+
+Web canvas: **Import GDS** button in the Blocks palette — pick a
+`.gds`/`.oas` file, confirm the alias, and the new block appears in the
+palette ready to place (POST `/api/import_gds` with
+`{alias, pdk, gds_b64, cell_name?, spice_text?}`).
+
+MCP: `import_gds` tool — `{alias, path, pdk, cell_name?, spice_path?}`.
+
+Two limitations:
+
+- **Pin labels required** — the GDS must carry pin labels on the PDK's
+  pin-label layer (e.g. a Virtuoso stream-out with `met*/pn` labels).
+  Zero labels → the import refuses instead of guessing.
+- **No netlist → layout-only** — without `spice_text`/`spice_path` the
+  cell has no transistor-level emitter: `simulate_design` refuses by name
+  and LVS compares against a black-box (never a false pass).
+
 ## 6. MCP — drive it with an agent
 
 Register the stdio server in your MCP client config:
@@ -143,12 +179,12 @@ Register the stdio server in your MCP client config:
 }
 ```
 
-28 tools, grouped:
+29 tools, grouped:
 
 | Intent | Tools |
 |---|---|
 | Environment | `probe_environment` |
-| Blocks | `list_blocks`, `generate_block`, `register_cell` |
+| Blocks | `list_blocks`, `generate_block`, `register_cell`, `import_gds` |
 | Session | `open_design`, `close_design`, `transact`, `snapshot`, `undo`, `load_project`, `save_project`, `get_active_layout_info` |
 | Build | `insert_block_into_layout`, `compile_session`, `compile_ir`, `generate_netlist`, `optimize`, `inspect_connectivity`, `inspect_ppa`, `render_preview_svg` |
 | Verify | `run_drc`, `extract_netlist`, `run_lvs`, `verify_design` |
