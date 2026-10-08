@@ -234,6 +234,23 @@ def default_model_prelude(pdk: str) -> str:
     required .param lines for the PDK. Empty string when the PDK has no
     resolvable local models — the caller decides whether that is fatal."""
     repo = Path(__file__).resolve().parents[3]
+    # Descriptor PDKs carry their prelude as a file the JSON points at:
+    # model_libs.spice_prelude_file resolves against the descriptor's
+    # directory so a commercial PDK ships models beside its *.pdk.json.
+    from layout_canvas.pdk import get_pdk
+
+    try:
+        desc = get_pdk(pdk)
+    except KeyError:
+        desc = None
+    if desc is not None and desc.model_libs.get("spice_prelude_file"):
+        lib = Path(desc.model_libs["spice_prelude_file"])
+        if not lib.is_absolute():
+            lib = Path(desc.base_dir or ".") / lib
+        if lib.is_file():
+            # utf-8-sig: a BOM at deck top would leak into the SPICE parser.
+            return lib.read_text(encoding="utf-8-sig").strip()
+        return ""  # declared but missing — no prelude, fail closed below
     if pdk == "sky130":
         lib = repo / "examples" / "models" / "sky130" / "sky130_tt.lib"
         if lib.is_file():
@@ -512,9 +529,9 @@ def _rewrite_mos_cards(netlist: str, pdk: str) -> str:
 # extraction top has no pins — it is the world boundary).
 
 def _leaf_to_wrapper(pdk: str) -> dict[str, str]:
-    from layout_canvas.tools.extract import LEAF_DEVICES
+    from layout_canvas.tools.extract import leaf_devices_for
 
-    return {leaf: sub for sub, (leaf, _pol) in LEAF_DEVICES.get(pdk, {}).items()}
+    return {leaf: sub for sub, (leaf, _pol) in leaf_devices_for(pdk).items()}
 
 
 def _unwrap_extracted_top(text: str) -> str | None:

@@ -51,7 +51,7 @@ def run_pya_drc(gds_path: Path, tech: str = "sky130") -> DRCResult:
     except ImportError:
         return _unavailable(gds_path.with_suffix(".drc.txt"),
                             "klayout python module not installed")
-    rules = _PYA_RULES.get(tech)
+    rules, enclosure = _drc_tables_for(tech)
     report = gds_path.with_suffix(".drc.txt")
     if rules is None:
         return _unavailable(report, f"no pya DRC rule subset for tech {tech!r}")
@@ -102,7 +102,7 @@ def run_pya_drc(gds_path: Path, tech: str = "sky130") -> DRCResult:
     # layer(s), shrunk by the minimum enclosure. `not_inside` on the sized
     # region flags vias/contacts whose edge is closer than the rule value —
     # same construction the .drc decks use (enclosed-by with distance).
-    for label, (inner_l, inner_dt), outers, enc in _PYA_ENCLOSURE.get(tech, []):
+    for label, (inner_l, inner_dt), outers, enc in enclosure:
         inner = _region(inner_l, inner_dt)
         if inner.count() == 0:
             continue
@@ -137,6 +137,34 @@ def run_pya_drc(gds_path: Path, tech: str = "sky130") -> DRCResult:
         return DRCResult("failed", False, violations, total, report,
                          errors=["DRC violations reported"])
     return DRCResult("passed", True, [], 0, report, errors=[])
+
+
+def _drc_tables_for(
+    tech: str,
+) -> tuple[dict[tuple[int, int], list[tuple[str, float]]] | None,
+           list[tuple[str, tuple[int, int], list[tuple[int, int]], float]]]:
+    """(width/space rules, enclosure rules) for ``tech``.
+
+    Descriptor-first: a PDK with a ``drc`` section resolves its named
+    layers/roles at load time; the built-in tables below are the fallback.
+    ``rules is None`` means no rule subset exists — callers report
+    ``unavailable``, never a vacuous pass.
+    """
+    from layout_canvas.pdk import get_pdk
+
+    try:
+        pdk = get_pdk(tech)
+    except KeyError:
+        pdk = None
+    if pdk is not None and pdk.drc is not None:
+        rules = pdk.drc["rules"]
+        enclosure = pdk.drc["enclosure"]
+        if not rules and not enclosure:
+            # An explicitly empty drc section declares no checkable rules —
+            # report unavailable rather than a vacuous "0 violations" pass.
+            return None, []
+        return rules, enclosure
+    return _PYA_RULES.get(tech), _PYA_ENCLOSURE.get(tech, [])
 
 
 # Representative min-width/min-spacing subset (um). Values are the commonly

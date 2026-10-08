@@ -27,6 +27,17 @@ def main() -> int:
     net.add_argument("input", help="Block IR JSON file")
     net.add_argument("-o", "--output", required=True, help="Output SPICE (.sp / .cir) path")
 
+    # pdk command
+    pdkp = sub.add_parser(
+        "pdk",
+        help="List registered PDKs or dump a descriptor JSON template")
+    pdkp.add_argument(
+        "action", choices=["list", "dump"],
+        help="'list' shows every registered PDK; 'dump NAME' prints a "
+             "*.pdk.json template for NAME (built-ins included — a "
+             "starting point for commercial PDK descriptors)")
+    pdkp.add_argument("name", nargs="?", help="PDK name for 'dump'")
+
     # testbench command
     tb = sub.add_parser("testbench", help="Run design testbenches and report spec results")
     tb.add_argument("input", help="Block IR JSON file")
@@ -60,6 +71,39 @@ def main() -> int:
             export_oas(design, args.output)
 
         print(f"Compiled {design.name} → {args.output}", file=sys.stderr)
+        return 0
+
+    if args.cmd == "pdk":
+        import json
+
+        from layout_canvas.pdk import all_pdks, external_pdk_errors
+
+        if args.action == "list":
+            print(json.dumps({
+                "pdks": [
+                    {
+                        "name": p.name,
+                        "source": p.source or "built-in",
+                        "layers": len(p.layers),
+                        "pin_purpose": p.pin_purpose,
+                        "extract": p.extract is not None,
+                        "drc": p.drc is not None,
+                    }
+                    for p in all_pdks().values()
+                ],
+                "load_errors": external_pdk_errors(),
+            }, indent=2))
+            return 0
+        if not args.name:
+            print("pdk dump needs a PDK name (see 'layout-canvas pdk list')",
+                  file=sys.stderr)
+            return 2
+        try:
+            template = _pdk_template(args.name)
+        except KeyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(json.dumps(template, indent=2))
         return 0
 
     if args.cmd == "netlist":
@@ -114,6 +158,68 @@ def main() -> int:
         return 0
 
     return 1
+
+
+def _pdk_template(name: str) -> dict:
+    """JSON-able ``*.pdk.json`` template for ``pdk dump NAME``.
+
+    External descriptors serialise their own sections; for built-ins the
+    extract/DRC truth lives in the tool tables (``tools/extract.py``,
+    ``tools/drc.py``), which are merged in here so the dump is a complete
+    starting point for commercial descriptors.
+    """
+    from layout_canvas.pdk import get_pdk
+
+    pdk = get_pdk(name)
+    out = pdk.to_dict()
+
+    if out.get("extract") is None:
+        from layout_canvas.tools.extract import LEAF_DEVICES, _RECIPES
+
+        recipe = _RECIPES.get(name)
+        if recipe is not None:
+            from layout_canvas.pdk.descriptor import EXTRACTION_ROLES
+
+            out["extract"] = {
+                "roles": {
+                    role: ([*recipe[role]] if recipe.get(role) else None)
+                    for role in EXTRACTION_ROLES
+                },
+                "text_datatypes": list(recipe.get("text_datatypes", ())),
+                "leaf_devices": {
+                    model: [cls_name, pol]
+                    for model, (cls_name, pol) in
+                    LEAF_DEVICES.get(name, {}).items()
+                },
+            }
+
+    # (layer, datatype) -> preferred name: drawing names win, then roles.
+    names = {pair: lname for lname, pair in pdk.layers.items()}
+    for role, pair in (out.get("extract") or {}).get("roles", {}).items():
+        if pair:
+            names.setdefault(tuple(pair), role)
+
+    def _nm(pair) -> str:
+        return names.get(tuple(pair), f"{pair[0]}/{pair[1]}")
+
+    if out.get("drc") is None:
+        from layout_canvas.tools.drc import _PYA_ENCLOSURE, _PYA_RULES
+
+        rules = _PYA_RULES.get(name)
+        enclosure = _PYA_ENCLOSURE.get(name)
+        if rules or enclosure:
+            out["drc"] = {
+                "rules": {
+                    _nm(pair): [[kind, value] for kind, value in checks]
+                    for pair, checks in (rules or {}).items()
+                },
+                "enclosure": [
+                    {"label": label, "cut": _nm(cut),
+                     "enclosed_by": [_nm(o) for o in outers], "enc": value}
+                    for label, cut, outers, value in (enclosure or [])
+                ],
+            }
+    return out
 
 
 if __name__ == "__main__":

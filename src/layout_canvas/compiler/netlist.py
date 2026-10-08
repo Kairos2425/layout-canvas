@@ -30,7 +30,14 @@ def compile_netlist(design: Design) -> str:
     # the resolved parameter values, making names deterministic across runs.
     variants: dict[tuple[str, tuple[tuple[str, object], ...]], tuple[base.Block, dict[str, object], str]] = {}
     for inst in design.instances:
-        block = base.get(inst.block)
+        try:
+            block = base.get(inst.block)
+        except KeyError:
+            # Descriptor-only PDK: name the boundary, don't dump a KeyError.
+            gap = base.describe_pdk_block_gap(design.pdk)
+            if gap is not None:
+                raise ValueError(gap) from None
+            raise
         resolved = block.resolve_params(inst.params)
         key = (inst.block, tuple(sorted(resolved.items())))
         if key not in variants:

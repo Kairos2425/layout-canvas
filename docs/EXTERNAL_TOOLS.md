@@ -69,6 +69,14 @@ extraction, `NetlistComparer` — with no external binary:
 - **DRC deck**: `sky130A.drc` KLayout deck — pass `deck_path` to `run_drc`.
 - **LVS setup**: netgen `sky130A_setup.tcl` — `setup_path` or
   `NETGEN_SETUP` / `SKY130_NETGEN_SETUP` env vars.
+- **External PDK descriptors**: `LAYOUT_CANVAS_PDK_DIR` (directory scanned
+  for `*.pdk.json`) and `LAYOUT_CANVAS_PDKS` (pathsep-separated file list)
+  register additional PDKs with no code — layer map, pin-label datatype,
+  extraction recipe, DRC subset and `model_libs.spice_prelude_file` all
+  come from the JSON. Loaded PDKs and per-file diagnostics surface in
+  `probe_environment` under `external_pdks`/`external_pdk_errors`; see
+  `docs/PDK_DESCRIPTORS.md` for the schema and the privacy rules
+  (commercial PDK material stays on private paths, never in git).
 
 ## Binary overrides
 

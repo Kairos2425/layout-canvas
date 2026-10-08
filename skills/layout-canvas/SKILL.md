@@ -26,6 +26,7 @@ Optional environment (only needed for the features they unlock):
 | `LAYOUT_CANVAS_NGSPICE` | path to `ngspice_con`/`ngspice` for simulation + testbench specs |
 | `LAYOUT_CANVAS_IHP_MODELS`, `LAYOUT_CANVAS_OSDI_DIR` | IHP SG13G2 PSP103 models |
 | `LAYOUT_CANVAS_GALLERY` | gallery directory (default `~/.layout_canvas/gallery`) |
+| `LAYOUT_CANVAS_PDK_DIR`, `LAYOUT_CANVAS_PDKS` | external `*.pdk.json` PDK descriptors (import_gds + DRC/LVS + model prelude; no block generators) |
 
 Call `probe_environment` first when you are unsure what is installed.
 
@@ -110,3 +111,8 @@ Rules the engine enforces (do not fight them):
   auto-resolved — run `verify_design` after moving things.
 - The web canvas and MCP share one `DesignSession` boundary; a human may be
   editing at the same time. Always pass `expected_revision`.
+- Descriptor-only PDKs (`*.pdk.json` via `LAYOUT_CANVAS_PDK_DIR`/`PDKS`,
+  listed by `probe_environment.external_pdks` or `layout-canvas pdk list`)
+  have **no block generators** — `generate_block`/`compile_ir` on them
+  refuse by name. The supported flow is `import_gds` → IR composition →
+  `verify_design`/`run_simulation`.

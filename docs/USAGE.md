@@ -19,6 +19,8 @@ Optional external tools — probed, never required, env-var overrides:
 | `LAYOUT_CANVAS_NETGEN` | netgen binary | external LVS engine |
 | `LAYOUT_CANVAS_IHP_MODELS` | `<IHP-Open-PDK>/ihp-sg13g2/libs.tech/ngspice/models` | IHP real-model sim |
 | `LAYOUT_CANVAS_OSDI_DIR` | dir containing `psp103.osdi` | IHP PSP models |
+| `LAYOUT_CANVAS_PDK_DIR` | private dir of `*.pdk.json` descriptors | external/commercial PDKs |
+| `LAYOUT_CANVAS_PDKS` | pathsep-separated `*.pdk.json` file list | external/commercial PDKs |
 
 Check what is live: `python -c "import json; from layout_canvas.tools.backends import probe_environment; print(json.dumps(probe_environment(), indent=1))"`
 or MCP tool `probe_environment`.
@@ -71,7 +73,15 @@ layout-canvas netlist design.json -o design.sp      # IR → SPICE (LVS ref)
 layout-canvas schema                                 # full IR JSON schema
 layout-canvas web --port 8080                        # local canvas
 layout-canvas mcp                                    # MCP stdio server
+layout-canvas pdk list                               # registered PDKs + load errors
+layout-canvas pdk dump sky130 > my.pdk.json          # descriptor template
 ```
+
+External PDKs: drop a `*.pdk.json` descriptor into a private dir, set
+`LAYOUT_CANVAS_PDK_DIR` to it, and the PDK joins the registry without code
+— `import_gds`, extraction, the DRC subset, LVS and the simulation model
+prelude all key off it. Parametric block generators remain a Python
+plugin (`blocks/<pdk>/`). Full schema: `docs/PDK_DESCRIPTORS.md`.
 
 ## 4. Web canvas
 
@@ -83,7 +93,7 @@ layout-canvas mcp                                    # MCP stdio server
 - **Simulate** — `source=schematic` runs the reference netlist;
   `source=extracted` runs PEX on the extracted netlist. Optional `probes`
   (internal nodes like `xd1.tail`), `analysis` (`op`/`tran`/`ac`/`dc` —
-  ac puts `ac 1` on an input-port V source, dc sweeps it), 
+  ac puts `ac 1` on an input-port V source, dc sweeps it),
   `vdd`, `stimulus` (full custom testbench text).
 - **Virtuoso** — returns SKILL + Spectre text for the compiled layout.
 - **Projects** — save/load design JSON (gallery/session APIs included).

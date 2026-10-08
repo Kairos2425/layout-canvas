@@ -26,6 +26,7 @@ Block IR (JSON) ── compile ──▶ gdsfactory ──▶ GDS
 | **DRC** | In-process KLayout engine: real width / spacing / via-enclosure subset with violation bboxes drawn back on the canvas (RVE-style) |
 | **LVS** | `LayoutToNetlist` extraction + `NetlistComparer` topology match; passive blocks get connectivity-semantics comparison; mismatched nets are localized and highlighted |
 | **PEX sim** | Extracted netlist → BSIM4/PSP foundry models via ngspice; internal-node probes (`xd1.tail`), custom testbenches |
+| **External PDKs** | `*.pdk.json` descriptors via `LAYOUT_CANVAS_PDK_DIR`/`LAYOUT_CANVAS_PDKS` — layer map + extract recipe + DRC subset + model prelude, no code (`docs/PDK_DESCRIPTORS.md`) |
 | **Testbenches** | Named sim setups on the IR (schematic/extracted, op/tran, probes) + per-spec pass/fail/unavailable with reasons; CLI exit codes, session run history |
 | **Export** | Virtuoso SKILL (shapes/instances) + Spectre netlist, GDS/OASIS, SPICE |
 | **Interfaces** | CLI · local web canvas · MCP stdio server (34 tools) |
@@ -37,7 +38,7 @@ git clone https://github.com/Kairos2425/layout-canvas
 cd layout-canvas
 pip install -e ".[dev]"
 pip install klayout        # in-process DRC/LVS/extraction engine
-pytest                     # 159 tests; tool-dependent tests auto-skip
+pytest                     # 175 tests; tool-dependent tests auto-skip
 ```
 
 Optional tools (probed adapters — absent tools report `unavailable`, never fake results):
@@ -111,7 +112,7 @@ src/layout_canvas/
   tools/       drc, extract, lvs, sim, verify, backends
   web/         local canvas app + gallery
   mcp/         stdio MCP server
-tests/         159 tests incl. real-ngspice / real-PDK smokes
+tests/         175 tests incl. real-ngspice / real-PDK smokes
 docs/          architecture, ADRs 0001-0009, external-tool setup
 deploy/        Dockerfile + compose for the web app
 ```

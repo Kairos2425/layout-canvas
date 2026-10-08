@@ -103,6 +103,28 @@ def get(name: str) -> Block:
         raise KeyError(f"unknown block {name!r}; known: {sorted(_REGISTRY)}") from None
 
 
+def describe_pdk_block_gap(pdk_name: str) -> str | None:
+    """Explain a missing block in terms of the PDK registry.
+
+    A JSON-loaded (descriptor-only) PDK has no parametric generators — the
+    honest answer names that boundary instead of a bare "unknown block".
+    Returns None when the PDK is unknown or already has blocks.
+    """
+    from layout_canvas.pdk import get_pdk
+
+    try:
+        get_pdk(pdk_name)
+    except KeyError:
+        return None
+    if any(b.spec.pdk == pdk_name for b in _REGISTRY.values()):
+        return None
+    return (
+        f"no blocks registered for pdk {pdk_name!r} — descriptor-only PDKs "
+        "support import_gds/DRC/LVS/sim; bring cells in via import_gds or "
+        "register_cell, or write a Python block generator"
+    )
+
+
 def all_blocks() -> dict[str, Block]:
     return dict(_REGISTRY)
 

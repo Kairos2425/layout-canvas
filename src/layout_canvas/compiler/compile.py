@@ -118,7 +118,15 @@ def compile_design(design: Design) -> gf.Component:
     # 1. Pre-generate all components to query bounding boxes
     comp_map = {}
     for inst in design.instances:
-        block = base.get(inst.block)
+        try:
+            block = base.get(inst.block)
+        except KeyError:
+            # A registered PDK with zero blocks (descriptor-only) deserves a
+            # named boundary, not an opaque "unknown block" KeyError.
+            gap = base.describe_pdk_block_gap(design.pdk)
+            if gap is not None:
+                raise ValueError(gap) from None
+            raise
         comp_map[inst.id] = block.component(**inst.params)
 
     # 2. Resolve relative placement coordinates

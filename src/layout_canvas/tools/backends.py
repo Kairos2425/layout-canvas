@@ -223,9 +223,25 @@ def probe_environment(timeout: int = 10) -> dict[str, Any]:
     ]
     if pya["status"] == "available":
         verification.append("klayout-pya")
+    # Descriptor PDKs loaded from LAYOUT_CANVAS_PDK_DIR/LAYOUT_CANVAS_PDKS —
+    # what they unlock (extract/drc/prelude) plus per-file load diagnostics.
+    from layout_canvas.pdk import external_pdk_errors, external_pdks
+
+    ext_pdks = {
+        name: {
+            "source": pdk.source,
+            "layers": len(pdk.layers),
+            "drc": pdk.drc is not None,
+            "extract": pdk.extract is not None,
+            "leaf_devices": len((pdk.extract or {}).get("leaf_devices", {})),
+        }
+        for name, pdk in external_pdks().items()
+    }
     return {
         "tools": reports,
         "in_process_engines": [pya],
+        "external_pdks": ext_pdks,
+        "external_pdk_errors": external_pdk_errors(),
         "simulators": {
             "available": [r["name"] for r in reports
                           if r["kind"] == "spice_simulator" and r["status"] == "available" and r["can_run"]],

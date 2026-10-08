@@ -23,6 +23,7 @@ from layout_canvas.derived.connectivity import inspect_connectivity
 from layout_canvas.engine.session import DesignSession
 from layout_canvas.ir.model import Design
 from layout_canvas.mcp.bridge import BridgeClient
+from layout_canvas.pdk import all_pdks
 from layout_canvas.protocol.project import load_project, save_project
 from layout_canvas.tools.drc import run_drc
 from layout_canvas.tools.lvs import run_lvs
@@ -131,7 +132,8 @@ class LayoutCanvasMCPServer:
                     "type": "object",
                     "properties": {
                         "gds_path": {"type": "string", "description": "Path to the GDS layout file."},
-                        "tech": {"type": "string", "enum": ["sky130", "ihp_sg13g2"], "default": "sky130"},
+                        "tech": {"type": "string", "enum": sorted(all_pdks()), "default": "sky130",
+                                 "description": "PDK name — built-ins plus descriptor PDKs from LAYOUT_CANVAS_PDK_DIR/LAYOUT_CANVAS_PDKS."},
                         "output_path": {"type": "string", "description": "Optional path to write the extracted SPICE."},
                     },
                     "required": ["gds_path"],
@@ -582,7 +584,7 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "probe_environment",
-                "description": "Probe the host for EDA tools: simulators (ngspice/Xyce/LTspice/Spectre/HSPICE/Eldo), DRC (KLayout/Magic/Calibre), LVS (Netgen). Returns availability, version, and license gating per tool — all detection, no verdicts.",
+                "description": "Probe the host for EDA tools: simulators (ngspice/Xyce/LTspice/Spectre/HSPICE/Eldo), DRC (KLayout/Magic/Calibre), LVS (Netgen), plus external PDK descriptors loaded from LAYOUT_CANVAS_PDK_DIR/LAYOUT_CANVAS_PDKS. Returns availability, version, and license gating per tool — all detection, no verdicts.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -1026,7 +1028,15 @@ class LayoutCanvasMCPServer:
 
         elif name == "generate_block":
             block_name = args["name"]
-            block = base.get(block_name)
+            try:
+                block = base.get(block_name)
+            except KeyError:
+                # '<pdk>.<block>' on a descriptor-only PDK gets the honest
+                # boundary message instead of an opaque KeyError.
+                gap = base.describe_pdk_block_gap(str(block_name).split(".", 1)[0])
+                if gap is not None:
+                    raise ValueError(gap) from None
+                raise
             params = args.get("params", {})
             fmt = args.get("format", "gds").lower()
             output_path = args.get("output_path")

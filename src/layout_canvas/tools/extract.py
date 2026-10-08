@@ -75,6 +75,38 @@ LEAF_DEVICES: dict[str, dict[str, tuple[str, str]]] = {
 }
 
 
+def _descriptor(tech: str):
+    """PDK descriptor for ``tech`` or None — tools stay usable without one."""
+    from layout_canvas.pdk import get_pdk
+
+    try:
+        return get_pdk(tech)
+    except KeyError:
+        return None
+
+
+def _recipe_for(tech: str) -> dict[str, Any] | None:
+    """Extraction recipe — descriptor ``extract`` section first, then the
+    built-in table. ``None`` means no recipe: callers report ``unavailable``."""
+    pdk = _descriptor(tech)
+    if pdk is not None and pdk.extract is not None:
+        from layout_canvas.pdk.descriptor import EXTRACTION_ROLES
+
+        recipe = dict.fromkeys(EXTRACTION_ROLES)
+        recipe.update(pdk.extract["roles"])
+        recipe["text_datatypes"] = tuple(pdk.extract["text_datatypes"])
+        return recipe
+    return _RECIPES.get(tech)
+
+
+def leaf_devices_for(tech: str) -> dict[str, tuple[str, str]]:
+    """Leaf ``{subckt: (device_class, polarity)}`` — descriptor-first."""
+    pdk = _descriptor(tech)
+    if pdk is not None and pdk.extract is not None:
+        return dict(pdk.extract.get("leaf_devices", {}))
+    return dict(LEAF_DEVICES.get(tech, {}))
+
+
 def lvs_device_wrappers(tech: str) -> str:
     """SPICE device-abstract wrappers for the reference side of LVS.
 
@@ -83,7 +115,7 @@ def lvs_device_wrappers(tech: str) -> str:
     netlist. These describe connectivity shape only — not electrical models.
     """
     out = []
-    for subckt, (model, pol) in LEAF_DEVICES.get(tech, {}).items():
+    for subckt, (model, pol) in leaf_devices_for(tech).items():
         out.append(
             f".subckt {subckt} d g s b w=1u l=1u nf=1 mult=1\n"
             f"m1 d g s b {model} w='w*nf*mult' l=l\n"
@@ -101,7 +133,7 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
         return ExtractionResult(
             "unavailable", errors=["klayout python module not installed"]
         )
-    recipe = _RECIPES.get(tech)
+    recipe = _recipe_for(tech)
     if recipe is None:
         return ExtractionResult("unavailable", errors=[f"no extraction recipe for tech {tech!r}"])
     gds = Path(gds_path)
@@ -234,9 +266,24 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
             ("met4", layers["met4"]), ("met5", layers["met5"]),
         ) if pl is not None
     }
+    # Fallback for descriptor PDKs whose drawing datatype is neither the
+    # sky130 (L,20) nor IHP (L,0) convention: match the label's layer
+    # *number* to whichever conductor role carries it.
+    conductor_by_layer = {
+        spec[0]: pl for spec, pl in (
+            (recipe[k], pl) for k, pl in (
+                ("diff", rdiff), ("tap", rtap), ("poly", rpoly),
+                ("licon", layers["licon"]), ("li1", layers["li1"]),
+                ("mcon", layers["mcon"]), ("met1", layers["met1"]),
+                ("met2", layers["met2"]), ("met3", layers["met3"]),
+                ("met4", layers["met4"]), ("met5", layers["met5"]),
+            )
+        ) if pl is not None and spec
+    }
     for info, tl in text_layers:
         pl = (conductor_by_gds.get((info.layer, 20))  # sky130-style (L,20)
-              or conductor_by_gds.get((info.layer, 0)))  # IHP-style (L,0)
+              or conductor_by_gds.get((info.layer, 0))  # IHP-style (L,0)
+              or conductor_by_layer.get(info.layer))  # any drawing datatype
         if pl is not None:
             l2n.connect(pl, tl)
 
@@ -310,18 +357,22 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
     # and parallel devices never combine.
     l2n.connect(rnwell, rnwell)
 
-    n_model, p_model = (
-        LEAF_DEVICES[tech]["sg13_lv_nmos"][0] if tech == "ihp_sg13g2" else "nfet_01v8",
-        LEAF_DEVICES[tech]["sg13_lv_pmos"][0] if tech == "ihp_sg13g2" else "pfet_01v8",
-    )
-    l2n.extract_devices(
-        db.DeviceExtractorMOS4Transistor(p_model),
-        {"SD": rpsd, "G": rpgate, "tS": rpsd, "tD": rpsd, "tG": rpoly, "W": rnwell},
-    )
-    l2n.extract_devices(
-        db.DeviceExtractorMOS4Transistor(n_model),
-        {"SD": rnsd, "G": rngate, "tS": rnsd, "tD": rnsd, "tG": rpoly, "W": rpsub},
-    )
+    # n/p device classes come from the recipe's leaf devices: the first
+    # nmos/pmos entry wins — the same names the reference-side wrappers
+    # (.model inside each leaf subckt) produce, so LVS classes pair up.
+    leaf = leaf_devices_for(tech)
+    n_model = next((cls for cls, pol in leaf.values() if pol == "nmos"), None)
+    p_model = next((cls for cls, pol in leaf.values() if pol == "pmos"), None)
+    if p_model is not None:
+        l2n.extract_devices(
+            db.DeviceExtractorMOS4Transistor(p_model),
+            {"SD": rpsd, "G": rpgate, "tS": rpsd, "tD": rpsd, "tG": rpoly, "W": rnwell},
+        )
+    if n_model is not None:
+        l2n.extract_devices(
+            db.DeviceExtractorMOS4Transistor(n_model),
+            {"SD": rnsd, "G": rngate, "tS": rnsd, "tD": rnsd, "tG": rpoly, "W": rpsub},
+        )
     # MIM capacitors are opt-in via the capm marker layer: each marker
     # polygon becomes one C device whose plates are the metals it
     # overlaps (met2 bottom / met3 top for sky130). Blocks that draw no

@@ -37,6 +37,8 @@ uv.lock
 
 .tmp_*
 waves.dat
+# private PDK descriptors never enter git (docs/PDK_DESCRIPTORS.md)
+*.pdk.json
 
 
 
