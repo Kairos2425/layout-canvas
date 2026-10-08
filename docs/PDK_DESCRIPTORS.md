@@ -38,15 +38,64 @@ layout-canvas pdk dump sky130                      # a complete template to copy
 | `run_drc` (pya engine) | ✅ with `drc` section | min-width/min-space/via-enclosure subset |
 | `run_simulation` model prelude | ✅ with `model_libs.spice_prelude_file` | resolved against the descriptor's directory |
 | `verify_design` on imported cells | ✅ | same extract+DRC+LVS pipeline |
-| **Parametric block generators** | ❌ — still Python | `blocks/<pdk>/` package + `base.register`; see below |
+| **Generic parametric generators** | ✅ with `extract` section | `gen_diff_pair` / `gen_current_mirror` / `gen_guard_ring`; see below |
+| **Custom parametric block generators** | ❌ — still Python | `blocks/<pdk>/` package + `base.register` |
 | Official foundry `.drc`/`.lvs` decks | external `klayout` binary | unchanged; pass `deck_path`/`setup_path` |
+
+## Generic `gen_*` block generators
+
+An `extract` section does more than drive extraction — it is also the
+geometry contract for three **descriptor-driven parametric blocks** that
+register automatically for every non-built-in PDK:
+
+| Block | Ports | What it builds |
+|---|---|---|
+| `<pdk>.gen_diff_pair` | `inp inn outp outn tail vss` | ABBA common-centroid pair, gate taps, per-net met1 straps, substrate ring |
+| `<pdk>.gen_current_mirror` | `in out gate vss` | interdigitated A/B mirror, gate strap, source strap merged into the bulk ring |
+| `<pdk>.gen_guard_ring` | `tap tap_n tap_s tap_w tap_e` | rectangular tap/contact/met1 ring, `ptype` ∈ `ptap`/`ntap` (n-well) |
+
+Mechanics, in registration order:
+
+- `blocks/base.on_pdk_registered(cb)` subscribes a callback to PDK
+  registrations — present (replayed once, so load order never matters)
+  and future — with an optional `on_removed` notification when an env
+  rescan drops a PDK. `blocks/generic.py` installs its hook on import;
+  `layout_canvas.blocks` pulls it in for every entry point.
+- **Registration is capability-gated, never aspirational.** A block whose
+  required roles are absent is not registered at all, so `/api/blocks`,
+  the palette and `list_blocks` only show blocks that can build. Missing
+  sub-capabilities degrade choices instead: no `well_n` (or no way to tie
+  it — `tap`, or `diff`+`nsdm`+`psdm` for implant taps) removes the
+  `pmos`/`ntap` choice; no `tap`/`psdm` path drops the substrate ring and
+  says so in `spec.constraints`. The MOS pair/mirror need `diff`, `poly`,
+  `licon`, `li1`, `mcon`, `met1`; the ring needs `tap` + the contact stack.
+- Every layer resolves through `extract.roles`, every size derives from
+  `drc.rules` (`width`/`space`) and `drc.enclosure`, falling back to the
+  reference recipe's own constants for cuts and conservative 0.5 µm
+  width / 0.3 µm space bounds for conductors. `width`/`length` parameter
+  **mins come from the descriptor's rules** — a params object below them
+  fails at `resolve_params`, and cheating the bound produces real DRC
+  violations, never silent acceptance. A descriptor with no `drc` section
+  still generates, with `rules unavailable — verify with DRC` in the
+  spec's constraints.
+- SPICE models come from `extract.leaf_devices`: the emitted M-cards name
+  the first leaf subckt of the requested polarity — no built-in model
+  names leak into generated netlists.
+- Pin labels honour `pin_purpose` (`pdk.pin_label_layer`), and PMOS
+  cells tie the well through an n-tap to the exported `vss` pin — the
+  ring is a bare met1 frame so a source strap never fuses to the global
+  substrate (the same lesson the sky130 PMOS mirror encodes).
+
+For anything beyond the three generic cells — process-specific primitives,
+passives, IO rings — the path is still a Python `blocks/<pdk>/` package
+plus `base.register`, or `import_gds`/`register_cell` for hand layouts.
 
 A `compile_ir`/`generate_block`/`verify_design` call that needs blocks a
 descriptor-only PDK does not have fails with a named boundary —
-`no blocks registered for pdk '<name>' — descriptor-only PDKs support
-import_gds/DRC/LVS/sim` — never an opaque crash. The intended flow is:
-`import_gds` your cells (with `spice_path` when you want LVS/sim to have a
-reference), compose the top level in IR, then verify.
+`no blocks registered for pdk '<name>'` with the remediation list —
+never an opaque crash. The intended flow for cells the generators don't
+cover: `import_gds` your cells (with `spice_path` when you want LVS/sim
+to have a reference), compose the top level in IR, then verify.
 
 ## JSON schema
 

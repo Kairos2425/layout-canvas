@@ -26,7 +26,7 @@ Block IR (JSON) ── compile ──▶ gdsfactory ──▶ GDS
 | **DRC** | In-process KLayout engine: real width / spacing / via-enclosure subset with violation bboxes drawn back on the canvas (RVE-style) |
 | **LVS** | `LayoutToNetlist` extraction + `NetlistComparer` topology match; passive blocks get connectivity-semantics comparison; mismatched nets are localized and highlighted |
 | **PEX sim** | Extracted netlist → BSIM4/PSP foundry models via ngspice; internal-node probes (`xd1.tail`), custom testbenches |
-| **External PDKs** | `*.pdk.json` descriptors via `LAYOUT_CANVAS_PDK_DIR`/`LAYOUT_CANVAS_PDKS` — layer map + extract recipe + DRC subset + model prelude, no code (`docs/PDK_DESCRIPTORS.md`) |
+| **External PDKs** | `*.pdk.json` descriptors via `LAYOUT_CANVAS_PDK_DIR`/`LAYOUT_CANVAS_PDKS` — layer map + extract recipe + DRC subset + model prelude + generic `gen_diff_pair`/`gen_current_mirror`/`gen_guard_ring` generators, no code (`docs/PDK_DESCRIPTORS.md`) |
 | **Testbenches** | Named sim setups on the IR (schematic/extracted, op/tran, probes) + per-spec pass/fail/unavailable with reasons; CLI exit codes, session run history |
 | **Export** | Virtuoso SKILL (shapes/instances) + Spectre netlist, GDS/OASIS, SPICE |
 | **Interfaces** | CLI · local web canvas · MCP stdio server (34 tools) |

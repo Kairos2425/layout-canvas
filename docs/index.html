@@ -305,7 +305,7 @@
     <div class="fstep"><div class="n">01 / IR</div><h3>Block IR</h3>
       <p>Pydantic 类型化设计描述：实例、参数、布局、网络、端口。可序列化、可 diff、可交给 agent 改。</p></div>
     <div class="fstep"><div class="n">02 / compile</div><h3>参数化模块</h3>
-      <p>10 个真实模拟单元：差分对、电流镜、5T-OTA、StrongArm、MIM 电容阵、保护环——双 PDK 几何。</p></div>
+      <p>10 个真实模拟单元：差分对、电流镜、5T-OTA、StrongArm、MIM 电容阵、保护环——双 PDK 几何；外部 PDK 描述符另有 gen_* 通用生成器。</p></div>
     <div class="fstep"><div class="n">03 / DRC</div><h3>规则检查</h3>
       <p>KLayout 内嵌引擎做宽度/间距/via 包围检查，违规红框直接画回画布原位。</p></div>
     <div class="fstep"><div class="n">04 / LVS</div><h3>版图对原理图</h3>
@@ -318,8 +318,8 @@
 <!-- ============ BLOCKS ============ -->
 <section class="wrap" id="blocks">
   <div class="rv"><div class="kicker">block library</div>
-  <h2>参数化模拟模块 · 双 PDK</h2>
-  <p class="sub">每个块都是代码生成的真实几何：指叉、共心保护环、栅绑带、via 栈——参数化到 finger 数与器件尺寸。</p></div>
+  <h2>参数化模拟模块 · 双内置 + 外部 gen_*</h2>
+  <p class="sub">每个块都是代码生成的真实几何：指叉、共心保护环、栅绑带、via 栈——参数化到 finger 数与器件尺寸。外部 *.pdk.json 描述符自动获得 gen_diff_pair / gen_current_mirror / gen_guard_ring 三个生成器。</p></div>
   <div class="grid" id="bgrid">
     <div class="bcard rv"><canvas data-b="diff" width="320" height="120"></canvas>
       <div class="cap"><b>diff_pair</b><span>sky130 · ihp</span><p>共心指叉差分对 + 栅绑带 + 保护环</p></div></div>
@@ -353,7 +353,7 @@
 <section class="wrap">
   <div class="rv"><div class="kicker">numbers</div><h2>验证过的，才写在这</h2></div>
   <div class="stats">
-    <div class="stat rv"><div class="v" data-n="175">0</div><div class="l">pytest 全绿（含真实 ngspice 冒烟）</div></div>
+    <div class="stat rv"><div class="v" data-n="183">0</div><div class="l">pytest 全绿（含真实 ngspice 冒烟）</div></div>
     <div class="stat rv d1"><div class="v" data-n="34">0</div><div class="l">MCP 工具</div></div>
     <div class="stat rv d2"><div class="v" data-n="10">0</div><div class="l">模拟单元 × 双 PDK</div></div>
     <div class="stat rv d3"><div class="v" data-n="20">0</div><div class="l">参数变体 LVS 全 MATCH</div></div>

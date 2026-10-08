@@ -226,6 +226,7 @@ def probe_environment(timeout: int = 10) -> dict[str, Any]:
     # Descriptor PDKs loaded from LAYOUT_CANVAS_PDK_DIR/LAYOUT_CANVAS_PDKS —
     # what they unlock (extract/drc/prelude) plus per-file load diagnostics.
     from layout_canvas.pdk import external_pdk_errors, external_pdks
+    import layout_canvas.blocks.generic as _gen
 
     ext_pdks = {
         name: {
@@ -234,6 +235,7 @@ def probe_environment(timeout: int = 10) -> dict[str, Any]:
             "drc": pdk.drc is not None,
             "extract": pdk.extract is not None,
             "leaf_devices": len((pdk.extract or {}).get("leaf_devices", {})),
+            "gen_blocks": list(_gen.generated_block_names(name)),
         }
         for name, pdk in external_pdks().items()
     }
@@ -242,6 +244,7 @@ def probe_environment(timeout: int = 10) -> dict[str, Any]:
         "in_process_engines": [pya],
         "external_pdks": ext_pdks,
         "external_pdk_errors": external_pdk_errors(),
+        "block_generation_errors": _gen.generation_errors(),
         "simulators": {
             "available": [r["name"] for r in reports
                           if r["kind"] == "spice_simulator" and r["status"] == "available" and r["can_run"]],

@@ -365,6 +365,9 @@ def test_probe_environment_reports_external_pdks(pdk_dir: Path):
     assert ext["source"].endswith("demo65.pdk.json")
     assert ext["leaf_devices"] == 2
     assert any("broken.pdk.json" in k for k in report["external_pdk_errors"])
+    # generated-block surface is visible too: names and failures
+    assert set(ext["gen_blocks"]) >= {"demo65.gen_diff_pair"}
+    assert "block_generation_errors" in report
 
 
 def test_cli_pdk_list_and_dump(pdk_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys):
@@ -377,6 +380,11 @@ def test_cli_pdk_list_and_dump(pdk_dir: Path, monkeypatch: pytest.MonkeyPatch, c
     listed = json.loads(capsys.readouterr().out)
     names = {p["name"] for p in listed["pdks"]}
     assert {"sky130", "ihp_sg13g2", "demo65"} <= names
+    demo = next(p for p in listed["pdks"] if p["name"] == "demo65")
+    assert set(demo["gen_blocks"]) == {
+        "demo65.gen_diff_pair", "demo65.gen_current_mirror",
+        "demo65.gen_guard_ring"}
+    assert listed["generation_errors"] == {}
     entry = next(p for p in listed["pdks"] if p["name"] == "demo65")
     assert entry["extract"] is True and entry["drc"] is True
     assert entry["source"].endswith("demo65.pdk.json")

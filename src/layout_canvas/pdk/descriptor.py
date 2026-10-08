@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -368,9 +369,32 @@ def _layer_name_map(pdk: PDK) -> dict[Layer, str]:
 
 _REGISTRY: dict[str, PDK] = {}
 
+# Subscribers fired by ``register_pdk``/``_ensure_external`` so block
+# generators can track the registry without the pdk layer importing the
+# blocks layer (that would be an import cycle *and* would pull gdsfactory
+# into every descriptor load). Listeners receive the PDK object / name
+# directly and must not call back into ``get_pdk``/``all_pdks`` — those
+# can re-enter ``_ensure_external`` mid-scan.
+_PDK_LISTENERS: list[Callable[["PDK"], None]] = []
+_PDK_REMOVED_LISTENERS: list[Callable[[str], None]] = []
+
+
+def add_pdk_listener(cb: Callable[["PDK"], None]) -> None:
+    """Subscribe ``cb(pdk)`` — fired on every ``register_pdk`` call."""
+    _PDK_LISTENERS.append(cb)
+
+
+def add_pdk_removed_listener(cb: Callable[[str], None]) -> None:
+    """Subscribe ``cb(name)`` — fired when an external PDK leaves the registry."""
+    _PDK_REMOVED_LISTENERS.append(cb)
+
 
 def register_pdk(pdk: PDK) -> PDK:
     _REGISTRY[pdk.name] = pdk
+    # Always notify, even on re-registration: a replaced descriptor must
+    # rebuild whatever was generated from the old one.
+    for cb in list(_PDK_LISTENERS):
+        cb(pdk)
     return pdk
 
 
@@ -473,7 +497,10 @@ def _ensure_external() -> None:
         return
     # Env moved on (or first call): drop previous externals and rescan.
     for name in _EXTERNAL_NAMES:
-        _REGISTRY.pop(name, None)
+        if name in _REGISTRY:
+            _REGISTRY.pop(name, None)
+            for cb in list(_PDK_REMOVED_LISTENERS):
+                cb(name)
     _EXTERNAL_NAMES.clear()
     _EXTERNAL_SOURCES.clear()
     load_external_pdks()
@@ -484,6 +511,11 @@ def external_pdks() -> dict[str, PDK]:
     """PDKs loaded from the env hooks (never the built-ins)."""
     _ensure_external()
     return {n: _REGISTRY[n] for n in sorted(_EXTERNAL_NAMES) if n in _REGISTRY}
+
+
+def builtin_pdk_names() -> frozenset[str]:
+    """Names reserved by the code-defined built-ins (never descriptor-driven)."""
+    return frozenset(_BUILTIN)
 
 
 def external_pdk_errors() -> dict[str, str]:

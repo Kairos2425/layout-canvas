@@ -2,7 +2,10 @@
 
 from layout_canvas.pdk.descriptor import (
     PDK,
+    add_pdk_listener,
+    add_pdk_removed_listener,
     all_pdks,
+    builtin_pdk_names,
     external_pdk_errors,
     external_pdks,
     get_pdk,
@@ -12,7 +15,10 @@ from layout_canvas.pdk.descriptor import (
 
 __all__ = [
     "PDK",
+    "add_pdk_listener",
+    "add_pdk_removed_listener",
     "all_pdks",
+    "builtin_pdk_names",
     "external_pdk_errors",
     "external_pdks",
     "get_pdk",

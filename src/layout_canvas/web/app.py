@@ -352,6 +352,21 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/blocks":
             blocks = [b.spec.model_dump() for b in base.all_blocks().values()]
             self._send(200, json.dumps(blocks).encode(), "application/json")
+        elif self.path == "/api/pdks":
+            from layout_canvas.pdk import all_pdks
+            import layout_canvas.blocks.generic as _gen
+
+            pdks = [
+                {
+                    "name": p.name,
+                    "source": p.source or "built-in",
+                    "extract": p.extract is not None,
+                    "drc": p.drc is not None,
+                    "gen_blocks": len(_gen.generated_block_names(p.name)),
+                }
+                for p in all_pdks().values()
+            ]
+            self._send(200, json.dumps(pdks).encode(), "application/json")
         else:
             self._send(404, b'{"error": "not found"}', "application/json")
 
@@ -404,6 +419,7 @@ self.addEventListener("fetch", (e) => {
 
 def run(host: str = "127.0.0.1", port: int = 8080) -> None:
     import layout_canvas.blocks.sky130  # noqa: F401  populate block registry
+    import layout_canvas.blocks.generic  # noqa: F401  external gen_* blocks
     try:
         import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
     except Exception:

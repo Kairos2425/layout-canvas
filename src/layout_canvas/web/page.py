@@ -782,6 +782,17 @@ async function publish() {
 }
 
 let galleryFilters = {verified_only: false, pdk: '', tag: ''};
+// PDK options are served, not hardcoded — external *.pdk.json descriptors
+// show up alongside the built-ins once LAYOUT_CANVAS_PDK_DIR/PDKS loads them.
+let pdkOptions = ['', 'sky130', 'ihp_sg13g2'];
+async function loadPdks() {
+  try {
+    const r = await fetch('/api/pdks');
+    const list = await r.json();
+    if (Array.isArray(list) && list.length)
+      pdkOptions = ['', ...list.map(p => p.name)];
+  } catch (e) { /* keep defaults */ }
+}
 
 async function listGallery() {
   const res = await api('gallery/list', {
@@ -835,7 +846,7 @@ function _galleryFilterBar() {
     ' onchange="galleryFilters.verified_only=this.checked;listGallery()"> ' +
     'verified only</label> ' +
     '<select id="gf_pdk" onchange="galleryFilters.pdk=this.value;listGallery()">' +
-    ['', 'sky130', 'ihp_sg13g2'].map(p =>
+    pdkOptions.map(p =>
       '<option value="' + p + '"' +
       (galleryFilters.pdk === p ? ' selected' : '') + '>' +
       (p || 'all pdk') + '</option>').join('') + '</select> ' +
@@ -869,6 +880,7 @@ async function boot() {
   const sample = await r.json();
   irBox.value = JSON.stringify(sample, null, 2);
   await loadPalette();
+  await loadPdks();
   await sessionOpen(sample);
   refresh(); renderInspector();
 }

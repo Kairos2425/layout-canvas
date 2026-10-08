@@ -64,6 +64,7 @@ def main() -> int:
 
         # Auto-import Sky130 blocks to populate registry
         import layout_canvas.blocks.sky130  # noqa: F401
+        import layout_canvas.blocks.generic  # noqa: F401  external gen_* blocks
 
         if args.format == "gds":
             export_gds(design, args.output)
@@ -79,6 +80,8 @@ def main() -> int:
         from layout_canvas.pdk import all_pdks, external_pdk_errors
 
         if args.action == "list":
+            import layout_canvas.blocks.generic as _gen  # noqa: F401
+
             print(json.dumps({
                 "pdks": [
                     {
@@ -88,10 +91,12 @@ def main() -> int:
                         "pin_purpose": p.pin_purpose,
                         "extract": p.extract is not None,
                         "drc": p.drc is not None,
+                        "gen_blocks": list(_gen.generated_block_names(p.name)),
                     }
                     for p in all_pdks().values()
                 ],
                 "load_errors": external_pdk_errors(),
+                "generation_errors": _gen.generation_errors(),
             }, indent=2))
             return 0
         if not args.name:
@@ -111,6 +116,7 @@ def main() -> int:
             design = Design.from_json(f.read())
 
         import layout_canvas.blocks.sky130  # noqa: F401
+        import layout_canvas.blocks.generic  # noqa: F401
         export_spice(design, args.output)
         print(f"Generated SPICE netlist {design.name} → {args.output}", file=sys.stderr)
         return 0
@@ -119,6 +125,7 @@ def main() -> int:
         with open(args.input) as f:
             design = Design.from_json(f.read())
         import layout_canvas.blocks.sky130  # noqa: F401
+        import layout_canvas.blocks.generic  # noqa: F401
         try:
             import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
         except Exception:

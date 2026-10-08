@@ -41,10 +41,19 @@ def _resolve_relative_placements(design: Design, comp_map: dict[str, gf.Componen
                 ref_bb = ref_comp.bbox()
                 curr_bb = curr_comp.bbox()
 
-                ref_w = float(ref_bb.right - ref_bb.left) if hasattr(ref_bb, "right") else 0.0
-                ref_h = float(ref_bb.top - ref_bb.bottom) if hasattr(ref_bb, "top") else 0.0
-                curr_w = float(curr_bb.right - curr_bb.left) if hasattr(curr_bb, "right") else 0.0
-                curr_h = float(curr_bb.top - curr_bb.bottom) if hasattr(curr_bb, "top") else 0.0
+                # bboxes are in component coordinates; absolute edges are
+                # instance origin + bb edge. The instance origin is NOT the
+                # bbox corner (blocks draw geometry left/below origin —
+                # guard rings, well overhangs), so every relation/align is
+                # edge-to-edge: `margin` is the real gap between bboxes.
+                ref_l = float(getattr(ref_bb, "left", 0.0))
+                ref_r = float(getattr(ref_bb, "right", 0.0))
+                ref_b = float(getattr(ref_bb, "bottom", 0.0))
+                ref_t = float(getattr(ref_bb, "top", 0.0))
+                curr_l = float(getattr(curr_bb, "left", 0.0))
+                curr_r = float(getattr(curr_bb, "right", 0.0))
+                curr_b = float(getattr(curr_bb, "bottom", 0.0))
+                curr_t = float(getattr(curr_bb, "top", 0.0))
 
                 # Compute base (x, y) based on relation
                 calc_x = ref_x
@@ -52,27 +61,29 @@ def _resolve_relative_placements(design: Design, comp_map: dict[str, gf.Componen
                 m = float(pl.margin)
 
                 if pl.relation == "right_of":
-                    calc_x = ref_x + ref_w + m
+                    calc_x = ref_x + ref_r - curr_l + m
                 elif pl.relation == "left_of":
-                    calc_x = ref_x - curr_w - m
+                    calc_x = ref_x + ref_l - curr_r - m
                 elif pl.relation == "above":
-                    calc_y = ref_y + ref_h + m
+                    calc_y = ref_y + ref_t - curr_b + m
                 elif pl.relation == "below":
-                    calc_y = ref_y - curr_h - m
+                    calc_y = ref_y + ref_b - curr_t - m
 
                 # Compute alignment
                 if pl.align == "bottom":
-                    calc_y = ref_y
+                    calc_y = ref_y + ref_b - curr_b
                 elif pl.align == "top":
-                    calc_y = ref_y + ref_h - curr_h
+                    calc_y = ref_y + ref_t - curr_t
                 elif pl.align == "left":
-                    calc_x = ref_x
+                    calc_x = ref_x + ref_l - curr_l
                 elif pl.align == "right":
-                    calc_x = ref_x + ref_w - curr_w
+                    calc_x = ref_x + ref_r - curr_r
                 elif pl.align == "center_x":
-                    calc_x = ref_x + (ref_w - curr_w) / 2.0
+                    calc_x = (ref_x + (ref_l + ref_r) / 2.0
+                              - (curr_l + curr_r) / 2.0)
                 elif pl.align == "center_y":
-                    calc_y = ref_y + (ref_h - curr_h) / 2.0
+                    calc_y = (ref_y + (ref_b + ref_t) / 2.0
+                              - (curr_b + curr_t) / 2.0)
 
                 # Add any manual delta offset
                 calc_x += float(pl.x)

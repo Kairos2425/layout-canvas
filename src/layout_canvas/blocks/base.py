@@ -96,7 +96,53 @@ def register(spec: BlockSpec, netlist: NetlistFn | None = None) -> Callable[[Bui
     return deco
 
 
+def unregister(name: str) -> None:
+    """Drop a block and its cached components (generated-block removal)."""
+    _REGISTRY.pop(name, None)
+    for key in [k for k in _COMPONENT_CACHE if k[0] == name]:
+        _COMPONENT_CACHE.pop(key, None)
+
+
+def _sync_external_pdks() -> None:
+    """Re-scan the external-PDK env hooks when they changed.
+
+    External descriptors load lazily; their ``gen_*`` blocks register
+    through the ``on_pdk_registered`` hook during that scan, so a caller
+    that never touched ``get_pdk`` still sees them.
+    """
+    from layout_canvas.pdk.descriptor import _ensure_external
+
+    _ensure_external()
+
+
+def on_pdk_registered(
+    cb: Callable[[Any], None],
+    *,
+    on_removed: Callable[[str], None] | None = None,
+) -> None:
+    """Subscribe ``cb(pdk)`` to PDK registrations — present and future.
+
+    The external-PDK scan runs first, so ``cb`` sees every currently
+    registered PDK exactly once (import-order independent), then subscribes
+    for future ``register_pdk`` calls. ``on_removed`` (optional) fires with
+    a name when an external PDK leaves the registry on an env rescan.
+    """
+    from layout_canvas.pdk import all_pdks
+    from layout_canvas.pdk.descriptor import (
+        add_pdk_listener,
+        add_pdk_removed_listener,
+    )
+
+    existing = list(all_pdks().values())  # triggers the lazy external scan
+    add_pdk_listener(cb)
+    if on_removed is not None:
+        add_pdk_removed_listener(on_removed)
+    for pdk in existing:
+        cb(pdk)
+
+
 def get(name: str) -> Block:
+    _sync_external_pdks()
     try:
         return _REGISTRY[name]
     except KeyError:
@@ -119,13 +165,16 @@ def describe_pdk_block_gap(pdk_name: str) -> str | None:
     if any(b.spec.pdk == pdk_name for b in _REGISTRY.values()):
         return None
     return (
-        f"no blocks registered for pdk {pdk_name!r} — descriptor-only PDKs "
-        "support import_gds/DRC/LVS/sim; bring cells in via import_gds or "
-        "register_cell, or write a Python block generator"
+        f"no blocks registered for pdk {pdk_name!r} — descriptor PDKs get "
+        "gen_diff_pair/gen_current_mirror/gen_guard_ring automatically when "
+        "extract.roles covers the contact stack; this one does not. Bring "
+        "cells in via import_gds or register_cell, or write a Python block "
+        "generator"
     )
 
 
 def all_blocks() -> dict[str, Block]:
+    _sync_external_pdks()
     return dict(_REGISTRY)
 
 

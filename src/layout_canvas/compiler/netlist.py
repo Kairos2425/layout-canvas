@@ -69,8 +69,12 @@ def compile_netlist(design: Design) -> str:
         shared substrate.  The PMOS current_mirror keeps its source strap
         separate from the (tapless) guard ring — its ``vss`` pin is the
         transistor source, so an unconnected one floats as its own net
-        instead of joining the global vss."""
-        return (inst.block == "sky130.current_mirror"
+        instead of joining the global vss. The descriptor-driven
+        ``*.gen_current_mirror`` variants carry the same bare-frame
+        semantics (the IHP mirror instead draws a real p-tap ring — its
+        ``vss`` is genuinely substrate and must keep the global name)."""
+        return ((inst.block == "sky130.current_mirror"
+                 or inst.block.endswith(".gen_current_mirror"))
                 and port.name == "vss" and resolved.get("type") == "pmos")
 
     # 2. Build pin-to-net connectivity map

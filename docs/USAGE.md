@@ -59,9 +59,23 @@ nets + ports. Example (also `examples/diffamp.json`):
 }
 ```
 
+Placement semantics: absolute `x`/`y` positions the instance origin.
+Relative placement (`relative_to` + `relation` `right_of`/`left_of`/
+`above`/`below`) is **edge-to-edge** — `margin` is the real gap between
+the two instance bounding boxes, not their origins (block cells draw
+geometry left/below their origin, e.g. guard rings and well overhangs).
+`align` (`top`/`bottom`/`left`/`right`/`center_x`/`center_y`) likewise
+aligns bbox edges or centers. `placement.x`/`y` add a manual delta on top
+of the resolved position. Overlaps are not auto-resolved —
+`verify_design` reports the resulting violations.
+
 Block names are `<pdk>.<block>`. Sky130: `diff_pair`, `current_mirror`,
 `ota_5t`, `strongarm`, `cap_array`, `guard_ring`. IHP SG13G2: `diff_pair`,
-`current_mirror`, `ota_5t`, `guard_ring`. Get each block's params/ports via
+`current_mirror`, `ota_5t`, `guard_ring`. Any external `*.pdk.json` with an
+`extract` section also gets `gen_diff_pair`, `gen_current_mirror` and
+`gen_guard_ring` (the `gen_` prefix keeps them clear of native blocks) —
+descriptor-driven, registered only when the role contract can build them.
+Get each block's params/ports via
 `layout-canvas` → MCP `list_blocks`, or `/api/blocks` on the web app.
 
 ## 3. CLI
@@ -79,8 +93,9 @@ layout-canvas pdk dump sky130 > my.pdk.json          # descriptor template
 
 External PDKs: drop a `*.pdk.json` descriptor into a private dir, set
 `LAYOUT_CANVAS_PDK_DIR` to it, and the PDK joins the registry without code
-— `import_gds`, extraction, the DRC subset, LVS and the simulation model
-prelude all key off it. Parametric block generators remain a Python
+— `import_gds`, extraction, the DRC subset, LVS, the simulation model
+prelude and the generic `gen_*` block generators all key off it.
+Beyond those three, parametric block generators remain a Python
 plugin (`blocks/<pdk>/`). Full schema: `docs/PDK_DESCRIPTORS.md`.
 
 ## 4. Web canvas
