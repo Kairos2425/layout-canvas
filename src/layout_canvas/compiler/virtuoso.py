@@ -7,8 +7,9 @@ geometry (``dbCreateRect``/``dbCreatePolygon``), pin labels
 Virtuoso (``load("file.il")``) reproduces the layout without a GDS license
 path — the layout-side analog of the Spectre dialect export.
 
-Cell names are sanitized to OA-legal identifiers. Layer numbers are mapped
-through the per-PDK table below; unmapped layers emit ``L<layer>_D<dt>``
+Cell names are sanitized to OA-legal identifiers. Layer numbers resolve
+through ``oa_layer_map`` — the descriptor's ``oa_layers`` section first,
+then the per-PDK table below; unmapped layers emit ``L<layer>_D<dt>``
 names so nothing is silently dropped.
 """
 from __future__ import annotations
@@ -46,6 +47,26 @@ _OA_LAYERS: dict[str, dict[tuple[int, int], tuple[str, str]]] = {
 # label datatype -> OA purpose
 _LABEL_PURPOSE = "pin"
 
+
+def oa_layer_map(tech: str) -> dict[tuple[int, int], tuple[str, str]]:
+    """Resolved ``(layer, datatype) -> (oa layer name, purpose)`` table.
+
+    A registered PDK descriptor's ``oa_layers`` section wins per key over
+    the built-in table below; pairs absent from both fall back to
+    ``L<layer>_D<dt>`` at emit time so nothing is silently dropped.
+    """
+    resolved = dict(_OA_LAYERS.get(tech, {}))
+    try:
+        from layout_canvas.pdk import get_pdk
+
+        pdk = get_pdk(tech)
+    except Exception:
+        pdk = None
+    if pdk is not None:
+        for pair, oa_name in (pdk.oa_layers or {}).items():
+            resolved[pair] = (oa_name, "drawing")
+    return resolved
+
 _ORIENTS = {
     0: "R0", 1: "R90", 2: "R180", 3: "R270",
     4: "MX", 5: "MXR90", 6: "MY", 7: "MYR90",
@@ -75,7 +96,7 @@ def export_skill(
 
     ly = db.Layout()
     ly.read(str(gds_path))
-    layer_map = _OA_LAYERS.get(tech, {})
+    layer_map = oa_layer_map(tech)
     names: dict[str, str] = {}
     for cell in ly.each_cell():
         names[cell.name] = _oa_name(cell.name)

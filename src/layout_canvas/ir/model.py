@@ -85,10 +85,14 @@ class Spec(_Strict):
 
     name: str
     signal: str
-    measure: Literal["final", "min", "max", "mean", "pp", "db", "bw_3db"] = "final"
+    measure: Literal["final", "min", "max", "mean", "pp", "db", "bw_3db",
+                     "settling", "slew", "overshoot"] = "final"
     min: float | None = None
     max: float | None = None
     unit: str = "V"
+    # Fractional band for the transient measures (settling); None = 0.02
+    # (±2 % of the final value).
+    tol: float | None = None
 
     @model_validator(mode="after")
     def _check_bounds(self) -> Spec:
@@ -96,6 +100,8 @@ class Spec(_Strict):
             raise ValueError(f"spec {self.name}: needs min and/or max")
         if self.min is not None and self.max is not None and self.min > self.max:
             raise ValueError(f"spec {self.name}: min {self.min} > max {self.max}")
+        if self.tol is not None and self.tol <= 0:
+            raise ValueError(f"spec {self.name}: tol {self.tol} must be > 0")
         return self
 
 

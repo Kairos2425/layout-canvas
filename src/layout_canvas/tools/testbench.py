@@ -16,19 +16,39 @@ from typing import Any
 
 from layout_canvas.ir.model import Design, Spec, Testbench
 
-_MEASURES = ("final", "min", "max", "mean", "pp", "db", "bw_3db")
+_MEASURES = ("final", "min", "max", "mean", "pp", "db", "bw_3db",
+             "settling", "slew", "overshoot")
+
+# Measures that only make sense on a transient waveform — they reduce the
+# sample series along the sweep axis, so an ac/op result (no time axis or a
+# frequency axis) reports ``unavailable``, never a number from the wrong axis.
+_TRANSIENT_MEASURES = ("settling", "slew", "overshoot")
+
+
+def _require_sweep(measure: str, sweep: list[float] | None, n: int) -> list[float]:
+    if sweep is None or len(sweep) != n:
+        raise ValueError(
+            f"{measure} needs a sweep axis matching the waveform "
+            "(transient-only measure)")
+    return [float(t) for t in sweep]
 
 
 def measure_signal(
     samples: list[float],
     measure: str,
     sweep: list[float] | None = None,
+    tol: float | None = None,
 ) -> float:
     """Reduce a waveform to a scalar per ``measure``.
 
     ``db`` is ``20*log10`` of the first sample — the low-frequency
     magnitude of an ac sweep. ``bw_3db`` is the sweep frequency where the
     magnitude first falls below ``|v[0]|/sqrt(2)`` (needs ``sweep``).
+    Transient measures (need ``sweep`` as the time axis):
+    ``settling`` — the earliest time after which the waveform stays inside
+    ±``tol``·|final| (``tol`` defaults to 0.02; ``final`` = last sample);
+    ``slew`` — max |dv/dt| over adjacent samples; ``overshoot`` —
+    ``max(0, (peak-final)/|final|*100)`` in percent.
     """
     import math
 
@@ -59,6 +79,44 @@ def measure_signal(
         raise ValueError(
             f"magnitude never falls below |v0|/sqrt(2)={threshold:g} "
             f"(last={xs[-1]:g})")
+    if measure == "settling":
+        ts = _require_sweep(measure, sweep, len(xs))
+        frac = tol if tol is not None else 0.02
+        final = xs[-1]
+        band = frac * abs(final) or frac  # final==0 → absolute ±frac band
+        idx = None
+        for i in range(len(xs) - 1, -1, -1):
+            if abs(xs[i] - final) > band:
+                idx = i + 1
+                break
+        if idx is None:
+            return float(ts[0])
+        if idx >= len(xs) - 1:
+            # Entering the band only at the last sample cannot demonstrate
+            # it *stays* there — report never-settled instead of returning
+            # the sweep endpoint as if it were a measured settle time.
+            raise ValueError(
+                f"settling: waveform never stays within ±{frac:g} of "
+                f"final={final:g} before the sweep ends "
+                f"(last out-of-band excursion at t={ts[idx - 1]:g})")
+        return float(ts[idx])
+    if measure == "slew":
+        ts = _require_sweep(measure, sweep, len(xs))
+        best = 0.0
+        for i in range(1, len(xs)):
+            dt = ts[i] - ts[i - 1]
+            if dt <= 0:
+                raise ValueError(
+                    "slew needs a strictly increasing sweep axis "
+                    f"(t[{i - 1}]={ts[i - 1]:g} >= t[{i}]={ts[i]:g})")
+            best = max(best, abs(xs[i] - xs[i - 1]) / dt)
+        return best
+    if measure == "overshoot":
+        _require_sweep(measure, sweep, len(xs))
+        final = xs[-1]
+        if final == 0:
+            raise ValueError("overshoot needs a nonzero final value")
+        return max(0.0, (max(xs) - final) / abs(final) * 100.0)
     raise ValueError(f"unknown measure {measure!r}; known: {_MEASURES}")
 
 
@@ -66,8 +124,18 @@ def _fmt(value: float | None, unit: str) -> str:
     return f"{value:g} {unit}".rstrip()
 
 
-def evaluate_specs(result: dict[str, Any], specs: list[Spec]) -> list[dict[str, Any]]:
-    """Score each spec against a sim-result dict (``simulate_auto`` shape)."""
+def evaluate_specs(
+    result: dict[str, Any],
+    specs: list[Spec],
+    *,
+    analysis: str | None = None,
+) -> list[dict[str, Any]]:
+    """Score each spec against a sim-result dict (``simulate_auto`` shape).
+
+    ``analysis`` is the testbench's analysis kind — transient-only
+    measures (``settling``/``slew``/``overshoot``) on anything else report
+    ``unavailable`` with a plain reason instead of a bare axis error.
+    """
     status = str(result.get("status", ""))
     waves = result.get("waves") or {}
     out = []
@@ -91,6 +159,13 @@ def evaluate_specs(result: dict[str, Any], specs: list[Spec]) -> list[dict[str, 
             )
             out.append(entry)
             continue
+        if (spec.measure in _TRANSIENT_MEASURES
+                and analysis is not None and analysis != "tran"):
+            entry["reason"] = (
+                f"measure {spec.measure!r} is transient-only; testbench "
+                f"analysis is {analysis!r}")
+            out.append(entry)
+            continue
         samples = waves.get(spec.signal)
         if not samples:
             available = ", ".join(sorted(waves)) or "none"
@@ -100,9 +175,13 @@ def evaluate_specs(result: dict[str, Any], specs: list[Spec]) -> list[dict[str, 
             out.append(entry)
             continue
         try:
-            value = round(
-                measure_signal(list(samples), spec.measure,
-                               sweep=result.get("sweep")), 6)
+            # 6 significant digits, not 6 decimals — transient measures
+            # produce nanosecond / V-per-second magnitudes that a fixed
+            # round(…, 6) would silently collapse to 0.
+            measured = measure_signal(
+                list(samples), spec.measure,
+                sweep=result.get("sweep"), tol=spec.tol)
+            value = float(f"{measured:.6g}")
         except ValueError as exc:
             entry["reason"] = str(exc)
             out.append(entry)
@@ -173,7 +252,7 @@ def run_testbench(
     for key in ("log_path", "deck_path"):
         if result.get(key):
             result[key] = str(result[key])
-    specs = evaluate_specs(result, tb.specs)
+    specs = evaluate_specs(result, tb.specs, analysis=tb.analysis)
     result["testbench"] = tb.name
     result["specs"] = specs
     result["spec_status"] = _spec_status(specs)

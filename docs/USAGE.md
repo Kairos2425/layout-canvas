@@ -21,6 +21,9 @@ Optional external tools — probed, never required, env-var overrides:
 | `LAYOUT_CANVAS_OSDI_DIR` | dir containing `psp103.osdi` | IHP PSP models |
 | `LAYOUT_CANVAS_PDK_DIR` | private dir of `*.pdk.json` descriptors | external/commercial PDKs |
 | `LAYOUT_CANVAS_PDKS` | pathsep-separated `*.pdk.json` file list | external/commercial PDKs |
+| `LAYOUT_CANVAS_VIRTUOSO_HOST` | SSH target (`user@host` or ssh-config alias) | remote Virtuoso acceptance |
+| `LAYOUT_CANVAS_VIRTUOSO_DIR` | remote working directory | remote Virtuoso acceptance |
+| `LAYOUT_CANVAS_SPECTRE_MODELS` | remote PDK model deck path | spectre leg of remote acceptance |
 
 Check what is live: `python -c "import json; from layout_canvas.tools.backends import probe_environment; print(json.dumps(probe_environment(), indent=1))"`
 or MCP tool `probe_environment`.
@@ -89,6 +92,8 @@ layout-canvas web --port 8080                        # local canvas
 layout-canvas mcp                                    # MCP stdio server
 layout-canvas pdk list                               # registered PDKs + load errors
 layout-canvas pdk dump sky130 > my.pdk.json          # descriptor template
+layout-canvas virtuoso-accept design.json --dry-run  # SKILL/Spectre static checks
+layout-canvas virtuoso-accept design.json --host eda01 --lib canvas_lib
 ```
 
 External PDKs: drop a `*.pdk.json` descriptor into a private dir, set
@@ -97,6 +102,15 @@ External PDKs: drop a `*.pdk.json` descriptor into a private dir, set
 prelude and the generic `gen_*` block generators all key off it.
 Beyond those three, parametric block generators remain a Python
 plugin (`blocks/<pdk>/`). Full schema: `docs/PDK_DESCRIPTORS.md`.
+
+`virtuoso-accept` is the Cadence-side acceptance channel
+(`docs/VIRTUOSO_ACCEPTANCE.md`): `--dry-run` runs the Cadence-free static
+checks (per-cell shape/instance census of the `.il` vs the GDS, `.scs`
+structural checks, unmapped-layer warnings); with `--host` (or
+`LAYOUT_CANVAS_VIRTUOSO_HOST` + `_DIR`, optional `_SPECTRE_MODELS`) it
+additionally replays the SKILL and runs spectre on a remote EDA host over
+SSH and diffs the rebuilt OA cellviews against the GDS truth. Exit 0 only
+when every executed stage is green.
 
 ## 4. Web canvas
 
@@ -134,17 +148,26 @@ A design carries named simulation testbenches with measurable specs:
     {"name": "outp_op", "signal": "outp", "measure": "final",
      "min": 0.7, "max": 1.0, "unit": "V"},
     {"name": "tail_pp", "signal": "xd1.tail", "measure": "pp",
-     "max": 0.1, "unit": "V"}
+     "max": 0.1, "unit": "V"},
+    {"name": "out_settle", "signal": "outp", "measure": "settling",
+     "max": 2e-7, "unit": "s", "tol": 0.02}    // tran only
   ]
 }]
 ```
 
-`measure` ∈ `final | min | max | mean | pp | db | bw_3db` over the
-waveform samples (`db` = 20·log10 of the first sample — ac low-frequency
-gain; `bw_3db` = first sweep frequency below |v₀|/√2 — ac bandwidth,
-`unavailable` when the curve never crosses); a spec needs `min` and/or
-`max`. For `analysis:"ac"` the waves hold |v| magnitudes plus a
-`<name>__db` sibling per probed node. Validation is strict: schematic benches
+`measure` ∈ `final | min | max | mean | pp | db | bw_3db | settling |
+slew | overshoot` over the waveform samples (`db` = 20·log10 of the first
+sample — ac low-frequency gain; `bw_3db` = first sweep frequency below
+|v₀|/√2 — ac bandwidth, `unavailable` when the curve never crosses).
+The last three are **transient-only** (they reduce along the sweep axis,
+so an `op`/`ac`/`dc` bench reports `unavailable` with the reason):
+`settling` = earliest time after which the wave stays inside
+±`tol`·|final| (`tol` field, default 0.02; a wave that only reaches the
+band at the last sample reports never-settled), `slew` = max |dv/dt|
+between adjacent samples, `overshoot` = `max(0, (peak−final)/|final|·100)`
+in percent. A spec needs `min` and/or `max`. For `analysis:"ac"` the waves
+hold |v| magnitudes plus a `<name>__db` sibling per probed node.
+Validation is strict: schematic benches
 reject `stimulus`/`probes` (the schematic path has no custom-bench
 parameter), testbench and spec names must be unique.
 

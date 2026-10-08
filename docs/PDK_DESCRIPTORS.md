@@ -38,6 +38,7 @@ layout-canvas pdk dump sky130                      # a complete template to copy
 | `run_drc` (pya engine) | ✅ with `drc` section | min-width/min-space/via-enclosure subset |
 | `run_simulation` model prelude | ✅ with `model_libs.spice_prelude_file` | resolved against the descriptor's directory |
 | `verify_design` on imported cells | ✅ | same extract+DRC+LVS pipeline |
+| Virtuoso SKILL layer names | ✅ with `oa_layers` | `export_skill`/`virtuoso-accept` map `L/DT` → OA layer name |
 | **Generic parametric generators** | ✅ with `extract` section | `gen_diff_pair` / `gen_current_mirror` / `gen_guard_ring`; see below |
 | **Custom parametric block generators** | ❌ — still Python | `blocks/<pdk>/` package + `base.register` |
 | Official foundry `.drc`/`.lvs` decks | external `klayout` binary | unchanged; pass `deck_path`/`setup_path` |
@@ -117,7 +118,8 @@ to have a reference), compose the top level in IR, then verify.
     "rules": {"met1": [["width", 0.14], ["space", 0.14]]},
     "enclosure": [{"label": "via.m1", "cut": "via1",
                    "enclosed_by": ["met1"], "enc": 0.055}]
-  }
+  },
+  "oa_layers": {"68/20": "M1", "65/20": "DIFF"}
 }
 ```
 
@@ -151,6 +153,15 @@ to have a reference), compose the top level in IR, then verify.
   via/contact enclosure construction.
 - `drc.layers` — optional named layers needed only for checks (marker
   layers that aren't part of `layers` or `extract.roles`).
+- `oa_layers` — optional `{"L/DT": "oa_layer_name"}` map consumed by
+  the Virtuoso SKILL export (`export_skill`, `virtuoso-accept`): the
+  generated `dbCreateRect`/`dbCreateLabel` calls carry these OA layer
+  names with purpose `drawing`, which is what the OA techfile attached to
+  the target library must define. Resolution order per `(layer,datatype)`
+  is descriptor `oa_layers` → built-in table (`sky130`/`ihp_sg13g2`) →
+  `L<layer>_D<dt>` fallback. Run `virtuoso-accept --dry-run` and read
+  `unmapped_layers` to see which pairs still fall through; see
+  `docs/VIRTUOSO_ACCEPTANCE.md` §"PDK layer names".
 
 ## The fixed extraction-role contract
 

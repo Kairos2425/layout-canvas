@@ -27,8 +27,8 @@ Block IR (JSON) ── compile ──▶ gdsfactory ──▶ GDS
 | **LVS** | `LayoutToNetlist` extraction + `NetlistComparer` topology match; passive blocks get connectivity-semantics comparison; mismatched nets are localized and highlighted |
 | **PEX sim** | Extracted netlist → BSIM4/PSP foundry models via ngspice; internal-node probes (`xd1.tail`), custom testbenches |
 | **External PDKs** | `*.pdk.json` descriptors via `LAYOUT_CANVAS_PDK_DIR`/`LAYOUT_CANVAS_PDKS` — layer map + extract recipe + DRC subset + model prelude + generic `gen_diff_pair`/`gen_current_mirror`/`gen_guard_ring` generators, no code (`docs/PDK_DESCRIPTORS.md`) |
-| **Testbenches** | Named sim setups on the IR (schematic/extracted, op/tran, probes) + per-spec pass/fail/unavailable with reasons; CLI exit codes, session run history |
-| **Export** | Virtuoso SKILL (shapes/instances) + Spectre netlist, GDS/OASIS, SPICE |
+| **Testbenches** | Named sim setups on the IR (schematic/extracted, op/tran/ac/dc, probes) + per-spec pass/fail/unavailable with reasons — `final/min/max/mean/pp/db/bw_3db` plus transient `settling`/`slew`/`overshoot` (with `tol`); CLI exit codes, session run history |
+| **Export** | Virtuoso SKILL (shapes/instances) + Spectre netlist, GDS/OASIS, SPICE — plus `virtuoso-accept`: static SKILL/.scs checks anywhere, real Virtuoso/spectre acceptance over SSH on an EDA host (`docs/VIRTUOSO_ACCEPTANCE.md`) |
 | **Interfaces** | CLI · local web canvas · MCP stdio server (34 tools) |
 
 ## Install
@@ -38,7 +38,7 @@ git clone https://github.com/Kairos2425/layout-canvas
 cd layout-canvas
 pip install -e ".[dev]"
 pip install klayout        # in-process DRC/LVS/extraction engine
-pytest                     # 175 tests; tool-dependent tests auto-skip
+pytest                     # 217 tests; tool-dependent tests auto-skip
 ```
 
 Optional tools (probed adapters — absent tools report `unavailable`, never fake results):
@@ -47,6 +47,9 @@ Optional tools (probed adapters — absent tools report `unavailable`, never fak
 - **KLayout app / netgen / magic** — full foundry decks (`LAYOUT_CANVAS_KLAYOUT`, …)
 - **IHP SG13G2 models** — `LAYOUT_CANVAS_IHP_MODELS`, `LAYOUT_CANVAS_OSDI_DIR`
   (see `docs/EXTERNAL_TOOLS.md`)
+- **Remote Virtuoso/spectre host** — `LAYOUT_CANVAS_VIRTUOSO_HOST`,
+  `LAYOUT_CANVAS_VIRTUOSO_DIR`, `LAYOUT_CANVAS_SPECTRE_MODELS`
+  (SSH key auth; see `docs/VIRTUOSO_ACCEPTANCE.md`)
 
 ## Quick start
 
@@ -112,7 +115,7 @@ src/layout_canvas/
   tools/       drc, extract, lvs, sim, verify, backends
   web/         local canvas app + gallery
   mcp/         stdio MCP server
-tests/         175 tests incl. real-ngspice / real-PDK smokes
+tests/         217 tests incl. real-ngspice / real-PDK smokes
 docs/          architecture, ADRs 0001-0009, external-tool setup
 deploy/        Dockerfile + compose for the web app
 ```

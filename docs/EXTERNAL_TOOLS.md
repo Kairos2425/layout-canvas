@@ -35,6 +35,23 @@ to force it. Blocks lacking transistor-level emitters → `refused` (named).
 | Magic | DRC/extract | free/open | probe only — runner not wired |
 | Calibre | sign-off DRC/LVS | Siemens license | probe only — reserved |
 
+## Cadence Virtuoso / Spectre (remote acceptance)
+
+Virtuoso runs on a licensed Linux EDA host, never locally. The
+`virtuoso-accept` CLI / `tools/virtuoso_check.py` harness reaches it over
+**SSH key auth** (always `BatchMode=yes` — a host that needs a password
+reports `unavailable`, never a hang):
+
+| Env var | Points at |
+|---|---|
+| `LAYOUT_CANVAS_VIRTUOSO_HOST` | ssh target (`user@host` or ssh-config alias) |
+| `LAYOUT_CANVAS_VIRTUOSO_DIR` | remote working directory for upload/replay/logs |
+| `LAYOUT_CANVAS_SPECTRE_MODELS` | remote spectre model deck (`include`d by the harness) |
+
+`virtuoso-accept --dry-run` needs none of these — it validates the
+generated `.il`/`.scs` locally against the GDS. Full setup:
+`docs/VIRTUOSO_ACCEPTANCE.md`.
+
 ### In-process KLayout engine (`klayout-pya`)
 
 The pip `klayout` package exposes the same geometry/netlist engine the

@@ -62,8 +62,11 @@ class PDK:
     #              "leaf_devices": {subckt: (device_class, polarity)}}
     #   drc     = {"rules": {Layer: [(kind, value_um)]},
     #              "enclosure": [(label, Layer, [Layer, ...], value_um)]}
+    #   oa_layers = {Layer: oa_layer_name} — GDS (layer,datatype) → OA layer
+    #   name for the Virtuoso SKILL export; purpose is always "drawing".
     extract: dict[str, Any] | None = None
     drc: dict[str, Any] | None = None
+    oa_layers: dict[Layer, str] | None = None
     # Provenance: the directory/model files a ``*.pdk.json`` resolves
     # ``model_libs`` relative paths against, and the file it was read from
     # (None for built-ins). Never serialised.
@@ -128,6 +131,7 @@ class PDK:
                                  pin_purpose=pin_purpose)
         drc = _parse_drc(d.get("drc"), name=name,
                          layers=layers, extract=extract)
+        oa_layers = _parse_oa_layers(d.get("oa_layers"), name=name)
         return cls(
             name=name,
             layers=layers,
@@ -136,6 +140,7 @@ class PDK:
             model_libs=model_libs,
             extract=extract,
             drc=drc,
+            oa_layers=oa_layers,
             base_dir=str(base_dir) if base_dir is not None else None,
             source=str(source) if source is not None else None,
         )
@@ -155,6 +160,7 @@ class PDK:
             "model_libs": dict(self.model_libs),
             "extract": None,
             "drc": None,
+            "oa_layers": None,
         }
         if self.extract is not None:
             out["extract"] = {
@@ -191,6 +197,11 @@ class PDK:
                     k: [pair[0], pair[1]]
                     for k, pair in self.drc["layers"].items()
                 }
+        if self.oa_layers is not None:
+            out["oa_layers"] = {
+                f"{pair[0]}/{pair[1]}": oa_name
+                for pair, oa_name in self.oa_layers.items()
+            }
         return out
 
 
@@ -354,6 +365,33 @@ def _parse_drc(
             value,
         ))
     return {"rules": rules, "enclosure": enclosure, "layers": drc_layers}
+
+
+def _parse_oa_layers(raw: Any, *, name: str) -> dict[Layer, str] | None:
+    """``oa_layers``: ``{"L/DT": "oa_layer_name"}`` for the SKILL export.
+
+    Keys are literal ``layer/datatype`` pairs (the same spelling
+    ``drc.rules`` accepts inline); the OA purpose is always ``drawing``.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(f"pdk {name!r}: 'oa_layers' must be an object")
+    out: dict[Layer, str] = {}
+    for key, value in raw.items():
+        m = re.fullmatch(r"(\d+)\s*[/,]\s*(\d+)", str(key))
+        if not m:
+            raise ValueError(
+                f"pdk {name!r}: oa_layers key {key!r} must be a literal "
+                "'L/DT' pair (e.g. \"65/20\")"
+            )
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"pdk {name!r}: oa_layers[{key!r}] must be a non-empty OA "
+                f"layer name, got {value!r}"
+            )
+        out[(int(m.group(1)), int(m.group(2)))] = value.strip()
+    return out
 
 
 def _layer_name_map(pdk: PDK) -> dict[Layer, str]:

@@ -27,6 +27,7 @@ Optional environment (only needed for the features they unlock):
 | `LAYOUT_CANVAS_IHP_MODELS`, `LAYOUT_CANVAS_OSDI_DIR` | IHP SG13G2 PSP103 models |
 | `LAYOUT_CANVAS_GALLERY` | gallery directory (default `~/.layout_canvas/gallery`) |
 | `LAYOUT_CANVAS_PDK_DIR`, `LAYOUT_CANVAS_PDKS` | external `*.pdk.json` PDK descriptors (import_gds + DRC/LVS + model prelude + `gen_*` block generators) |
+| `LAYOUT_CANVAS_VIRTUOSO_HOST`, `LAYOUT_CANVAS_VIRTUOSO_DIR`, `LAYOUT_CANVAS_SPECTRE_MODELS` | remote Virtuoso/spectre acceptance host over SSH (`layout-canvas virtuoso-accept`, docs/VIRTUOSO_ACCEPTANCE.md) |
 
 Call `probe_environment` first when you are unsure what is installed.
 
@@ -56,11 +57,18 @@ Call `probe_environment` first when you are unsure what is installed.
    `probes:["tail"]` gives raw waveforms, including internal nodes
    (`xd1.tail`). An `analysis:"ac"` testbench drives an `ac 1` source on
    an input port and measures `db` (low-frequency gain) / `bw_3db` specs;
+   `analysis:"tran"` enables `settling` (±`spec.tol` band, default 2 %),
+   `slew` (max |dv/dt|) and `overshoot` (%) — all transient-only, reported
+   `unavailable` on op/ac/dc benches.
    `optimize` with `objective:"specs"` coordinate-descends bounded numeric
    params toward all-specs-pass (needs a live simulator).
 8. Deliver: `export_virtuoso` (SKILL `.il` + Spectre `.scs`), `save_project`,
    or `gallery_publish` (defaults to `ai_generated: true` — keep it that way
-   when the design was produced by you).
+   when the design was produced by you). For real Cadence acceptance, run
+   `layout-canvas virtuoso-accept <design>.json [--host …] [--dry-run]` —
+   the static leg is Cadence-free, the remote leg replays the `.il` and
+   spectres the `.scs` on an SSH EDA host; `verified` only when the OA
+   cellviews match the GDS census.
 
 ## Block IR shape
 
