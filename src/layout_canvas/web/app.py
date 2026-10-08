@@ -121,7 +121,12 @@ def _gallery_api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     global _SESSION
     from layout_canvas.web import gallery
     if action == "list":
-        return {"status": "ok", "data": {"entries": gallery.list_entries()}}
+        entries = gallery.list_entries(
+            verified_only=bool(payload.get("verified_only")),
+            pdk=payload.get("pdk") or None,
+            tag=payload.get("tag") or None,
+        )
+        return {"status": "ok", "data": {"entries": entries}}
     if action == "publish":
         if _SESSION is not None:
             design = _SESSION.design
@@ -163,14 +168,22 @@ def _import_gds_api(payload: dict[str, Any]) -> dict[str, Any]:
     if not alias or not re.fullmatch(r"[A-Za-z0-9_.\-]+", alias):
         return {"status": "error",
                 "error": "import_gds needs 'alias' matching [A-Za-z0-9_.-]+"}
+    b64 = payload.get("gds_b64") or ""
+    if len(b64) > 96 * 1024 * 1024:
+        return {"status": "error", "error": "payload exceeds 64 MiB limit"}
     try:
-        raw = base64.b64decode(payload.get("gds_b64") or "", validate=True)
+        raw = base64.b64decode(b64, validate=True)
     except Exception:
         return {"status": "error", "error": "gds_b64 is not valid base64"}
     if not raw:
         return {"status": "error", "error": "empty GDS payload"}
+    if len(raw) > 64 * 1024 * 1024:
+        return {"status": "error", "error": "payload exceeds 64 MiB limit"}
+    fmt = str(payload.get("format") or "").lower()
+    if fmt not in ("gds", "oas"):
+        fmt = "oas" if raw.startswith(b"%SEMI-OASIS") else "gds"
     try:
-        gds = Path(tempfile.mkdtemp(prefix="lc_gds_")) / f"{alias}.gds"
+        gds = Path(tempfile.mkdtemp(prefix="lc_gds_")) / f"{alias}.{fmt}"
         gds.write_bytes(raw)
         block = register_gds_cell(
             alias,
@@ -202,6 +215,30 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             return {"status": "ok", "data": inspect_connectivity(design)}
         if action == "netlist":
             return {"status": "ok", "data": {"spice": compile_netlist(design)}}
+        if action == "testbench":
+            from layout_canvas.tools.testbench import run_all, run_testbench
+
+            exe = os.environ.get("LAYOUT_CANVAS_NGSPICE")
+            name = payload.get("name")
+            try:
+                if name:
+                    runs = [run_testbench(design, str(name), executable=exe)]
+                else:
+                    runs = run_all(design, executable=exe)
+            except KeyError as exc:
+                return {"status": "error", "error": str(exc)}
+            if _SESSION is not None:
+                _SESSION.record_run("testbench", {
+                    "testbenches": [r.get("testbench") for r in runs],
+                    "spec_status": [r.get("spec_status") for r in runs],
+                    "sim_status": [r.get("status") for r in runs],
+                    "spec_counts": [
+                        {s: sum(1 for e in r.get("specs", []) if e["status"] == s)
+                         for s in ("pass", "fail", "unavailable")}
+                        for r in runs
+                    ],
+                })
+            return {"status": "ok", "data": {"runs": runs}}
         if action == "simulate":
             from layout_canvas.tools.sim import simulate_auto, simulate_extracted
             exe = os.environ.get("LAYOUT_CANVAS_NGSPICE")
@@ -253,7 +290,14 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             # the design's own reference netlist. Results are fail-closed —
             # an unavailable engine reports as such, never as a pass.
             from layout_canvas.tools.verify import verify_design
-            return {"status": "ok", "data": verify_design(design)}
+            res = verify_design(design)
+            if _SESSION is not None:
+                _SESSION.record_run("verify", {
+                    "passed": res["passed"],
+                    "lvs_status": res["lvs"].get("status"),
+                    "drc_violations": res["drc"].get("total_violations"),
+                })
+            return {"status": "ok", "data": res}
         if action == "virtuoso":
             import tempfile
             from layout_canvas.compiler.virtuoso import export_skill, export_spectre

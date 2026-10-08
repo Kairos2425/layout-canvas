@@ -492,6 +492,74 @@ class LayoutCanvasMCPServer:
                 },
             },
             {
+                "name": "run_testbench",
+                "description": "Run a structured simulation testbench declared on the design (testbenches[].name). Evaluates each spec and reports per-spec pass/fail/unavailable with reasons. Provide 'name' for one bench, omit it to run all. Source: session_id or ir_json.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "ir_json": {
+                            "type": ["string", "object"],
+                            "description": "Block IR design content when no session is used.",
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Testbench name from design.testbenches; omitted = run all.",
+                        },
+                    },
+                },
+            },
+            {
+                "name": "gallery_list",
+                "description": "List gallery entries with optional filters: verified_only (only entries whose publish-time verification passed), pdk, tag.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "verified_only": {"type": "boolean", "default": False},
+                        "pdk": {"type": "string"},
+                        "tag": {"type": "string"},
+                    },
+                },
+            },
+            {
+                "name": "gallery_publish",
+                "description": "Publish a design (session_id or ir_json) to the local gallery with a preview, content hash dedup and publish-time DRC/LVS verification record. Sets ai_generated=true by default (agent-published); pass ai_generated=false for human-authored designs. allow_duplicate bypasses the content-hash dedup.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "ir_json": {"type": ["string", "object"]},
+                        "author": {"type": "string", "default": "agent"},
+                        "description": {"type": "string", "default": ""},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "ai_generated": {"type": "boolean", "default": True},
+                        "allow_duplicate": {"type": "boolean", "default": False},
+                    },
+                },
+            },
+            {
+                "name": "gallery_get",
+                "description": "Fetch a gallery entry by id — design JSON, meta (author/tags/design_hash/verification) and preview SVG — without opening a session.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "Gallery entry id."},
+                    },
+                    "required": ["id"],
+                },
+            },
+            {
+                "name": "gallery_fork",
+                "description": "Open a gallery entry as a new editing session — returns session_id, revision 0, the design and its meta.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "Gallery entry id."},
+                    },
+                    "required": ["id"],
+                },
+            },
+            {
                 "name": "probe_environment",
                 "description": "Probe the host for EDA tools: simulators (ngspice/Xyce/LTspice/Spectre/HSPICE/Eldo), DRC (KLayout/Magic/Calibre), LVS (Netgen). Returns availability, version, and license gating per tool — all detection, no verdicts.",
                 "inputSchema": {
@@ -758,7 +826,14 @@ class LayoutCanvasMCPServer:
                 design = self._parse_design(args["ir_json"])
             else:
                 raise ValueError("verify_design needs 'session_id' or 'ir_json'")
-            return verify_design(design)
+            res = verify_design(design)
+            if args.get("session_id"):
+                self._get_session(args["session_id"]).record_run("verify", {
+                    "passed": res["passed"],
+                    "lvs_status": res["lvs"].get("status"),
+                    "drc_violations": res["drc"].get("total_violations"),
+                })
+            return res
 
         elif name == "probe_environment":
             from layout_canvas.tools.backends import probe_environment
@@ -797,6 +872,86 @@ class LayoutCanvasMCPServer:
                 "alias": alias,
                 "ports": [p.name for p in block.spec.ports],
                 "pdk": block.spec.pdk,
+            }
+
+        elif name == "run_testbench":
+            from layout_canvas.tools.testbench import run_all, run_testbench
+
+            if args.get("session_id"):
+                design = self._get_session(args["session_id"]).design
+            elif args.get("ir_json") is not None:
+                design = self._parse_design(args["ir_json"])
+            else:
+                raise ValueError("run_testbench needs 'session_id' or 'ir_json'")
+            name = args.get("name")
+            if name:
+                runs = [run_testbench(design, str(name))]
+            else:
+                runs = run_all(design)
+            if args.get("session_id"):
+                self._get_session(args["session_id"]).record_run("testbench", {
+                    "testbenches": [r.get("testbench") for r in runs],
+                    "spec_status": [r.get("spec_status") for r in runs],
+                    "sim_status": [r.get("status") for r in runs],
+                    "spec_counts": [
+                        {s: sum(1 for e in r.get("specs", []) if e["status"] == s)
+                         for s in ("pass", "fail", "unavailable")}
+                        for r in runs
+                    ],
+                })
+            return {"runs": runs}
+
+        elif name == "gallery_list":
+            from layout_canvas.web import gallery
+
+            return {"entries": gallery.list_entries(
+                verified_only=bool(args.get("verified_only")),
+                pdk=args.get("pdk") or None,
+                tag=args.get("tag") or None,
+            )}
+
+        elif name == "gallery_publish":
+            from layout_canvas.web import gallery
+
+            if args.get("session_id"):
+                design = self._get_session(args["session_id"]).design
+            elif args.get("ir_json") is not None:
+                design = self._parse_design(args["ir_json"])
+            else:
+                raise ValueError("gallery_publish needs 'session_id' or 'ir_json'")
+            try:
+                return gallery.publish(design, {
+                    "author": args.get("author", "agent"),
+                    "description": args.get("description", ""),
+                    "tags": args.get("tags") or [],
+                    "ai_generated": bool(args.get("ai_generated", True)),
+                    "allow_duplicate": bool(args.get("allow_duplicate")),
+                })
+            except ValueError as exc:
+                return {"status": "error", "error": str(exc)}
+
+        elif name == "gallery_get":
+            from layout_canvas.web import gallery
+
+            entry = gallery.get_entry(str(args.get("id", "")))
+            if entry is None:
+                raise ValueError("gallery entry not found")
+            return entry
+
+        elif name == "gallery_fork":
+            from layout_canvas.web import gallery
+
+            entry = gallery.get_entry(str(args.get("id", "")))
+            if entry is None:
+                raise ValueError("gallery entry not found")
+            design = Design.model_validate(entry["design"])
+            session_id = uuid.uuid4().hex[:12]
+            self.sessions[session_id] = DesignSession(design)
+            return {
+                "session_id": session_id,
+                "revision": 0,
+                "design": design.model_dump(),
+                "meta": entry["meta"],
             }
 
         elif name == "import_gds":

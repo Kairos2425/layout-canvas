@@ -88,9 +88,66 @@ layout-canvas mcp                                    # MCP stdio server
 - **Projects** — save/load design JSON (gallery/session APIs included).
 
 POST endpoints: `/api/preview`, `/api/connectivity`, `/api/netlist`,
-`/api/simulate`, `/api/drc`, `/api/verify`, `/api/virtuoso`, `/api/ppa`,
-`/api/abstract`, plus `/api/session/*` and `/api/gallery/*`. Body:
-`{"ir_json": {...design...}, ...action fields}`.
+`/api/simulate`, `/api/testbench`, `/api/drc`, `/api/verify`, `/api/virtuoso`,
+`/api/ppa`, `/api/abstract`, `/api/import_gds`, plus `/api/session/*` and
+`/api/gallery/*`. Body: `{"ir_json": {...design...}, ...action fields}`.
+
+### Testbenches & specs
+
+A design carries named simulation testbenches with measurable specs:
+
+```json
+"testbenches": [{
+  "name": "tb_op_schematic",
+  "source": "schematic",            // schematic | extracted (PEX)
+  "analysis": "op",                 // op | tran
+  "vdd": 1.8,
+  "stimulus": null,                 // extracted only
+  "probes": ["tail"],               // extracted only
+  "specs": [
+    {"name": "outp_op", "signal": "outp", "measure": "final",
+     "min": 0.7, "max": 1.0, "unit": "V"},
+    {"name": "tail_pp", "signal": "xd1.tail", "measure": "pp",
+     "max": 0.1, "unit": "V"}
+  ]
+}]
+```
+
+`measure` ∈ `final | min | max | mean | pp` over the waveform samples; a
+spec needs `min` and/or `max`. Validation is strict: schematic benches
+reject `stimulus`/`probes` (the schematic path has no custom-bench
+parameter), testbench and spec names must be unique.
+
+Each spec resolves to `pass` / `fail` / `unavailable` with a `reason` —
+fail-closed: a missing simulator or missing signal is `unavailable`
+(with the available signal names listed), never a silent pass. Per-bench
+rollup `spec_status`: `fail` > `unavailable` > `pass` > `no_specs`.
+
+Run them via:
+
+- **CLI** — `layout-canvas testbench design.json [--name tb]`: one line
+  per spec, exit 0 only when every spec passed.
+- **Web** — `POST /api/testbench {ir_json, name?}`; the canvas Bench tab
+  lists benches with per-spec chips and sparklines.
+- **MCP** — `run_testbench {session_id?|ir_json, name?}`.
+- **Session ops** — `{"op": "set_testbenches", "testbenches": [...]}`
+  replaces the list through the transactional boundary.
+
+Runs are journaled on the session (`snapshot().data.runs`, FIFO 50):
+testbench and verify calls record kind/UTC timestamp/revision/status
+summaries — never waveforms.
+
+### Gallery
+
+Publishing records a content hash, an AI/authorship flag, and a
+publish-time verification snapshot (`{status, drc_violations, lvs_match,
+passed}` — a verification failure marks the entry, never blocks it).
+Re-publishing identical content raises `duplicate of <id>` unless
+`allow_duplicate` is set. `gallery/list` accepts `verified_only`, `pdk`
+and `tag` filters; the web gallery tab exposes the same filters plus
+PDK/DRC·LVS/AI chips on each card. MCP mirrors it via `gallery_list`,
+`gallery_get`, `gallery_publish` (`ai_generated` defaults true for
+agents) and `gallery_fork` (opens the entry as a session).
 
 ## 5. Python API
 
@@ -151,7 +208,10 @@ block = register_gds_cell(
 Web canvas: **Import GDS** button in the Blocks palette — pick a
 `.gds`/`.oas` file, confirm the alias, and the new block appears in the
 palette ready to place (POST `/api/import_gds` with
-`{alias, pdk, gds_b64, cell_name?, spice_text?}`).
+`{alias, pdk, gds_b64, cell_name?, spice_text?, format?}`). The format is
+sniffed (`%SEMI-OASIS` magic) when `format` is omitted; payloads are
+capped at 64 MiB decoded / 96 MB base64 and rejected above that. The
+response includes a pya-DRC summary (`drc.status`, `drc.violations`).
 
 MCP: `import_gds` tool — `{alias, path, pdk, cell_name?, spice_path?}`.
 
@@ -179,7 +239,7 @@ Register the stdio server in your MCP client config:
 }
 ```
 
-29 tools, grouped:
+33 tools, grouped:
 
 | Intent | Tools |
 |---|---|
@@ -187,7 +247,8 @@ Register the stdio server in your MCP client config:
 | Blocks | `list_blocks`, `generate_block`, `register_cell`, `import_gds` |
 | Session | `open_design`, `close_design`, `transact`, `snapshot`, `undo`, `load_project`, `save_project`, `get_active_layout_info` |
 | Build | `insert_block_into_layout`, `compile_session`, `compile_ir`, `generate_netlist`, `optimize`, `inspect_connectivity`, `inspect_ppa`, `render_preview_svg` |
-| Verify | `run_drc`, `extract_netlist`, `run_lvs`, `verify_design` |
+| Gallery | `gallery_list`, `gallery_get`, `gallery_publish`, `gallery_fork` |
+| Verify | `run_drc`, `extract_netlist`, `run_lvs`, `verify_design`, `run_testbench` |
 | Simulate | `run_simulation` — `source="schematic"` or `"extracted"` (PEX), `probes`, `stimulus`, `analysis`, `vdd`, `tran_stop`, `tran_step` |
 | Export | `export_virtuoso` (SKILL + Spectre), `export_abstract` |
 

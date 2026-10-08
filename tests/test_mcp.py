@@ -36,6 +36,10 @@ def test_mcp_tools_list():
     resp = server.handle_request(req)
     assert "tools" in resp["result"]
     tool_names = [t["name"] for t in resp["result"]["tools"]]
+    assert len(tool_names) == 33
+    for name in ("run_testbench", "gallery_list", "gallery_publish",
+                 "gallery_fork", "import_gds"):
+        assert name in tool_names
     assert "list_blocks" in tool_names
     assert "generate_block" in tool_names
     assert "compile_ir" in tool_names
@@ -93,6 +97,50 @@ def test_mcp_execute_generate_block(tmp_path: Path):
     assert res["block"] == "sky130.diff_pair"
     assert out_gds.exists()
     assert out_gds.stat().st_size > 0
+
+
+def test_mcp_run_testbench_and_gallery_smoke(tmp_path, monkeypatch):
+    """run_testbench + gallery_* tools over a session; sim is fail-closed."""
+    import layout_canvas.blocks.sky130  # noqa: F401
+    monkeypatch.setenv("LAYOUT_CANVAS_GALLERY", str(tmp_path / "gal"))
+    server = LayoutCanvasMCPServer()
+
+    ir = {
+        "name": "tb_mcp",
+        "pdk": "sky130",
+        "instances": [{"id": "dp", "block": "sky130.diff_pair", "params": {}}],
+        "testbenches": [{"name": "tb1", "source": "schematic", "specs": [
+            {"name": "s", "signal": "outp", "min": 0, "max": 5}]}],
+    }
+    opened = server.execute_tool("open_design", {"ir_json": ir})
+    sid = opened["session_id"]
+
+    res = server.execute_tool("run_testbench",
+                              {"session_id": sid, "name": "tb1"})
+    assert res["runs"][0]["testbench"] == "tb1"
+    # run recorded on the session with a status summary
+    snap = server.execute_tool("snapshot", {"session_id": sid})
+    assert snap["data"]["runs"][0]["kind"] == "testbench"
+    assert snap["data"]["runs"][0]["testbenches"] == ["tb1"]
+    with pytest.raises(Exception, match="unknown testbench"):
+        server.execute_tool("run_testbench",
+                            {"session_id": sid, "name": "nope"})
+
+    pub = server.execute_tool("gallery_publish", {"session_id": sid})
+    assert pub["ai_generated"] is True
+    assert pub["verification"]["status"] in ("ok", "unavailable")
+
+    listed = server.execute_tool("gallery_list", {"verified_only": True})
+    assert any(e["id"] == pub["id"] for e in listed["entries"])
+    # agent re-publishing identical content hits the dedup
+    dup = server.execute_tool("gallery_publish", {"session_id": sid})
+    assert dup["status"] == "error" and "duplicate of" in dup["error"]
+
+    forked = server.execute_tool("gallery_fork", {"id": pub["id"]})
+    assert forked["session_id"] != sid
+    assert forked["design"]["name"] == "tb_mcp"
+    assert server.execute_tool("snapshot",
+                               {"session_id": forked["session_id"]})
 
 
 def test_mcp_bridge_roundtrip():

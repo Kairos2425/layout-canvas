@@ -9,6 +9,7 @@ and batch scripts all go through ``DesignSession.transact``.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from layout_canvas.derived.connectivity import inspect_connectivity
@@ -25,6 +26,22 @@ class DesignSession:
         self._design = design
         self._revision = 0
         self._history: list[Design] = []
+        # Verification/simulation run log — small summaries only (statuses
+        # and counts), never waveforms or decks. FIFO-capped.
+        self.runs: list[dict[str, Any]] = []
+
+    def record_run(self, kind: str, summary: dict[str, Any]) -> dict[str, Any]:
+        """Append a run record stamped with UTC time and the live revision."""
+        record = {
+            "kind": kind,
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "revision": self._revision,
+            **summary,
+        }
+        self.runs.append(record)
+        if len(self.runs) > 50:
+            del self.runs[: len(self.runs) - 50]
+        return record
 
     @property
     def design(self) -> Design:
@@ -43,6 +60,7 @@ class DesignSession:
                 "design": self._design.model_dump(),
                 "ir_version": self._design.ir_version,
                 "supported_ops": list(OPS),
+                "runs": list(self.runs),
             },
         )
 

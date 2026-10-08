@@ -12,7 +12,15 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from layout_canvas.ir.model import Constraint, Design, Instance, Net, Placement, Port
+from layout_canvas.ir.model import (
+    Constraint,
+    Design,
+    Instance,
+    Net,
+    Placement,
+    Port,
+    Testbench,
+)
 
 from .envelope import Diagnostic
 
@@ -29,6 +37,7 @@ OPS = (
     "add_constraint",
     "remove_constraint",
     "set_meta",
+    "set_testbenches",
 )
 
 
@@ -244,6 +253,17 @@ def _set_meta(design: Design, edit: dict[str, Any]) -> list[Diagnostic]:
     return []
 
 
+def _set_testbenches(design: Design, edit: dict[str, Any]) -> list[Diagnostic]:
+    payload = edit.get("testbenches")
+    if not isinstance(payload, list):
+        return [Diagnostic("error", "bad-edit", "'testbenches' must be a list")]
+    try:
+        design.testbenches = [Testbench.model_validate(t) for t in payload]
+    except ValidationError as exc:
+        return [Diagnostic("error", "invalid-testbench", str(exc))]
+    return []
+
+
 _HANDLERS = {
     "set_placement": _set_placement,
     "set_params": _set_params,
@@ -257,4 +277,5 @@ _HANDLERS = {
     "add_constraint": _add_constraint,
     "remove_constraint": _remove_constraint,
     "set_meta": _set_meta,
+    "set_testbenches": _set_testbenches,
 }

@@ -154,6 +154,7 @@ PAGE = """<!doctype html>
     <div class="tab on" data-t="inspector" onclick="tab('inspector')">Inspector</div>
     <div class="tab" data-t="output" onclick="tab('output')">Output</div>
     <div class="tab" data-t="sim" onclick="tab('sim')">Sim</div>
+    <div class="tab" data-t="bench" onclick="tab('bench');renderBench()">Bench</div>
     <div class="tab" data-t="gallery" onclick="tab('gallery');listGallery()">Gallery</div>
   </div>
   <div id="pane"></div>
@@ -189,6 +190,7 @@ function tab(t) {
 function renderPane() {
   if (curTab === 'inspector') return renderInspector();
   if (curTab === 'sim') return;  // sim pane keeps its own DOM
+  if (curTab === 'bench') return;  // bench pane keeps its own DOM
   if (curTab === 'gallery') return;  // gallery renders itself
   // output
   pane.innerHTML = '<pre id="out">—</pre>';
@@ -568,7 +570,8 @@ document.getElementById('gdsFile').addEventListener('change', async (ev) => {
   askValue('Block alias for ' + f.name + ':', 'ext.' + stem, async (alias) => {
     if (!alias) return;
     const res = await api('import_gds',
-      {alias: alias, pdk: ir().pdk, gds_b64: gds_b64});
+      {alias: alias, pdk: ir().pdk, gds_b64: gds_b64,
+       format: /[.]oas$/i.test(f.name) ? 'oas' : 'gds'});
     if (res.status !== 'ok') return showErr(res);
     await loadPalette();
     tab('output');
@@ -697,6 +700,79 @@ function sparkline(name, xs, ys) {
     ' stroke="#2d6cdf" stroke-width="1.4"/></svg></div>';
 }
 
+// ---------- testbenches ----------
+let lastBench = null;  // [{testbench, status, spec_status, specs, waves, sweep}]
+
+function _chip(txt, color) {
+  return '<span style="display:inline-block;padding:1px 8px;border-radius:9px;' +
+    'font:600 10px ui-monospace;color:#fff;background:' + color + '">' +
+    txt + '</span>';
+}
+
+async function runBench(name) {
+  const payload = {ir_json: ir()};
+  if (name) payload.name = name;
+  const res = await api('testbench', payload);
+  if (res.status !== 'ok') return showErr(res);
+  lastBench = res.data.runs;
+  renderBench();
+}
+
+function renderBench() {
+  if (curTab !== 'bench') return;
+  const d = ir();
+  const tbs = d.testbenches || [];
+  let html = '<h3 style="font-size:11px;text-transform:uppercase;color:var(--mut)">' +
+    'Testbenches</h3>';
+  if (!tbs.length)
+    html += '<div style="color:var(--mut);margin-bottom:8px">' +
+      'none declared — edit <code>testbenches[]</code> in the design IR</div>';
+  html += tbs.map(t =>
+    '<div class="card"><b>' + t.name + '</b>' +
+    '<div class="m">' + t.source + ' · ' + t.analysis + ' · vdd=' + t.vdd +
+    ' · ' + (t.specs || []).length + ' specs</div>' +
+    '<button class="btn" onclick="runBench(\'' + t.name + '\')">Run</button></div>'
+  ).join('');
+  if (tbs.length)
+    html += '<button class="btn primary" onclick="runBench(null)">Run all</button>';
+  for (const r of lastBench || []) {
+    const ss = r.spec_status;
+    const col = ss === 'pass' ? '#2e9e5b' : ss === 'fail' ? '#d64545' : '#9aa3b0';
+    html += '<h3 style="font-size:11px;text-transform:uppercase;color:var(--mut);' +
+      'margin-top:14px">' + r.testbench + ' ' + _chip(ss, col) + '</h3>' +
+      '<div style="color:var(--mut);font-size:11px;margin-bottom:4px">sim: ' +
+      r.status + '</div>';
+    if ((r.specs || []).length) {
+      html += '<table class="op"><tr><th>spec</th><th>value</th>' +
+        '<th>bounds</th><th>status</th></tr>';
+      for (const s of r.specs) {
+        const sc = s.status === 'pass' ? '#2e9e5b' :
+          s.status === 'fail' ? '#d64545' : '#9aa3b0';
+        const bounds = [s.min !== null && s.min !== undefined ? '≥' + s.min : '',
+          s.max !== null && s.max !== undefined ? '≤' + s.max : '']
+          .filter(Boolean).join(' ');
+        html += '<tr><td>' + s.name +
+          '<td>' + (s.value === null ? '—' : s.value + s.unit) +
+          '<td style="color:var(--mut)">' + bounds + ' ' + s.unit + '</td>' +
+          '<td>' + _chip(s.status, sc) +
+          (s.reason ? '<div style="font-size:10px;color:var(--mut)">' +
+            s.reason + '</div>' : '') + '</td></tr>';
+      }
+      html += '</table>';
+    }
+    const waves = r.waves || {};
+    const sweep = r.sweep || [];
+    for (const n of Object.keys(waves)) {
+      if (sweep.length > 1) html += sparkline(n, sweep, waves[n]);
+      else if ((waves[n] || []).length)
+        html += '<div style="font:10.5px ui-monospace;margin:4px 0">v(' + n +
+          ') = ' + waves[n][0].toPrecision(4) + ' ' +
+          ((r.specs || []).find(s => s.signal === n) || {}).unit + '</div>';
+    }
+  }
+  pane.innerHTML = html;
+}
+
 // ---------- gallery ----------
 async function publish() {
   const meta = {author: 'local', description: '', tags: []};
@@ -705,10 +781,16 @@ async function publish() {
   tab('gallery'); listGallery();
 }
 
+let galleryFilters = {verified_only: false, pdk: '', tag: ''};
+
 async function listGallery() {
-  const res = await api('gallery/list', {});
+  const res = await api('gallery/list', {
+    verified_only: galleryFilters.verified_only,
+    pdk: galleryFilters.pdk || undefined,
+    tag: galleryFilters.tag || undefined});
   if (res.status !== 'ok' || !res.data.entries.length) {
-    pane.innerHTML = '<div style="color:var(--mut);padding:6px">' +
+    pane.innerHTML = _galleryFilterBar() +
+      '<div style="color:var(--mut);padding:6px">' +
       'empty — publish a design to share it</div>';
     return;
   }
@@ -716,15 +798,42 @@ async function listGallery() {
   for (const e of res.data.entries) {
     const det = await api('gallery/get', {id: e.id});
     const svg = det.status === 'ok' ? det.data.preview_svg : '';
+    const v = e.verification || {};
+    let vChip;
+    if (v.passed === true)
+      vChip = _chip('DRC ' + (v.drc_violations ?? 0) + ' · LVS ✓', '#2e9e5b');
+    else if (v.passed === false)
+      vChip = _chip('DRC ' + (v.drc_violations ?? '?') + ' · LVS ✗', '#d64545');
+    else
+      vChip = _chip('unverified', '#9aa3b0');
     cards.push('<div class="card"><b>' + e.name + '</b>' +
-      '<div class="m">' + e.pdk + ' · ' + e.instances + ' inst · ' +
-      e.author + ' · ' + e.created.slice(0,10) + '</div>' + svg +
+      '<div class="m">' + e.instances + ' inst · ' + e.author + ' · ' +
+      e.created.slice(0,10) + '</div>' +
+      '<div style="margin-bottom:4px">' + _chip(e.pdk, '#68758c') + ' ' +
+      vChip + (e.ai_generated ? ' ' + _chip('AI', '#7a4fd0') : '') + '</div>' +
+      svg +
       '<button class="btn" style="margin-top:6px" ' +
       'onclick="openEntry(\\''+e.id+'\\')">Open</button></div>');
   }
-  pane.innerHTML =
+  pane.innerHTML = _galleryFilterBar() +
     '<button class="btn" style="margin-bottom:8px" onclick="syncGallery()">' +
     'Sync with remote</button>' + cards.join('');
+}
+
+function _galleryFilterBar() {
+  return '<div class="card" style="font-size:11px">' +
+    '<label><input type="checkbox" id="gf_ver" ' +
+    (galleryFilters.verified_only ? 'checked' : '') +
+    ' onchange="galleryFilters.verified_only=this.checked;listGallery()"> ' +
+    'verified only</label> ' +
+    '<select id="gf_pdk" onchange="galleryFilters.pdk=this.value;listGallery()">' +
+    ['', 'sky130', 'ihp_sg13g2'].map(p =>
+      '<option value="' + p + '"' +
+      (galleryFilters.pdk === p ? ' selected' : '') + '>' +
+      (p || 'all pdk') + '</option>').join('') + '</select> ' +
+    '<input id="gf_tag" placeholder="tag" style="width:80px" ' +
+    'value="' + galleryFilters.tag + '" ' +
+    'onchange="galleryFilters.tag=this.value;listGallery()"></div>';
 }
 
 async function openEntry(id) {

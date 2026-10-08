@@ -8,6 +8,7 @@ without changing the API.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -54,11 +55,42 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
         capture_output=True, text=True, check=False)
 
 
+def design_hash(design: Design) -> str:
+    """Content identity of a design, ignoring its name and free-form meta."""
+    payload = design.model_dump(exclude={"name", "meta"})
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def _verification_report(design: Design) -> dict[str, Any]:
+    """Run verify_design for the publish record — fail-closed, never blocking."""
+    try:
+        from layout_canvas.tools.verify import verify_design
+
+        res = verify_design(design)
+        return {
+            "status": "ok",
+            "drc_violations": res["drc"].get("total_violations"),
+            "lvs_match": res["lvs"].get("match"),
+            "passed": res["passed"],
+        }
+    except Exception as exc:
+        return {"status": "unavailable", "drc_violations": None,
+                "lvs_match": None, "passed": None, "error": str(exc)}
+
+
 def publish(
     design: Design,
     meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compile, render a preview, and store a shareable gallery entry."""
+    meta = meta or {}
+    digest = design_hash(design)
+    if not meta.get("allow_duplicate"):
+        for entry in list_entries():
+            if entry.get("design_hash") == digest:
+                raise ValueError(f"duplicate of {entry['id']}")
     comp = compile_design(design)
     svg = render_svg(comp)["svg"]
     eid = _entry_id(design.name)
@@ -68,12 +100,15 @@ def publish(
         "id": eid,
         "name": design.name,
         "pdk": design.pdk,
-        "author": (meta or {}).get("author", "local"),
-        "description": (meta or {}).get("description", ""),
-        "tags": (meta or {}).get("tags", []),
+        "author": meta.get("author", "local"),
+        "description": meta.get("description", ""),
+        "tags": meta.get("tags", []),
         "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "instances": len(design.instances),
         "blocks": sorted({i.block for i in design.instances}),
+        "design_hash": digest,
+        "ai_generated": bool(meta.get("ai_generated", False)),
+        "verification": _verification_report(design),
     }
     (entry_dir / "design.json").write_text(
         design.model_dump_json(indent=2), encoding="utf-8")
@@ -127,7 +162,11 @@ def _entry_id(name: str) -> str:
     return f"{slug}-{int(time.time() * 1000) % 10_000_000:07d}"
 
 
-def list_entries() -> list[dict[str, Any]]:
+def list_entries(
+    verified_only: bool = False,
+    pdk: str | None = None,
+    tag: str | None = None,
+) -> list[dict[str, Any]]:
     out = []
     for d in sorted(gallery_root().iterdir()):
         meta = d / "meta.json"
@@ -136,6 +175,13 @@ def list_entries() -> list[dict[str, Any]]:
                 out.append(json.loads(meta.read_text(encoding="utf-8")))
             except json.JSONDecodeError:
                 continue
+    if verified_only:
+        out = [e for e in out
+               if (e.get("verification") or {}).get("passed") is True]
+    if pdk:
+        out = [e for e in out if e.get("pdk") == pdk]
+    if tag:
+        out = [e for e in out if tag in (e.get("tags") or [])]
     return out
 
 

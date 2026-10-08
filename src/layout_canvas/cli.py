@@ -27,6 +27,11 @@ def main() -> int:
     net.add_argument("input", help="Block IR JSON file")
     net.add_argument("-o", "--output", required=True, help="Output SPICE (.sp / .cir) path")
 
+    # testbench command
+    tb = sub.add_parser("testbench", help="Run design testbenches and report spec results")
+    tb.add_argument("input", help="Block IR JSON file")
+    tb.add_argument("--name", help="Run a single named testbench (default: all)")
+
     # mcp command
     sub.add_parser("mcp", help="Start Model Context Protocol (MCP) stdio server for AI agents")
 
@@ -65,6 +70,38 @@ def main() -> int:
         export_spice(design, args.output)
         print(f"Generated SPICE netlist {design.name} → {args.output}", file=sys.stderr)
         return 0
+
+    if args.cmd == "testbench":
+        with open(args.input) as f:
+            design = Design.from_json(f.read())
+        import layout_canvas.blocks.sky130  # noqa: F401
+        try:
+            import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
+        except Exception:
+            pass
+
+        from layout_canvas.tools.testbench import run_all, run_testbench
+
+        try:
+            runs = ([run_testbench(design, args.name)] if args.name
+                    else run_all(design))
+        except KeyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        for run in runs:
+            print(f"[{run['testbench']}] sim={run.get('status')} "
+                  f"spec_status={run.get('spec_status')}")
+            for spec in run.get("specs", []):
+                bounds = ",".join(
+                    f"{k}={spec[k]}{spec['unit']}" for k in ("min", "max")
+                    if spec[k] is not None)
+                line = (f"  {spec['name']}: {spec['status']} "
+                        f"value={spec['value']}{spec['unit']} "
+                        f"({spec['measure']} {spec['signal']}; {bounds})")
+                if spec.get("reason"):
+                    line += f" — {spec['reason']}"
+                print(line)
+        return 0 if all(r.get("spec_status") == "pass" for r in runs) else 1
 
     if args.cmd == "mcp":
         from layout_canvas.mcp.server import run_stdio_server

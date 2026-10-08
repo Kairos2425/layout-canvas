@@ -112,7 +112,10 @@ def test_gallery_git_sync_two_users(tmp_path: Path, monkeypatch):
                for e in entries)
 
     # Bob forks it, publishes his own variant, Alice pulls it back.
+    # The variant must differ in content — gallery dedup hashes the
+    # design excluding name, so a rename alone is rejected as a duplicate.
     b_design = _design().model_copy(update={"name": "vt_test_bob"})
+    b_design.instances[0].params["fingers"] = 4
     info_b = gallery.publish(b_design, {"author": "bob"})
     res = gallery.sync(str(remote))
     assert res["status"] == "ok", res

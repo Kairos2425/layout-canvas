@@ -131,6 +131,56 @@ def test_preview_reports_pin_positions():
     assert res["data"]["nets"] == []
 
 
+def test_testbench_action():
+    ir = _ir()
+    ir["testbenches"] = [{"name": "tb1", "source": "schematic", "specs": [
+        {"name": "s", "signal": "outp", "min": 0, "max": 9}]}]
+    res = _api("testbench", {"ir_json": ir})
+    assert res["status"] == "ok"
+    run = res["data"]["runs"][0]
+    assert run["testbench"] == "tb1"
+    assert run["specs"][0]["status"] in ("pass", "fail", "unavailable")
+    res = _api("testbench", {"ir_json": ir, "name": "missing"})
+    assert res["status"] == "error"
+
+
+def test_import_gds_size_limit_and_oas(tmp_path):
+    import base64
+    import tempfile
+
+    import klayout.db as db
+
+    from layout_canvas.web.app import _import_gds_api
+
+    big = base64.b64encode(b"x" * (65 * 1024 * 1024)).decode()
+    res = _import_gds_api({"alias": "ext.big", "pdk": "sky130",
+                           "gds_b64": big})
+    assert res["status"] == "error" and "64 MiB" in res["error"]
+
+    # real .oas round-trip: written by klayout, sniffed by the magic header
+    ly = db.Layout()
+    ly.dbu = 0.001
+    top = ly.create_cell("oas_cell")
+    top.shapes(ly.layer(68, 20)).insert(db.Box(0, 0, 500, 500))
+    top.shapes(ly.layer(68, 16)).insert(db.Text("P", db.Trans(100, 100)))
+    oas = tmp_path / "cell.oas"
+    ly.write(str(oas))
+    assert oas.read_bytes().startswith(b"%SEMI-OASIS")
+
+    from layout_canvas.blocks import base
+
+    try:
+        res = _import_gds_api({
+            "alias": "ext.oas_cell", "pdk": "sky130",
+            "gds_b64": base64.b64encode(oas.read_bytes()).decode()})
+        assert res["status"] == "ok", res
+        assert res["data"]["cell"] == "oas_cell"
+        assert [p["name"] for p in res["data"]["ports"]] == ["P"]
+        assert res["data"]["drc"]["status"] in ("passed", "failed", "unavailable")
+    finally:
+        base._REGISTRY.pop("ext.oas_cell", None)
+
+
 def test_simulate_auto_runs_or_reports_unavailable():
     """The canvas Simulate button goes through simulate_auto: real ngspice
     when present, fail-closed unavailable/refused otherwise."""

@@ -343,7 +343,7 @@ def simulate_auto(
     stimulus = default_stimulus(
         design, vdd=vdd, analysis=analysis,
         tran_stop=tran_stop, tran_step=tran_step, out_file="waves.dat")
-    netlist = compile_netlist(design)
+    netlist = _rewrite_mos_cards(compile_netlist(design), design.pdk)
     deck_parts = ["* layout-canvas auto deck", ""]
     if prelude:
         deck_parts += [prelude, ""]

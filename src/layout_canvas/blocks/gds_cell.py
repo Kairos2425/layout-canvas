@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import gdsfactory as gf
 
@@ -188,17 +189,26 @@ def register_gds_cell(
 
     block = base.Block(spec=spec, build=lambda **_: _build(), netlist=emitter)
     base._REGISTRY[alias] = block
-    _IMPORTED[alias] = (resolved_cell, pins)
+    _IMPORTED[alias] = (resolved_cell, pins, path, pdk)
     return block
 
 
-_IMPORTED: dict[str, tuple[str, list[_Pin]]] = {}
+_IMPORTED: dict[str, tuple[str, list[_Pin], Path, str]] = {}
 
 
 def import_summary(block: base.Block) -> dict:
     """Payload shared by the web ``import_gds`` action and the MCP tool."""
-    cell_name, pins = _IMPORTED.get(block.spec.name, (block.spec.name, []))
+    cell_name, pins, path, pdk = _IMPORTED.get(
+        block.spec.name, (block.spec.name, [], Path(""), block.spec.pdk))
     bb = block.component().bbox()
+    drc: dict[str, Any]
+    try:
+        from layout_canvas.tools.drc import run_drc
+
+        res = run_drc(str(path), tech=pdk, engine="pya")
+        drc = {"status": res.status, "violations": res.total_violations}
+    except Exception as exc:
+        drc = {"status": "unavailable", "violations": None, "error": str(exc)}
     return {
         "alias": block.spec.name,
         "cell": cell_name,
@@ -208,4 +218,5 @@ def import_summary(block: base.Block) -> dict:
             for p in pins
         ],
         "bbox": [float(bb.left), float(bb.bottom), float(bb.right), float(bb.top)],
+        "drc": drc,
     }

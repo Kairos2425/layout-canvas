@@ -80,6 +80,53 @@ class Port(_Strict):
     direction: Literal["input", "output", "inout", "supply"] = "inout"
 
 
+class Spec(_Strict):
+    """One measurable criterion against a simulation waveform."""
+
+    name: str
+    signal: str
+    measure: Literal["final", "min", "max", "mean", "pp"] = "final"
+    min: float | None = None
+    max: float | None = None
+    unit: str = "V"
+
+    @model_validator(mode="after")
+    def _check_bounds(self) -> Spec:
+        if self.min is None and self.max is None:
+            raise ValueError(f"spec {self.name}: needs min and/or max")
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError(f"spec {self.name}: min {self.min} > max {self.max}")
+        return self
+
+
+class Testbench(_Strict):
+    """A named simulation setup: source, analysis and spec checks."""
+
+    name: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    source: Literal["schematic", "extracted"] = "schematic"
+    analysis: Literal["op", "tran"] = "op"
+    vdd: float = 1.8
+    stimulus: str | None = None
+    probes: list[str] = Field(default_factory=list)
+    specs: list[Spec] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_source_args(self) -> Testbench:
+        if self.source == "schematic" and self.stimulus is not None:
+            raise ValueError(
+                f"testbench {self.name}: stimulus is only supported for "
+                "source='extracted' (schematic uses the auto testbench)"
+            )
+        if self.source == "schematic" and self.probes:
+            raise ValueError(
+                f"testbench {self.name}: probes only apply to source='extracted'"
+            )
+        names = [s.name for s in self.specs]
+        if len(set(names)) != len(names):
+            raise ValueError(f"testbench {self.name}: duplicate spec names")
+        return self
+
+
 class PortSpec(_Strict):
     """Static port contract exposed by a block."""
 
@@ -126,6 +173,7 @@ class Design(_Strict):
     nets: list[Net] = Field(default_factory=list)
     constraints: list[Constraint] = Field(default_factory=list)
     ports: list[Port] = Field(default_factory=list)
+    testbenches: list[Testbench] = Field(default_factory=list)
     meta: dict[str, ParamValue] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -155,6 +203,9 @@ class Design(_Strict):
                     raise ValueError(
                         f"constraint {c.type}: unknown net(s) {sorted(unknown_nets)!r}"
                     )
+        tb_names = [t.name for t in self.testbenches]
+        if len(set(tb_names)) != len(tb_names):
+            raise ValueError("duplicate testbench names")
         return self
 
     def instance(self, inst_id: str) -> Instance:

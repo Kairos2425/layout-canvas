@@ -134,7 +134,40 @@ layout-canvas 侧的内化等价物（本轮已落地）：
 核对 OA cellview 层次/几何/label 是否正确重建（本机无 Virtuoso，SKILL
 文本结构已单测）。Spectre `.scs` 同理需在 Spectre 里 `include` 验证。
 
-## 6. 参考锚点（读代码/文档的入口）
+## 6. 上游跟进（2026-10-08）：一个月 679 commits 的成长脉络与我们的路线
+
+对 `cascode-ai/analog-canvas` 2026-09-04 → 2026-10-07 的提交做了逐条扫描
+（本地 clone `e76ede1` → `origin/main`，679 个 commit，MCP 包从 0.4.0 发到
+0.17.51）。他们的成长不是"加功能"，而是沿五条线同时推：
+
+| 上游主线 | 他们一个月做了什么 | 对我们的含义 | 本轮落地 |
+|---|---|---|---|
+| **仿真成为项目的一部分** | `SimulationSetup` 持久化进 Project；命名 setup 集合；op/tran/dc/noise 结构化；sweep/corner；authored measurements；**Spec 带 pass/fail 原因**（"Spec reasons"）；结果可探索、波形叠加、画布上点端子取电流；run 历史进项目 | 我们仿真一直是 API 一次性参数，结果不落项目、无合格判据 | `Design.testbenches[]` + `Spec`（min/max × final/min/max/mean/pp）；`run_testbench` 三态 pass/fail/unavailable 带 reason；会话 `runs` 历史；CLI/Web/MCP 三入口；`examples/ota_lab.json` 实测定边界 |
+| **Gallery 成为社区底座** | 发布/点赞/标签/贡献者榜；**netlist 标记**（哪些作品能抽出网表）、**AI 标记**（aiGenerated）；重复电路检测与管理员一键回收；每日打开上限；备份与时间点恢复；账号与云项目；**Agent 可直接发布到 Gallery** | 我们已有 local-first 画廊（文件+git），但缺"可信度标记"和去重 | publish 时跑 `verify_design` 写入 `verification` 回执（DRC 数/LVS/passed，verify 不可用则如实 unavailable）；`ai_generated`；`design_hash` 去重（`allow_duplicate` 放行）；`verified_only/pdk/tag` 筛选；MCP `gallery_list/publish/fork` |
+| **Agent 与 GUI 同一份代码** | Agent 动作由编辑器同一套 planner 规划；`circuit_view` 取景工具；receipts/findings 结构化回执；MCP 包三天发 14 个版本 | 我们早已是同一 `DesignSession` 边界；缺的是 agent 的"使用说明书" | `skills/layout-canvas/SKILL.md`（8 步循环、typed ops、fail-closed 读法）+ `AGENTS.md` agent 入口；`set_testbenches` edit op 让 agent 能加 spec |
+| **工艺是默认值而非选项** | 默认 SKY130 画图；"先画后选工艺一键补模型"；库门电路按 set-model 取 SKY130 HD / IHP / TSMC28 | 我们 `pdk` 是 Design 必填，Sky130 + IHP 真规则 DRC 已达标 | 维持；下一步是 PDK descriptor 对外可配（商用工艺入口） |
+| **诚实作为产品规则** | "say so when it holds nothing"、"refusing only untrue shapes"、privacy 文档写明谁能读备份、简化 Cell Manager、修剪冗余测试 | 与我们 ADR 0002/0005 同源 | 导入即 DRC（导入的外部 GDS 自带违规要被看到）；上传上限；OASIS 真实格式处理 |
+
+### 我们与上游的分工边界（不变）
+
+他们停在原理图 + 仿真 + 社区；我们从 netlist/IR 起到 GDS + DRC/LVS/PEX +
+Virtuoso 导出。两者天然串联：上游导出的 Spectre/SPICE 网表 → 我们的 Block
+IR（手工/agent 映射到参数化块或 `import_gds` 外部 cell）→ 版图 → 回仿。
+
+### 下一阶段路线（按价值排序）
+
+1. **Spec 驱动的自动迭代**：`optimize` 现在只看 PPA；接入 `run_testbench`
+   让 agent/优化器以 spec 通过为目标调 W/L/fingers（上游没有版图侧的这条环）。
+2. **tran/ac 结构化分析 + 测量表达式**：spec `measure` 扩到 gain/bandwidth/
+   settling（需要 ac 分析进 `simulate_extracted`）。
+3. **Gallery 远端**：`gallery.sync` 已是 git push/pull；给公开仓库配一个
+   `LAYOUT_CANVAS_GALLERY_REMOTE` 的共建示例仓 + 贡献者统计页（上游 leaderboard）。
+4. **PDK descriptor 外置**：layer map + 规则值 + 器件 emitter 以 JSON 描述加载，
+   商用工艺在本地私有目录接入，不进仓库。
+5. **Virtuoso 侧真机验收**：`load("<cell>.il")` 与 Spectre `include` 在真实
+   Cadence 环境跑一遍（本机无 Virtuoso，仍是未验项）。
+
+## 7. 参考锚点（读代码/文档的入口）
 
 - 变更边界设计：`analog-canvas` 仓库 `packages/edit-engine/`
 - Agent 协议：`docs\specs\agent-api.md`、`docs\agent\workflow.md`（8 步 layout loop）
