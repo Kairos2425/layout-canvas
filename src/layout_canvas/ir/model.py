@@ -85,7 +85,7 @@ class Spec(_Strict):
 
     name: str
     signal: str
-    measure: Literal["final", "min", "max", "mean", "pp"] = "final"
+    measure: Literal["final", "min", "max", "mean", "pp", "db", "bw_3db"] = "final"
     min: float | None = None
     max: float | None = None
     unit: str = "V"
@@ -104,7 +104,7 @@ class Testbench(_Strict):
 
     name: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
     source: Literal["schematic", "extracted"] = "schematic"
-    analysis: Literal["op", "tran"] = "op"
+    analysis: Literal["op", "tran", "ac", "dc"] = "op"
     vdd: float = 1.8
     stimulus: str | None = None
     probes: list[str] = Field(default_factory=list)

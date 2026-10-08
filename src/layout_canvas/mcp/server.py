@@ -419,8 +419,8 @@ class LayoutCanvasMCPServer:
                         },
                         "analysis": {
                             "type": "string",
-                            "enum": ["op", "tran"],
-                            "description": "Analysis for source=extracted decks (auto-bias path).",
+                            "enum": ["op", "tran", "ac", "dc"],
+                            "description": "Analysis for source=extracted decks (auto-bias path); 'ac'/'dc' add a sweep drive on an input port.",
                         },
                         "simulator": {
                             "type": "string",
@@ -432,14 +432,27 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "optimize",
-                "description": "Run PPA-driven margin optimization on a session design. Each iteration is committed through transact (revisioned, undoable).",
+                "description": "Optimize a session design. objective='placement' (default) tightens placement margins toward an aspect ratio; objective='specs' runs coordinate descent over bounded numeric block params scored by testbench spec pass count (needs design.testbenches plus a simulator — ngspice — or every candidate reports unavailable). Each candidate is committed through transact (revisioned, undoable).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "session_id": {"type": "string"},
+                        "objective": {
+                            "type": "string",
+                            "enum": ["placement", "specs"],
+                            "default": "placement",
+                            "description": "'placement' = PPA margin tightening; 'specs' = spec-pass-count coordinate descent (requires testbenches on the design).",
+                        },
+                        "testbench": {
+                            "type": "string",
+                            "description": "objective='specs' only: restrict scoring to this testbench name; omitted = all design testbenches.",
+                        },
                         "target_aspect_ratio": {"type": "number", "default": 1.0},
                         "min_clearance": {"type": "number", "default": 0.5},
-                        "max_iterations": {"type": "integer", "default": 5},
+                        "max_iterations": {
+                            "type": "integer",
+                            "description": "Iteration cap; defaults 5 for placement, 6 for specs.",
+                        },
                     },
                     "required": ["session_id"],
                 },
@@ -535,6 +548,14 @@ class LayoutCanvasMCPServer:
                         "ai_generated": {"type": "boolean", "default": True},
                         "allow_duplicate": {"type": "boolean", "default": False},
                     },
+                },
+            },
+            {
+                "name": "gallery_stats",
+                "description": "Gallery contributor leaderboard: {authors: [{author, count, verified}], total, verified_count} — verified counts entries whose publish-time verification passed.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
                 },
             },
             {
@@ -848,7 +869,12 @@ class LayoutCanvasMCPServer:
                 session,
                 target_aspect_ratio=float(args.get("target_aspect_ratio", 1.0)),
                 min_clearance=float(args.get("min_clearance", 0.5)),
-                max_iterations=int(args.get("max_iterations", 5)),
+                max_iterations=(
+                    int(args["max_iterations"])
+                    if args.get("max_iterations") is not None else None
+                ),
+                objective=str(args.get("objective", "placement")),
+                testbench=args.get("testbench"),
             ).to_dict()
 
         elif name == "register_cell":
@@ -929,6 +955,11 @@ class LayoutCanvasMCPServer:
                 })
             except ValueError as exc:
                 return {"status": "error", "error": str(exc)}
+
+        elif name == "gallery_stats":
+            from layout_canvas.web import gallery
+
+            return gallery.stats()
 
         elif name == "gallery_get":
             from layout_canvas.web import gallery

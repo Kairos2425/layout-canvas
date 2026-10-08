@@ -34,19 +34,24 @@ def _ensure_git(root: Path) -> None:
     """The gallery dir is a git repo when git is available — every publish is
     a commit, and `sync` is a real push/pull. Community co-building rides on
     whatever remote the operator configures (GitHub, a LAN share, a bare dir).
+
+    An already-initialised repo (e.g. a clone of the remote) still needs a
+    commit identity: without one ``git commit`` inside ``publish`` fails
+    silently (observed while pushing to a remote).  Seed the local
+    ``user.name``/``user.email`` only where no effective identity exists —
+    existing local or global config is never overridden.
     """
-    if (root / ".git").exists():
-        return
     import shutil
     if shutil.which("git") is None:
         return
-    subprocess.run(["git", "-C", str(root), "init", "-q"], check=False)
-    subprocess.run(
-        ["git", "-C", str(root), "config", "user.name", "layout-canvas-gallery"],
-        check=False)
-    subprocess.run(
-        ["git", "-C", str(root), "config", "user.email", "gallery@local"],
-        check=False)
+    if not (root / ".git").exists():
+        subprocess.run(["git", "-C", str(root), "init", "-q"], check=False)
+    for key, default in (("user.name", "layout-canvas-gallery"),
+                         ("user.email", "gallery@local")):
+        if not _git(root, "config", key).stdout.strip():
+            subprocess.run(
+                ["git", "-C", str(root), "config", key, default],
+                check=False)
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
@@ -183,6 +188,31 @@ def list_entries(
     if tag:
         out = [e for e in out if tag in (e.get("tags") or [])]
     return out
+
+
+def stats() -> dict[str, Any]:
+    """Contributor leaderboard over all entries (unfiltered).
+
+    ``verified`` counts entries whose publish-time verification passed —
+    the same fail-closed flag the ``verified_only`` list filter reads.
+    """
+    authors: dict[str, dict[str, Any]] = {}
+    total = 0
+    verified_count = 0
+    for e in list_entries():
+        total += 1
+        ok = (e.get("verification") or {}).get("passed") is True
+        verified_count += int(ok)
+        name = e.get("author") or "unknown"
+        a = authors.setdefault(name, {"author": name, "count": 0, "verified": 0})
+        a["count"] += 1
+        a["verified"] += int(ok)
+    return {
+        "authors": sorted(
+            authors.values(), key=lambda a: (-a["count"], a["author"])),
+        "total": total,
+        "verified_count": verified_count,
+    }
 
 
 def get_entry(entry_id: str) -> dict[str, Any] | None:

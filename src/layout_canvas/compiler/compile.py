@@ -149,6 +149,34 @@ def compile_design(design: Design) -> gf.Component:
     if design.nets:
         route_design_nets(top, design, inst_refs)
 
+    # Name interior supply nets for extraction: an unlabeled interior net
+    # extracts as an anonymous $N node, which no top-level V_VDD/V_VSS
+    # bias source can reach — PEX decks then ran unpowered (observed: the
+    # pex op readings were resistor-pull artifacts).  A pin label stamped
+    # on the net's own metal gives it its IR name in the extracted netlist
+    # and gives netgen the same name as the golden side.
+    _supply_net_names = {"vdd", "vcc", "vss", "gnd", "vsub", "vssx",
+                         "vbb", "supply"}
+    _port_names = {p.name for p in design.ports}
+    for net in design.nets:
+        if net.name.lower() not in _supply_net_names \
+                or net.name in _port_names or not net.pins:
+            continue
+        inst_id, _, port_name = net.pins[0].partition(".")
+        if inst_id not in inst_refs:
+            continue
+        ref, comp = inst_refs[inst_id]
+        if port_name not in comp.ports:
+            continue
+        try:
+            p = ref.ports[port_name]
+            info = comp.kcl.layout.get_info(p.layer)
+            lbl_layer = (pdk.pin_label_layer((info.layer, info.datatype))
+                         if pdk is not None else (info.layer, 16))
+            top.add_label(text=net.name, position=p.center, layer=lbl_layer)
+        except Exception:
+            pass
+
     # Expose top-level ports and inject top-level GDS labels for LVS
     for port in design.ports:
         inst_id, _, port_name = port.pin.partition(".")

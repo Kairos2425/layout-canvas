@@ -74,6 +74,37 @@ class TestMeasureAndEvaluate:
         with pytest.raises(ValueError):
             measure_signal([], "final")
 
+    def test_measure_db_and_bw_3db(self):
+        import math
+
+        # db = 20*log10 of the first sample (low-freq ac gain)
+        assert measure_signal([0.5, 2.0], "db") == pytest.approx(
+            20 * math.log10(0.5))
+        with pytest.raises(ValueError, match="positive"):
+            measure_signal([0.0, 1.0], "db")
+        # bw_3db = sweep value at the first drop below |v0|/sqrt(2)
+        sweep = [1e3, 1e4, 1e5, 1e6]
+        mag = [1.0, 0.9, 0.6, 0.5]
+        assert measure_signal(mag, "bw_3db", sweep) == 1e5
+        with pytest.raises(ValueError, match="never"):
+            measure_signal([1.0, 0.99], "bw_3db", [1e3, 1e4])
+        with pytest.raises(ValueError, match="sweep"):
+            measure_signal([1.0], "bw_3db")
+
+    def test_evaluate_specs_bw_3db_uses_result_sweep(self):
+        res = {"status": "passed",
+               "sweep": [1e3, 1e4, 1e5],
+               "waves": {"out": [1.0, 0.9, 0.5]}}
+        out = evaluate_specs(res, [self._spec(
+            measure="bw_3db", signal="out", min=9e4, max=None, unit="Hz")])
+        assert out[0]["status"] == "pass" and out[0]["value"] == 1e5
+        # monotone-rising response never crosses -3dB -> unavailable
+        res["waves"]["out"] = [1.0, 1.1, 1.2]
+        out = evaluate_specs(res, [self._spec(
+            measure="bw_3db", signal="out", min=9e4, max=None, unit="Hz")])
+        assert out[0]["status"] == "unavailable"
+        assert "never" in out[0]["reason"]
+
     def _spec(self, **kw):
         from layout_canvas.ir.model import Spec
         base = {"name": "s", "signal": "out", "min": 0.5, "max": 1.5}
@@ -154,15 +185,80 @@ class TestRunTestbench:
 _NGSPICE = os.environ.get("LAYOUT_CANVAS_NGSPICE") or shutil.which("ngspice")
 
 
+class TestAcAnalysis:
+    """ac analysis: stimulus shape, complex wrdata parsing, spec measures."""
+
+    def test_ac_stimulus_deck(self):
+        from layout_canvas.tools.sim import default_stimulus
+
+        d = Design.from_json(LAB.read_text())
+        stim = default_stimulus(d, analysis="ac")
+        assert "ac dec 10 1k 1G" in stim
+        # the first input-direction port carries the ac 1 source
+        assert "V_inp inp 0 0.9 ac 1" in stim
+        assert "V_inn inn 0 0.9" in stim
+        assert " ac 1" not in stim.split("V_inn")[1].splitlines()[0]
+
+    def test_dc_stimulus_deck(self):
+        from layout_canvas.tools.sim import default_stimulus
+
+        stim = default_stimulus(
+            Design.from_json(LAB.read_text()), analysis="dc")
+        assert "dc V_inp 0 1.8" in stim
+
+    def test_extracted_auto_ac_stimulus(self):
+        """The auto-bias PEX path attaches ac to a surviving input port."""
+        from layout_canvas.tools import sim
+
+        lines = []
+        for p in ("inp", "outp"):
+            lines.append(sim._bias_line(p, 1.8))
+        d = Design.from_json(LAB.read_text())
+        drive = sim._drive_port(d, ["outp", "inp"])
+        assert drive == "inp"
+        lines, src = sim._apply_drive(lines, drive, 1.8, "ac")
+        assert src == "V_inp"
+        assert any(l.endswith("ac 1") for l in lines)
+
+
 @pytest.mark.skipif(_NGSPICE is None, reason="ngspice not installed")
 def test_ota_lab_real_run():
     d = Design.from_json(LAB.read_text())
     runs = run_all(d, executable=_NGSPICE)
-    assert len(runs) == 2
-    for r in runs:
+    assert len(runs) == 3
+    by_name = {r["testbench"]: r for r in runs}
+    for name in ("tb_op_schematic", "tb_op_pex"):
+        r = by_name[name]
         assert r["status"] == "passed", r.get("errors")
         assert r["spec_status"] == "pass"
         assert all(s["status"] == "pass" for s in r["specs"])
+    # ac bench on the real (powered) 5-T OTA: gain_db is a genuine positive
+    # pass and bw_3db finds a real -3dB crossing around 0.5 GHz.
+    ac = by_name["tb_ac"]
+    assert ac["status"] == "passed", ac.get("errors")
+    assert ac["ac_source"] == "inp"
+    assert len(ac["waves"]["outp"]) > 0
+    specs = {s["name"]: s for s in ac["specs"]}
+    assert specs["gain_db"]["status"] == "pass"
+    assert specs["gain_db"]["value"] == pytest.approx(14.03, abs=0.5)
+    assert specs["bw_3db"]["status"] == "pass"
+    assert specs["bw_3db"]["value"] == pytest.approx(5.0e8, rel=0.2)
+
+
+@pytest.mark.skipif(_NGSPICE is None, reason="ngspice not installed")
+def test_ota_lab_ac_run_direct(tmp_path):
+    """simulate_auto analysis='ac' gives magnitude + __db waves."""
+    from layout_canvas.tools.sim import simulate_auto
+
+    d = Design.from_json(LAB.read_text())
+    r = simulate_auto(d, analysis="ac", vdd=1.8, executable=_NGSPICE,
+                      workdir=tmp_path)
+    assert r["status"] == "passed"
+    assert r["ac_source"] == "inp"
+    assert len(r["sweep"]) == 61
+    # |v(inp)| = 1 across the band: the driven source itself
+    assert all(abs(v - 1.0) < 1e-9 for v in r["waves"]["inp"])
+    assert len(r["waves"]["outp__db"]) == len(r["sweep"])
 
 
 @pytest.mark.skipif(_NGSPICE is None, reason="ngspice not installed")

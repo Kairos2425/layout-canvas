@@ -788,8 +788,16 @@ async function listGallery() {
     verified_only: galleryFilters.verified_only,
     pdk: galleryFilters.pdk || undefined,
     tag: galleryFilters.tag || undefined});
+  const st = await api('gallery/stats', {});
+  const statsLine = (st.status === 'ok')
+    ? '<div style="font-size:11px;color:var(--mut);padding:0 2px 6px">' +
+      st.data.total + ' designs · ' + st.data.verified_count + ' verified · ' +
+      st.data.authors.map(a => a.author + ' (' + a.count +
+      (a.verified ? ', ' + a.verified + '✓' : '') + ')').join(' · ') +
+      '</div>'
+    : '';
   if (res.status !== 'ok' || !res.data.entries.length) {
-    pane.innerHTML = _galleryFilterBar() +
+    pane.innerHTML = statsLine + _galleryFilterBar() +
       '<div style="color:var(--mut);padding:6px">' +
       'empty — publish a design to share it</div>';
     return;
@@ -815,7 +823,7 @@ async function listGallery() {
       '<button class="btn" style="margin-top:6px" ' +
       'onclick="openEntry(\\''+e.id+'\\')">Open</button></div>');
   }
-  pane.innerHTML = _galleryFilterBar() +
+  pane.innerHTML = statsLine + _galleryFilterBar() +
     '<button class="btn" style="margin-bottom:8px" onclick="syncGallery()">' +
     'Sync with remote</button>' + cards.join('');
 }

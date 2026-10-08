@@ -82,7 +82,8 @@ layout-canvas mcp                                    # MCP stdio server
   boxes at the violation bbox; LVS mismatched nets highlight in the canvas.
 - **Simulate** — `source=schematic` runs the reference netlist;
   `source=extracted` runs PEX on the extracted netlist. Optional `probes`
-  (internal nodes like `xd1.tail`), `analysis` (`op`/`tran`),
+  (internal nodes like `xd1.tail`), `analysis` (`op`/`tran`/`ac`/`dc` —
+  ac puts `ac 1` on an input-port V source, dc sweeps it), 
   `vdd`, `stimulus` (full custom testbench text).
 - **Virtuoso** — returns SKILL + Spectre text for the compiled layout.
 - **Projects** — save/load design JSON (gallery/session APIs included).
@@ -100,7 +101,7 @@ A design carries named simulation testbenches with measurable specs:
 "testbenches": [{
   "name": "tb_op_schematic",
   "source": "schematic",            // schematic | extracted (PEX)
-  "analysis": "op",                 // op | tran
+  "analysis": "op",                 // op | tran | ac | dc
   "vdd": 1.8,
   "stimulus": null,                 // extracted only
   "probes": ["tail"],               // extracted only
@@ -113,10 +114,21 @@ A design carries named simulation testbenches with measurable specs:
 }]
 ```
 
-`measure` ∈ `final | min | max | mean | pp` over the waveform samples; a
-spec needs `min` and/or `max`. Validation is strict: schematic benches
+`measure` ∈ `final | min | max | mean | pp | db | bw_3db` over the
+waveform samples (`db` = 20·log10 of the first sample — ac low-frequency
+gain; `bw_3db` = first sweep frequency below |v₀|/√2 — ac bandwidth,
+`unavailable` when the curve never crosses); a spec needs `min` and/or
+`max`. For `analysis:"ac"` the waves hold |v| magnitudes plus a
+`<name>__db` sibling per probed node. Validation is strict: schematic benches
 reject `stimulus`/`probes` (the schematic path has no custom-bench
 parameter), testbench and spec names must be unique.
+
+**Auto-bias supplies:** the generated stimulus drives top-level `vdd`/`vss`
+nodes and emits `.global` for every supply-named net used inside the
+design subckt — SPICE subckt node names are local, so without `.global`
+the interior rails would never see the bias sources. For extraction the
+compiler stamps a GDS label on each supply-named interior net, so the
+PEX netlist keeps its IR names and the same bias sources reach it.
 
 Each spec resolves to `pass` / `fail` / `unavailable` with a `reason` —
 fail-closed: a missing simulator or missing signal is `unavailable`
@@ -134,8 +146,15 @@ Run them via:
   replaces the list through the transactional boundary.
 
 Runs are journaled on the session (`snapshot().data.runs`, FIFO 50):
-testbench and verify calls record kind/UTC timestamp/revision/status
+testbench, verify and optimize calls record kind/UTC timestamp/revision/status
 summaries — never waveforms.
+
+`optimize` accepts `objective:"specs"` to tune the design *toward* the
+specs: a coordinate descent over every instance's bounded numeric params
+(each candidate committed via `transact`, scored by spec-pass count then
+area, reverted when not better). It needs testbenches on the design and
+a live simulator; without them it reports `no-testbenches`/`unavailable`,
+never a fabricated pass.
 
 ### Gallery
 
@@ -144,10 +163,28 @@ publish-time verification snapshot (`{status, drc_violations, lvs_match,
 passed}` — a verification failure marks the entry, never blocks it).
 Re-publishing identical content raises `duplicate of <id>` unless
 `allow_duplicate` is set. `gallery/list` accepts `verified_only`, `pdk`
-and `tag` filters; the web gallery tab exposes the same filters plus
-PDK/DRC·LVS/AI chips on each card. MCP mirrors it via `gallery_list`,
-`gallery_get`, `gallery_publish` (`ai_generated` defaults true for
-agents) and `gallery_fork` (opens the entry as a session).
+and `tag` filters; `gallery/stats` returns the contributor leaderboard
+(`{authors: [{author, count, verified}], total, verified_count}`, where
+`verified` counts entries whose publish-time verification passed). The
+web gallery tab renders that stats line on top, then the same filters
+plus PDK/DRC·LVS/AI chips on each card. MCP mirrors it via
+`gallery_list`, `gallery_stats`, `gallery_get`, `gallery_publish`
+(`ai_generated` defaults true for agents) and `gallery_fork` (opens the
+entry as a session).
+
+The gallery is local-first: entries are plain files under
+`LAYOUT_CANVAS_GALLERY` (default `~/.layout_canvas/gallery`), committed
+to a local git repo on every publish. Co-building over a remote is
+optional — point a bare git remote at it, e.g. the public shared repo:
+
+```bash
+# seed at server start, or POST {"action":"gallery/sync","remote":...}
+export LAYOUT_CANVAS_GALLERY_REMOTE=https://github.com/Kairos2425/layout-canvas-gallery.git
+layout-canvas web --port 8089
+```
+
+`gallery/sync` runs `pull --rebase` + `push -u` on that remote; any plain
+git URL or bare directory works — no server component required.
 
 ## 5. Python API
 
@@ -239,7 +276,7 @@ Register the stdio server in your MCP client config:
 }
 ```
 
-33 tools, grouped:
+34 tools, grouped:
 
 | Intent | Tools |
 |---|---|
@@ -247,7 +284,7 @@ Register the stdio server in your MCP client config:
 | Blocks | `list_blocks`, `generate_block`, `register_cell`, `import_gds` |
 | Session | `open_design`, `close_design`, `transact`, `snapshot`, `undo`, `load_project`, `save_project`, `get_active_layout_info` |
 | Build | `insert_block_into_layout`, `compile_session`, `compile_ir`, `generate_netlist`, `optimize`, `inspect_connectivity`, `inspect_ppa`, `render_preview_svg` |
-| Gallery | `gallery_list`, `gallery_get`, `gallery_publish`, `gallery_fork` |
+| Gallery | `gallery_list`, `gallery_stats`, `gallery_get`, `gallery_publish`, `gallery_fork` |
 | Verify | `run_drc`, `extract_netlist`, `run_lvs`, `verify_design`, `run_testbench` |
 | Simulate | `run_simulation` — `source="schematic"` or `"extracted"` (PEX), `probes`, `stimulus`, `analysis`, `vdd`, `tran_stop`, `tran_step` |
 | Export | `export_virtuoso` (SKILL + Spectre), `export_abstract` |

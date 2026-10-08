@@ -142,6 +142,8 @@ def _gallery_api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             return {"status": "error", "error": str(exc)}
         return {"status": "ok", "data": info}
+    if action == "stats":
+        return {"status": "ok", "data": gallery.stats()}
     if action == "sync":
         return {"status": "ok", "data": gallery.sync(payload.get("remote"))}
     if action in ("get", "fork"):

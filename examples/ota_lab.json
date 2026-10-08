@@ -8,14 +8,14 @@
             "block": "sky130.diff_pair",
             "params": {
                 "fingers": 4,
-                "width": 2.0,
-                "length": 0.5,
+                "width": 4.0,
+                "length": 1.0,
                 "tail_width": 4.0
             },
             "placement": {"x": 0.0, "y": 10.0, "rotation": 0, "mirror": false}
         },
         {
-            "id": "LOAD1",
+            "id": "LOAD",
             "block": "sky130.current_mirror",
             "params": {
                 "fingers": 4,
@@ -26,40 +26,37 @@
             "placement": {"x": 5.0, "y": 20.0, "rotation": 0, "mirror": true}
         },
         {
-            "id": "LOAD2",
+            "id": "TAIL",
             "block": "sky130.current_mirror",
             "params": {
                 "fingers": 4,
-                "width": 1.5,
+                "width": 2.0,
                 "length": 0.5,
-                "type": "pmos"
+                "type": "nmos"
             },
             "placement": {"x": 15.0, "y": 20.0, "rotation": 0, "mirror": true}
         }
     ],
     "nets": [
-        {"name": "vdd", "pins": ["LOAD1.in", "LOAD2.in"]},
-        {"name": "outp", "pins": ["DPAIR.outp", "LOAD1.out"]},
-        {"name": "outn", "pins": ["DPAIR.outn", "LOAD2.out"]}
+        {"name": "vdd", "pins": ["LOAD.vss", "TAIL.gate"]},
+        {"name": "outp", "pins": ["DPAIR.outp", "LOAD.in", "LOAD.gate"]},
+        {"name": "outn", "pins": ["DPAIR.outn", "LOAD.out"]},
+        {"name": "tail", "pins": ["DPAIR.tail", "TAIL.in"]},
+        {"name": "vss", "pins": ["DPAIR.vss", "TAIL.out", "TAIL.vss"]}
     ],
     "constraints": [
         {
-            "type": "symmetric",
-            "instances": ["LOAD1", "LOAD2"],
-            "axis": "vertical",
-            "note": "Match active loads for CMRR"
-        },
-        {
             "type": "align",
-            "instances": ["LOAD1", "LOAD2", "DPAIR"],
-            "edge": "center_x"
+            "instances": ["LOAD", "TAIL"],
+            "edge": "top",
+            "note": "Mirror cells on the same row"
         }
     ],
     "ports": [
         {"name": "inp", "pin": "DPAIR.inp", "direction": "input"},
         {"name": "inn", "pin": "DPAIR.inn", "direction": "input"},
-        {"name": "outp", "pin": "LOAD1.out", "direction": "output"},
-        {"name": "outn", "pin": "LOAD2.out", "direction": "output"}
+        {"name": "outp", "pin": "DPAIR.outp", "direction": "output"},
+        {"name": "outn", "pin": "DPAIR.outn", "direction": "output"}
     ],
     "testbenches": [
         {
@@ -69,9 +66,9 @@
             "vdd": 1.8,
             "specs": [
                 {"name": "outp_op", "signal": "outp", "measure": "final",
-                 "min": 1.6346, "max": 1.9346, "unit": "V"},
+                 "min": 0.4598, "max": 0.7598, "unit": "V"},
                 {"name": "outn_op", "signal": "outn", "measure": "final",
-                 "min": 1.6346, "max": 1.9346, "unit": "V"}
+                 "min": 0.4598, "max": 0.7598, "unit": "V"}
             ]
         },
         {
@@ -82,16 +79,30 @@
             "probes": ["tail"],
             "specs": [
                 {"name": "outp_op", "signal": "outp", "measure": "final",
-                 "min": 0.7044, "max": 1.0044, "unit": "V"},
+                 "min": 0.5706, "max": 0.8706, "unit": "V"},
                 {"name": "tail_op", "signal": "xd1.tail", "measure": "final",
-                 "min": 0.4479, "max": 0.7479, "unit": "V"}
+                 "min": -0.0898, "max": 0.2102, "unit": "V"}
+            ]
+        },
+        {
+            "name": "tb_ac",
+            "source": "schematic",
+            "analysis": "ac",
+            "vdd": 1.8,
+            "specs": [
+                {"name": "gain_db", "signal": "outp", "measure": "db",
+                 "min": 11.03, "unit": "dB"},
+                {"name": "bw_3db", "signal": "outp", "measure": "bw_3db",
+                 "min": 400000000.0, "unit": "Hz"},
+                {"name": "outn_db", "signal": "outn", "measure": "db",
+                 "min": -2.27, "unit": "dB"}
             ]
         }
     ],
     "meta": {
         "author": "layout-canvas",
-        "description": "OTA lab: diff pair + PMOS mirror loads with op testbenches",
+        "description": "OTA lab: diff pair + PMOS mirror load + NMOS gate-biased tail pull-down, with op/ac testbenches",
         "date": "2026-10-08",
-        "lab_measured": "2026-10-08 ngspice_con-47 op: schematic outp=outn=1.7846 V; pex outp=outn=0.8544 V, xd1.tail=0.5979 V (spec bounds = value +/- 0.15 V)"
+        "lab_measured": "2026-10-08 ngspice_con-47 (real powered runs after three fixes: .global supply emission in auto stimulus, interior supply-net GDS labels for extraction, PMOS mirror cell source/substrate separation). op: schematic outp=outn=0.6098 V; pex outp=outn=0.7206 V, xd1.tail=0.0602 V. ac dec 10 1k 1G: ac source inp, |v(outp)|(1kHz)=5.027 -> gain_db=+14.03 dB, -3dB crossing 501.2 MHz (real bw_3db); |v(outn)|(1kHz)=1.088 -> +0.73 dB (mirror output clipped by the 10k auto-bias pull). Topology note: the prescribed diode-connected tail (TAIL.in+gate on tail) self-biases Vtail at ~Vth, leaving the pair's Vgs=0.48 V below its body-effected threshold -> gm~0 and ac gain was pure feedthrough (-81 dB). TAIL.gate is therefore tied to vdd as an active pull-down; measured and honest, not the requested diode variant."
     }
 }

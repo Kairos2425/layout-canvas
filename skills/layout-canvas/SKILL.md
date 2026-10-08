@@ -53,7 +53,10 @@ Call `probe_environment` first when you are unsure what is installed.
    `pass` / `fail` / `unavailable` / `no_specs`; every spec carries a
    human-readable `reason`. `run_simulation` with `source:"extracted"` and
    `probes:["tail"]` gives raw waveforms, including internal nodes
-   (`xd1.tail`).
+   (`xd1.tail`). An `analysis:"ac"` testbench drives an `ac 1` source on
+   an input port and measures `db` (low-frequency gain) / `bw_3db` specs;
+   `optimize` with `objective:"specs"` coordinate-descends bounded numeric
+   params toward all-specs-pass (needs a live simulator).
 8. Deliver: `export_virtuoso` (SKILL `.il` + Spectre `.scs`), `save_project`,
    or `gallery_publish` (defaults to `ai_generated: true` — keep it that way
    when the design was produced by you).

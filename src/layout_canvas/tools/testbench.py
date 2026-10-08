@@ -16,11 +16,22 @@ from typing import Any
 
 from layout_canvas.ir.model import Design, Spec, Testbench
 
-_MEASURES = ("final", "min", "max", "mean", "pp")
+_MEASURES = ("final", "min", "max", "mean", "pp", "db", "bw_3db")
 
 
-def measure_signal(samples: list[float], measure: str) -> float:
-    """Reduce a waveform to a scalar per ``measure``."""
+def measure_signal(
+    samples: list[float],
+    measure: str,
+    sweep: list[float] | None = None,
+) -> float:
+    """Reduce a waveform to a scalar per ``measure``.
+
+    ``db`` is ``20*log10`` of the first sample — the low-frequency
+    magnitude of an ac sweep. ``bw_3db`` is the sweep frequency where the
+    magnitude first falls below ``|v[0]|/sqrt(2)`` (needs ``sweep``).
+    """
+    import math
+
     if not samples:
         raise ValueError("empty waveform")
     xs = [float(v) for v in samples]
@@ -34,6 +45,20 @@ def measure_signal(samples: list[float], measure: str) -> float:
         return sum(xs) / len(xs)
     if measure == "pp":
         return max(xs) - min(xs)
+    if measure == "db":
+        if xs[0] <= 0:
+            raise ValueError(f"db needs a positive first sample, got {xs[0]:g}")
+        return 20.0 * math.log10(xs[0])
+    if measure == "bw_3db":
+        if sweep is None or len(sweep) != len(xs):
+            raise ValueError("bw_3db needs a sweep axis matching the waveform")
+        threshold = xs[0] / math.sqrt(2.0)
+        for x, f in zip(xs, sweep):
+            if x < threshold:
+                return float(f)
+        raise ValueError(
+            f"magnitude never falls below |v0|/sqrt(2)={threshold:g} "
+            f"(last={xs[-1]:g})")
     raise ValueError(f"unknown measure {measure!r}; known: {_MEASURES}")
 
 
@@ -75,7 +100,9 @@ def evaluate_specs(result: dict[str, Any], specs: list[Spec]) -> list[dict[str, 
             out.append(entry)
             continue
         try:
-            value = round(measure_signal(list(samples), spec.measure), 6)
+            value = round(
+                measure_signal(list(samples), spec.measure,
+                               sweep=result.get("sweep")), 6)
         except ValueError as exc:
             entry["reason"] = str(exc)
             out.append(entry)

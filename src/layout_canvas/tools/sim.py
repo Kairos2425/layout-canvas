@@ -20,6 +20,7 @@ Two entry modes:
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import subprocess
@@ -286,6 +287,73 @@ def _bias_line(name: str, vdd: float) -> str:
     return f"R_{name}_u vdd {name} 10k\nR_{name}_d {name} vss 1Meg"
 
 
+_SUPPLY_TOKENS = ("vdd", "vcc", "vss", "gnd", "vsub", "vbb", "supply")
+
+
+def _drive_port(design: Design, ports: list[str]) -> str | None:
+    """Pick the port that carries the ac/dc stimulus source: the first
+    port declared ``direction='input'`` on the design, else the first
+    non-supply port in the compiled subckt's port order."""
+    inputs = {p.name for p in design.ports if p.direction == "input"}
+    for p in ports:
+        if p in inputs:
+            return p
+    for p in ports:
+        if not any(k in p.lower() for k in _SUPPLY_TOKENS):
+            return p
+    return ports[0] if ports else None
+
+
+def _apply_drive(
+    lines: list[str], port: str, vdd: float, analysis: str
+) -> tuple[list[str], str]:
+    """Attach the ac/dc drive to ``port``. When the port is already biased
+    by its own ``V_`` source, the source card is extended in place
+    (``ac 1`` for ac); otherwise a dedicated mid-rail source is appended.
+    Returns the updated lines and the drive source element name."""
+    suffix = " ac 1" if analysis == "ac" else ""
+    out = []
+    for line in lines:
+        if line.startswith(f"V_{port} "):
+            line = line + suffix
+        out.append(line)
+    if any(line.startswith(f"V_{port} ") or line.startswith(f"V_{port}\t")
+           for line in lines):
+        return out, f"V_{port}"
+    out.append(f"V_ac_{port} {port} 0 {vdd / 2:g}{suffix}")
+    return out, f"V_ac_{port}"
+
+
+def _ac_waves(names: list[str], waves_raw: dict[str, list[float]]) -> dict[str, list[float]]:
+    """Assemble ac waveforms: wrdata emits (real, imag) column pairs, so
+    the wave under each port/probe name is |v| = hypot(re, im); a sibling
+    ``<name>__db`` key carries 20*log10(|v|)."""
+    waves: dict[str, list[float]] = {}
+    for i, name in enumerate(names, start=1):
+        re_xs = waves_raw.get(f"v{i}")
+        if re_xs is None:
+            continue
+        im_xs = waves_raw.get(f"v{i}i") or [0.0] * len(re_xs)
+        mags = [math.hypot(r, m) for r, m in zip(re_xs, im_xs)]
+        waves[name] = mags
+        waves[f"{name}__db"] = [20.0 * math.log10(max(m, 1e-12)) for m in mags]
+    return waves
+
+
+def _sweep_run(analysis: str, tran_step: str, tran_stop: str,
+               src: str | None, vdd: float) -> str:
+    """The .control run line for each supported analysis."""
+    if analysis == "ac":
+        return "ac dec 10 1k 1G"
+    if analysis == "dc":
+        if src is None:
+            return "op"  # no port to sweep — an op point is the honest deck
+        return f"dc {src} 0 {vdd:g} {vdd / 50:g}"
+    if analysis == "op":
+        return "op"
+    return f"tran {tran_step} {tran_stop}"
+
+
 def default_stimulus(
     design: Design,
     *,
@@ -296,23 +364,47 @@ def default_stimulus(
     out_file: str = "waves.dat",
 ) -> str:
     """Auto-generated stimulus for the canvas Simulate button: instantiate
-    the compiled top, bias every port by name heuristics, run .op or .tran,
-    and wrdata every port voltage for the UI to plot."""
+    the compiled top, bias every port by name heuristics, run .op/.tran/
+    .ac/.dc, and wrdata every port voltage for the UI to plot."""
     nl = compile_netlist(design)
     m = re.search(
         rf"^\s*\.subckt\s+{re.escape(design.name)}\s+(?P<ports>.+?)\s*$",
         nl, re.MULTILINE)
     ports = m.group("ports").split() if m else [p.name for p in design.ports]
     lines = [_bias_line(p, vdd) for p in ports]
+    # Supply-named nets *inside* the top subckt are SPICE-local nodes: the
+    # auto-bias rails at top level cannot reach them unless the names are
+    # declared .global (verified: without it X1.<net> pins sit at ~0 V via
+    # gmin and the "bias" comes only from the pull resistors).  Collect the
+    # supply tokens actually referenced inside the subckt body — explicit
+    # nets plus the per-instance supply fallback names compile_netlist
+    # emits — and globalize them so V_VDD/V_VSS truly power the interior.
+    body = re.search(
+        rf"\.subckt\s+{re.escape(design.name)}\b(?P<body>.*?)\.ends",
+        nl, re.IGNORECASE | re.DOTALL)
+    globals_: list[str] = []
+    if body:
+        for tok in body.group("body").split():
+            t = tok.lower().rstrip("!")
+            if (t in _SUPPLY_TOKENS or t == "vssx") and tok not in ports \
+                    and tok not in globals_:
+                globals_.append(tok)
+    if globals_:
+        lines.insert(0, ".global " + " ".join(globals_))
     # The bias network references implicit rail nodes vdd/vss; if the design
     # doesn't expose them as ports, source them so nothing floats.
     if not any(p.lower() in ("vdd", "vcc") for p in ports):
-        lines.insert(0, f"V_VDD vdd 0 {vdd}")
+        lines.insert(0 if not globals_ else 1, f"V_VDD vdd 0 {vdd}")
     if not any(p.lower() in ("vss", "gnd") for p in ports):
-        lines.insert(0, "V_VSS vss 0 0")
+        lines.insert(0 if not globals_ else 1, "V_VSS vss 0 0")
+    drive = None
+    if analysis in ("ac", "dc"):
+        drive = _drive_port(design, ports)
+        if drive is not None:
+            lines, drive = _apply_drive(lines, drive, vdd, analysis)
     lines.append(f"X1 {' '.join(ports)} {design.name}")
     vectors = " ".join(f"v({p})" for p in ports)
-    run = "op" if analysis == "op" else f"tran {tran_step} {tran_stop}"
+    run = _sweep_run(analysis, tran_step, tran_stop, drive, vdd)
     lines.append(".control")
     lines.extend(default_control_prelude(design.pdk))
     lines.append(run)
@@ -369,13 +461,19 @@ def simulate_auto(
         netlist, re.MULTILINE)
     ports = m.group("ports").split() if m else [p.name for p in design.ports]
     waves_raw = parse_wrdata(root / "waves.dat")
-    # v0 is the sweep column; v1..vN map positionally onto `ports`.
-    waves = {ports[i - 1]: waves_raw[f"v{i}"]
-             for i in range(1, len(ports) + 1) if f"v{i}" in waves_raw}
+    # v0 is the sweep column; v1..vN map positionally onto `ports`
+    # (ac keeps the imaginary parts under v{i}i keys).
+    if analysis == "ac":
+        waves = _ac_waves(ports, waves_raw)
+    else:
+        waves = {ports[i - 1]: waves_raw[f"v{i}"]
+                 for i in range(1, len(ports) + 1) if f"v{i}" in waves_raw}
     out = result.to_dict()
     out["ports"] = ports
     out["sweep"] = waves_raw.get("v0", [])
     out["waves"] = waves
+    if analysis == "ac":
+        out["ac_source"] = _drive_port(design, ports)
     return out
 
 
@@ -578,8 +676,14 @@ def simulate_extracted(
             stimulus_lines.insert(0, f"V_VDD vdd 0 {vdd}")
         if not any(p.lower() in ("vss", "gnd") for p in port_names):
             stimulus_lines.insert(0, "V_VSS vss 0 0")
+        drive = None
+        if analysis in ("ac", "dc"):
+            drive = _drive_port(design, port_names)
+            if drive is not None:
+                stimulus_lines, drive = _apply_drive(
+                    stimulus_lines, drive, vdd, analysis)
         vectors = " ".join(vec for _, vec in probe_vecs)
-        run = "op" if analysis == "op" else f"tran {tran_step} {tran_stop}"
+        run = _sweep_run(analysis, tran_step, tran_stop, drive, vdd)
         stimulus_lines += [".control"]
         stimulus_lines.extend(default_control_prelude(design.pdk))
         stimulus_lines += [run, f"wrdata waves.dat {vectors}", ".endc"]
@@ -595,22 +699,30 @@ def simulate_extracted(
         "\n".join(deck_parts), simulator=simulator,
         executable=executable, timeout=timeout, workdir=root)
     waves_raw = parse_wrdata(root / "waves.dat")
-    waves = {probe_names[i - 1]: waves_raw[f"v{i}"]
-             for i in range(1, len(probe_names) + 1) if f"v{i}" in waves_raw}
+    if analysis == "ac":
+        waves = _ac_waves(probe_names, waves_raw)
+    else:
+        waves = {probe_names[i - 1]: waves_raw[f"v{i}"]
+                 for i in range(1, len(probe_names) + 1) if f"v{i}" in waves_raw}
     out = result.to_dict()
     out["ports"] = probe_names
     if unresolved_probes:
         out["unresolved_probes"] = unresolved_probes
     out["sweep"] = waves_raw.get("v0", [])
     out["waves"] = waves
+    if analysis == "ac":
+        # Custom stimulus paths pick their own source; the auto path's
+        # choice is reported so the bench is auditable.
+        out["ac_source"] = _drive_port(design, port_names) if not stimulus else None
     out["extracted"] = {"devices": ext.devices, "nets": ext.nets}
     return out
 
 
 def parse_wrdata(path: Path) -> dict[str, list[float]]:
-    """ngspice `wrdata` output: first column is the sweep, then each vector
-    is written as an interleaved (real, imag) column pair — DC/tran data has
-    zero imaginary parts. Returns {v0: sweep, v1..vN: real samples} mapped
+    """ngspice `wrdata` output: each vector is written as a column group
+    carrying its own scale — ``(sweep, real)`` for real analyses
+    (op/tran/dc) and ``(sweep, real, imag)`` for ac. Returns ``{v0: sweep,
+    v1..vN: real samples}`` plus ``{v1i..vNi: imaginary samples}`` mapped
     positionally; wrdata does not embed vector names."""
     if not path.is_file():
         return {}
@@ -627,9 +739,30 @@ def parse_wrdata(path: Path) -> dict[str, list[float]]:
     if not rows:
         return {}
     width = max(len(r) for r in rows)
+
+    def _scale_equal(step: int) -> bool:
+        """True when every row repeats its first value at scale positions."""
+        for r in rows:
+            base = r[0]
+            for j in range(step, width, step):
+                if j < len(r) and r[j] != base:
+                    return False
+        return True
+
+    # Complex (ac) files use 3-col groups; real files use 2-col groups.
+    # Prefer the 2-col reading when its scale columns line up (ac scale
+    # positions 0,2,4,... hit imag/real values and do not repeat).
+    group = 2
+    if width % 3 == 0 and not (width % 2 == 0 and _scale_equal(2)):
+        if _scale_equal(3):
+            group = 3
     out: dict[str, list[float]] = {"v0": [r[0] for r in rows]}
-    for i in range(1, width, 2):
-        out[f"v{(i + 1) // 2}"] = [r[i] if i < len(r) else 0.0 for r in rows]
+    for g in range(width // group):
+        re_col, im_col = g * group + 1, g * group + 2
+        out[f"v{g + 1}"] = [r[re_col] if re_col < len(r) else 0.0
+                            for r in rows]
+        out[f"v{g + 1}i"] = [r[im_col] if im_col < len(r) else 0.0
+                             for r in rows]
     return out
 
 

@@ -153,3 +153,45 @@ def test_deck_builder_includes_stimulus_and_end():
     deck = _build_deck(".subckt a x\n.ends", "X1 x a\n.op", ["/models/sky130.lib"])
     assert '.include "/models/sky130.lib"' in deck
     assert deck.rstrip().endswith(".end")
+
+
+class TestParseWrdata:
+    """ngspice wrdata emits (scale, re) pairs for real analyses and
+    (scale, re, im) triples for ac — the parser splits on that."""
+
+    def test_real_pairs(self, tmp_path):
+        from layout_canvas.tools.sim import parse_wrdata
+
+        f = tmp_path / "op.dat"
+        f.write_text(" 0.0 0.9  0.0 0.8\n", encoding="utf-8")
+        out = parse_wrdata(f)
+        assert out["v0"] == [0.0]
+        assert out["v1"] == [0.9] and out["v1i"] == [0.0]
+        assert out["v2"] == [0.8] and out["v2i"] == [0.0]
+
+    def test_complex_triples_keep_imag(self, tmp_path):
+        from layout_canvas.tools.sim import parse_wrdata
+
+        f = tmp_path / "ac.dat"
+        f.write_text(
+            " 1e3 1.0 0.0  1e3 0.5 0.25\n"
+            " 2e3 1.0 0.0  2e3 0.4 0.20\n",
+            encoding="utf-8")
+        out = parse_wrdata(f)
+        assert out["v0"] == [1e3, 2e3]
+        assert out["v1"] == [1.0, 1.0] and out["v1i"] == [0.0, 0.0]
+        # v2 keeps real AND imaginary samples under v2 / v2i
+        assert out["v2"] == [0.5, 0.4]
+        assert out["v2i"] == [0.25, 0.20]
+
+    def test_ac_magnitude_waves(self):
+        from layout_canvas.tools.sim import _ac_waves
+
+        waves = _ac_waves(
+            ["a", "b"],
+            {"v1": [3.0, 1.0], "v1i": [4.0, 0.0],
+             "v2": [0.0, -2.0], "v2i": [0.0, 0.0]})
+        assert waves["a"] == [5.0, 1.0]
+        assert waves["b"] == [0.0, 2.0]
+        # 20*log10(5) = 13.979 dB
+        assert waves["a__db"][0] == pytest.approx(13.979, abs=1e-3)

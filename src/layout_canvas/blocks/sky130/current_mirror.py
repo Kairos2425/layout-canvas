@@ -202,11 +202,24 @@ def register_current_mirror() -> None:
         ):
             rect(c, layers.MET1, px_ - 0.24, py_ - 0.24, px_ + 0.24, py_ + 0.24)
 
-        # Guard ring: p-substrate tap frame + contacted met1 ring -> vss.
+        # Guard ring: p-substrate tap frame + contacted met1 ring -> vss
+        # for nmos (source strap merges into it, giving source = bulk =
+        # substrate, and extraction absorbs the taps into the global vss
+        # net).  For pmos the same p-tap ring would fuse the source to the
+        # substrate and could never ride at vdd — extraction reports the
+        # pin on global vss and LVS mismatches any vdd-referenced source
+        # in the reference.  So for pmos the ring is a BARE li1/met1 frame
+        # (no taps, no contacts): the source strap still merges into it,
+        # so ring = source net, and the n-well tap jumper below ties bulk
+        # to the same net — the correct pmos source/bulk = vdd structure.
         gx0, gx1 = -0.9, total_width + 0.9
         gy0, gy1 = 0.9, strap_y["out"] + 1.0
         rw = 0.5
-        for lay in (layers.TAP, layers.LI, layers.MET1):
+        # Only met1 for pmos: a li1 frame with no mcon contacts would be a
+        # floating net of its own (extra extracted net, antenna risk).
+        ring_layers = (layers.TAP, layers.LI, layers.MET1) if type == "nmos" \
+            else (layers.MET1,)
+        for lay in ring_layers:
             rect(c, lay, gx0, gy0, gx0 + rw, gy1)
             rect(c, lay, gx1 - rw, gy0, gx1, gy1)
             rect(c, lay, gx0, gy0, gx1, gy0 + rw)
@@ -223,8 +236,9 @@ def register_current_mirror() -> None:
                 for x in (gx0 + rw / 2, gx1 - rw / 2):
                     rect(c, layer, x - half, y - half, x + half, y + half)
                 y += pitch
-        _ring_contacts(layers.LICON, 0.085, 0.5)
-        _ring_contacts(layers.MCON, 0.065, 0.5)
+        if type == "nmos":
+            _ring_contacts(layers.LICON, 0.085, 0.5)
+            _ring_contacts(layers.MCON, 0.065, 0.5)
         add_port(c, "vss", layers.MET1, (total_width / 2, gy0 + rw / 2), 0.8, 270)
 
         return c

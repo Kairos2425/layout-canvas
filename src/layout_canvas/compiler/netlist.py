@@ -57,6 +57,15 @@ def compile_netlist(design: Design) -> str:
     # them unconnected — matching the physical substrate/power rings.
     _GLOBAL_PIN_NAMES = {"vss", "vdd", "gnd", "vcc", "vsub", "vssx"}
 
+    def _interior_pin(inst, port, resolved) -> bool:
+        """True when a supply-named pin is a real interior net, not the
+        shared substrate.  The PMOS current_mirror keeps its source strap
+        separate from the (tapless) guard ring — its ``vss`` pin is the
+        transistor source, so an unconnected one floats as its own net
+        instead of joining the global vss."""
+        return (inst.block == "sky130.current_mirror"
+                and port.name == "vss" and resolved.get("type") == "pmos")
+
     # 2. Build pin-to-net connectivity map
     # net_name -> list of pin connections (e.g., "M1.in")
     pin_to_net: dict[str, str] = {}
@@ -86,7 +95,8 @@ def compile_netlist(design: Design) -> str:
                 top_match = next((p.name for p in design.ports if p.pin == pin_id), None)
                 if top_match:
                     conn_nets.append(top_match)
-                elif port.name.lower().rstrip("!") in _GLOBAL_PIN_NAMES:
+                elif port.name.lower().rstrip("!") in _GLOBAL_PIN_NAMES \
+                        and not _interior_pin(inst, port, resolved):
                     # Supply/substrate pins join a same-named global net —
                     # physically every guard ring shares the substrate, so
                     # the reference must not keep per-instance vss nets.
