@@ -40,6 +40,9 @@ waves.dat
 # private PDK descriptors never enter git (docs/PDK_DESCRIPTORS.md)
 *.pdk.json
 
+# investor/fundraising docs stay local — never committed or pushed
+INVESTOR_*.md
+
 
 
 .wrangler/
