@@ -70,6 +70,27 @@ def test_netlist_action():
     assert ".subckt web_test" in res["data"]["spice"]
 
 
+def test_import_netlist_endpoint():
+    netlist = """\
+.subckt current_mirror in out gate vss
+M1 out in vss vss nch w=1u l=0.5u
+.ends
+.subckt top_cell a b
+XU1 a b b vss current_mirror
+.ends
+"""
+    res = _api("import_netlist", {"netlist_text": netlist, "pdk": "sky130"})
+    assert res["status"] == "ok"
+    data = res["data"]
+    assert data["status"] == "ok"
+    assert data["mapped"][0]["block"] == "sky130.current_mirror"
+    from layout_canvas.ir.model import Design
+    Design.model_validate(data["ir"])  # returned IR must parse
+
+    bad = _api("import_netlist", {"netlist_text": ""})
+    assert bad["status"] == "error"
+
+
 def test_session_lifecycle_and_edit():
     """Human edits go through the same transactional boundary as the agent."""
     from layout_canvas.web import app

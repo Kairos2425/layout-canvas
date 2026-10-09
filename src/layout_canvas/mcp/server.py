@@ -507,6 +507,36 @@ class LayoutCanvasMCPServer:
                 },
             },
             {
+                "name": "import_netlist",
+                "description": "Import an upstream SPICE/Spectre netlist (e.g. an analog-canvas export) into a Block IR draft. Each instantiated subckt is matched to a parametric block by name + pin-name signature; unmappable instances are named in 'unresolved' and dropped — never guessed. Pass the returned 'ir' to open_design, then refine params/placement via transact. Provide 'path' or 'text', plus 'pdk' (default sky130) and 'top' when the top subckt is ambiguous.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path to a .sp/.cir/.scs netlist on disk.",
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Raw netlist text (SPICE .subckt/X or Spectre subckt/instance dialects; auto-detected).",
+                        },
+                        "pdk": {
+                            "type": "string",
+                            "default": "sky130",
+                            "description": "Target PDK whose block registry the subckts map onto.",
+                        },
+                        "top": {
+                            "type": "string",
+                            "description": "Top subckt name; required when several subckts are uninstantiated.",
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Design name override (default: top subckt name).",
+                        },
+                    },
+                },
+            },
+            {
                 "name": "run_testbench",
                 "description": "Run a structured simulation testbench declared on the design (testbenches[].name). Evaluates each spec and reports per-spec pass/fail/unavailable with reasons. Provide 'name' for one bench, omit it to run all. Source: session_id or ir_json.",
                 "inputSchema": {
@@ -1001,6 +1031,19 @@ class LayoutCanvasMCPServer:
                 spice_text=spice_text,
             )
             return import_summary(block)
+
+        elif name == "import_netlist":
+            from layout_canvas.compiler.netlist_import import import_netlist
+
+            if args.get("path"):
+                text = Path(args["path"]).read_text(encoding="utf-8")
+            elif args.get("text") is not None:
+                text = args["text"]
+            else:
+                raise ValueError("import_netlist needs 'path' or 'text'")
+            return import_netlist(
+                text, pdk=args.get("pdk", "sky130"), top=args.get("top"),
+                design_name=args.get("name"))
 
         elif name == "save_project":
             session = self._get_session(args.get("session_id"))

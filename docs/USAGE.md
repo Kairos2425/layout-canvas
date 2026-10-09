@@ -300,6 +300,43 @@ response includes a pya-DRC summary (`drc.status`, `drc.violations`).
 
 MCP: `import_gds` tool — `{alias, path, pdk, cell_name?, spice_path?}`.
 
+### Import an upstream netlist → Block IR
+
+`import_netlist` / `layout-canvas import-netlist` is the reverse bridge: a
+structural SPICE (`.subckt`/`X` cards) or Spectre (`.scs`
+`subckt`/`name ( nodes ) master`) netlist becomes a Block IR draft. Each
+instantiated subckt maps to a registered block by name **and** port-name
+signature — `subckt current_mirror ( in out gate vss )` lands on
+`sky130.current_mirror`, and any subckt whose pin set equals a block's
+port names lands there even without a name match. Top-level instance
+wiring becomes `nets[]`, the top subckt's pins become `ports[]`, and
+instances get a deterministic non-overlapping placement row
+(`relative_to`/`right_of`).
+
+```bash
+layout-canvas import-netlist upstream.scs --pdk sky130 -o design.json
+layout-canvas import-netlist flat.sp --top ota_top
+```
+
+MCP: `import_netlist {path|text, pdk?, top?, name?}` →
+`{status: ok|partial|failed, ir, mapped, unresolved, diagnostics}` —
+feed `ir` into `open_design`, then refine params/placement via
+`transact`.
+
+The import is fail-closed:
+
+- Instances whose master has no subckt definition, a pin-count mismatch,
+  or no matching block signature are named in `unresolved` and dropped —
+  the IR only contains what it can compile.
+- Raw device primitives (M/R/C…) at top level are counted in
+  `top_level_devices_skipped`, not smuggled in.
+- Instance params map through a small alias table (`nf→fingers`,
+  `w→width`, `l→length`, SI magnitudes → µm); `m=` is deliberately *not*
+  mapped (multiplicity ≠ finger count), and any param that fails the
+  block's bounds check is dropped with a diagnostic.
+- `status` is `ok` only when every instantiated subckt mapped;
+  `partial` emits IR minus the unmapped; `failed` emits none.
+
 Two limitations:
 
 - **Pin labels required** — the GDS must carry pin labels on the PDK's
@@ -324,12 +361,12 @@ Register the stdio server in your MCP client config:
 }
 ```
 
-34 tools, grouped:
+35 tools, grouped:
 
 | Intent | Tools |
 |---|---|
 | Environment | `probe_environment` |
-| Blocks | `list_blocks`, `generate_block`, `register_cell`, `import_gds` |
+| Blocks | `list_blocks`, `generate_block`, `register_cell`, `import_gds`, `import_netlist` |
 | Session | `open_design`, `close_design`, `transact`, `snapshot`, `undo`, `load_project`, `save_project`, `get_active_layout_info` |
 | Build | `insert_block_into_layout`, `compile_session`, `compile_ir`, `generate_netlist`, `optimize`, `inspect_connectivity`, `inspect_ppa`, `render_preview_svg` |
 | Gallery | `gallery_list`, `gallery_stats`, `gallery_get`, `gallery_publish`, `gallery_fork` |

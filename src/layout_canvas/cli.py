@@ -27,6 +27,20 @@ def main() -> int:
     net.add_argument("input", help="Block IR JSON file")
     net.add_argument("-o", "--output", required=True, help="Output SPICE (.sp / .cir) path")
 
+    # import-netlist command
+    imp = sub.add_parser(
+        "import-netlist",
+        help="Import an upstream SPICE/Spectre netlist as a Block IR draft "
+             "(subckts map to parametric blocks by name + pin signature; "
+             "unmappable instances are named, never guessed)")
+    imp.add_argument("input", help="SPICE (.sp/.cir) or Spectre (.scs) file")
+    imp.add_argument("--pdk", default="sky130", help="Target PDK (default sky130)")
+    imp.add_argument("--top", help="Top subckt name (required when ambiguous)")
+    imp.add_argument("--dialect", choices=["auto", "spice", "spectre"],
+                     default="auto")
+    imp.add_argument("--name", help="Design name (default: top subckt name)")
+    imp.add_argument("-o", "--output", help="Output Block IR JSON path")
+
     # pdk command
     pdkp = sub.add_parser(
         "pdk",
@@ -132,6 +146,34 @@ def main() -> int:
         import layout_canvas.blocks.generic  # noqa: F401
         export_spice(design, args.output)
         print(f"Generated SPICE netlist {design.name} → {args.output}", file=sys.stderr)
+        return 0
+
+    if args.cmd == "import-netlist":
+        from pathlib import Path as _Path
+
+        from layout_canvas.compiler.netlist_import import import_netlist
+
+        text = _Path(args.input).read_text(encoding="utf-8")
+        res = import_netlist(text, pdk=args.pdk, top=args.top,
+                             dialect=args.dialect,
+                             design_name=args.name)
+        for m in res["mapped"]:
+            print(f"  mapped   {m['instance']}  {m['subckt']} -> {m['block']}",
+                  file=sys.stderr)
+        for u in res["unresolved"]:
+            print(f"  skipped  {u['instance']}  {u['subckt']} — {u['reason']}",
+                  file=sys.stderr)
+        for d in res["diagnostics"]:
+            print(f"  note     {d}", file=sys.stderr)
+        print(f"status={res['status']} ({len(res['mapped'])} mapped, "
+              f"{len(res['unresolved'])} unresolved)", file=sys.stderr)
+        if res["ir"] is None:
+            return 2
+        if args.output:
+            _Path(args.output).write_text(res["ir_text"], encoding="utf-8")
+            print(f"wrote {args.output}", file=sys.stderr)
+        else:
+            print(res["ir_text"])
         return 0
 
     if args.cmd == "testbench":

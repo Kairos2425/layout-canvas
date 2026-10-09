@@ -29,7 +29,8 @@ Block IR (JSON) ── compile ──▶ gdsfactory ──▶ GDS
 | **External PDKs** | `*.pdk.json` descriptors via `LAYOUT_CANVAS_PDK_DIR`/`LAYOUT_CANVAS_PDKS` — layer map + extract recipe + DRC subset + model prelude + generic `gen_diff_pair`/`gen_current_mirror`/`gen_guard_ring` generators, no code (`docs/PDK_DESCRIPTORS.md`) |
 | **Testbenches** | Named sim setups on the IR (schematic/extracted, op/tran/ac/dc, probes) + per-spec pass/fail/unavailable with reasons — `final/min/max/mean/pp/db/bw_3db` plus transient `settling`/`slew`/`overshoot` (with `tol`); CLI exit codes, session run history |
 | **Export** | Virtuoso SKILL (shapes/instances) + Spectre netlist, GDS/OASIS, SPICE — plus `virtuoso-accept`: static SKILL/.scs checks anywhere, real Virtuoso/spectre acceptance over SSH on an EDA host (`docs/VIRTUOSO_ACCEPTANCE.md`) |
-| **Interfaces** | CLI · local web canvas · MCP stdio server (34 tools) |
+| **Import** | `import-netlist`: upstream SPICE/Spectre subckt netlists → Block IR draft (blocks matched by name + port signature; unmapped instances named, never guessed) — the upstream-pipeline on-ramp |
+| **Interfaces** | CLI · local web canvas · MCP stdio server (35 tools) |
 
 ## Install
 

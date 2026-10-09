@@ -199,6 +199,36 @@ def _import_gds_api(payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "error", "error": str(exc)}
 
 
+def _import_netlist_api(payload: dict[str, Any]) -> dict[str, Any]:
+    """Import an upstream SPICE/Spectre netlist into a Block IR draft."""
+    from layout_canvas.compiler.netlist_import import import_netlist
+
+    text = payload.get("netlist_text")
+    if text is None and payload.get("netlist_b64"):
+        import base64
+
+        b64 = payload["netlist_b64"]
+        if len(b64) > 8 * 1024 * 1024:
+            return {"status": "error", "error": "payload exceeds 8 MiB limit"}
+        try:
+            text = base64.b64decode(b64, validate=True).decode("utf-8")
+        except Exception:
+            return {"status": "error",
+                    "error": "netlist_b64 is not valid base64/utf-8"}
+    if not text:
+        return {"status": "error",
+                "error": "import_netlist needs 'netlist_text' or 'netlist_b64'"}
+    if len(str(text)) > 8 * 1024 * 1024:
+        return {"status": "error", "error": "netlist exceeds 8 MiB limit"}
+    try:
+        res = import_netlist(
+            str(text), pdk=str(payload.get("pdk") or "sky130"),
+            top=payload.get("top"), design_name=payload.get("name"))
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+    return {"status": "ok", "data": res}
+
+
 def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Handle one API call; errors come back structured, never as a 500."""
     if action.startswith("session/"):
@@ -207,6 +237,8 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         return _gallery_api(action.split("/", 1)[1], payload)
     if action == "import_gds":
         return _import_gds_api(payload)
+    if action == "import_netlist":
+        return _import_netlist_api(payload)
     raw = payload.get("ir_json")
     try:
         design = Design.model_validate_json(raw) if isinstance(raw, str) else Design.model_validate(raw)

@@ -36,7 +36,11 @@ Call `probe_environment` first when you are unsure what is installed.
 1. `list_blocks` — read the palette: block names, params with min/max, ports.
    Never invent a block or parameter name.
 2. `open_design` with a Block IR document (or `load_project`). You get a
-   `session_id` and `revision`.
+   `session_id` and `revision`. Starting from an upstream schematic
+   netlist instead? `import_netlist` (`{path|text, pdk, top?}`) converts
+   a structural SPICE/Spectre file into a Block IR draft — subckts map
+   to blocks by name + pin signature, unmapped instances come back in
+   `unresolved` — pass the returned `ir` to `open_design`.
 3. `inspect_connectivity` — read the electrical facts (pin→net table,
    unconnected pins, floating nets) **before** editing.
 4. `transact` with typed edits and `expected_revision`. Known ops:
@@ -100,6 +104,12 @@ Rules the engine enforces (do not fight them):
 - Imported external GDS cells (`import_gds`) without a SPICE `.subckt` have no
   netlist: simulation is `refused` and LVS cannot pass. Say so instead of
   working around it.
+- `import_netlist` never guesses: an instance whose master, pin count or
+  port signature doesn't match a registered block lands in `unresolved`
+  and is absent from the IR — report that to the user rather than
+  hand-editing IR to fake the connection. Params come from a small alias
+  table (`nf`/`w`/`l`); everything else defaults and is listed under
+  `meta.params_defaulted`.
 
 ## Reading results honestly
 

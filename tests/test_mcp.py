@@ -36,9 +36,10 @@ def test_mcp_tools_list():
     resp = server.handle_request(req)
     assert "tools" in resp["result"]
     tool_names = [t["name"] for t in resp["result"]["tools"]]
-    assert len(tool_names) == 34
+    assert len(tool_names) == 35
     for name in ("run_testbench", "gallery_list", "gallery_publish",
-                 "gallery_fork", "gallery_stats", "import_gds"):
+                 "gallery_fork", "gallery_stats", "import_gds",
+                 "import_netlist"):
         assert name in tool_names
     assert "list_blocks" in tool_names
     assert "generate_block" in tool_names
