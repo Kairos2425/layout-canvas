@@ -221,7 +221,7 @@ _PYA_ENCLOSURE: dict[str, list[tuple[str, tuple[int, int], list[tuple[int, int]]
         ("via2.m3", (69, 44), [(70, 20)], 0.065),                       # met3 encloses via2
     ],
     "ihp_sg13g2": [
-        ("cnt.act", (6, 0), [(1, 0), (5, 0)], 0.07),                    # Cnt.c: activ|gatpoly enc cont
+        ("cnt.act", (6, 0), [(1, 0), (5, 0)], 0.07),                    # Cnt.c: act|poly enc cont
         ("cnt.m1", (6, 0), [(8, 0)], 0.07),                             # Cnt.d: metal1 enc cont
         ("v1.m1", (19, 0), [(8, 0)], 0.01),                             # V1.c: m1 enc via1
         ("v1.m2", (19, 0), [(10, 0)], 0.01),                            # V1.c: m2 enc via1
@@ -268,11 +268,13 @@ def run_klayout_drc(gds_path: Path, deck_path: Path | None = None, *, tech: str 
         errors = ["DRC violations reported"] if count > 0 else ["KLayout exited non-zero"]
         return DRCResult("failed", False, [], count, report, proc.stdout, proc.stderr,
                          proc.returncode, errors)
-    return DRCResult("passed", True, [], count, report, proc.stdout, proc.stderr, proc.returncode, [])
+    return DRCResult("passed", True, [], count, report, proc.stdout,
+                     proc.stderr, proc.returncode, [])
 
 
 def _unavailable(report: Path, message: str) -> DRCResult:
-    return DRCResult("unavailable", None, [], None, report if report.exists() else None, errors=[message])
+    return DRCResult("unavailable", None, [], None,
+                     report if report.exists() else None, errors=[message])
 
 
 def _text(value: Any) -> str:
@@ -282,7 +284,9 @@ def _text(value: Any) -> str:
 def _count_violations(report: str) -> int | None:
     if re.search(r"\b(?:no\s+violations|total\s+violations\s*[:=]\s*0)\b", report, re.I):
         return 0
-    matches = re.findall(r"(?:total\s+)?violations?\s*[:=]\s*(\d+)|\b(\d+)\s+violations?\b", report, re.I)
+    matches = re.findall(
+        r"(?:total\s+)?violations?\s*[:=]\s*(\d+)|\b(\d+)\s+violations?\b",
+        report, re.I)
     if matches:
         pair = matches[-1]
         return int(pair[0] or pair[1])

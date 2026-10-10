@@ -13,7 +13,9 @@ from layout_canvas.ir.model import Design
 from layout_canvas.pdk import get_pdk
 
 
-def _resolve_relative_placements(design: Design, comp_map: dict[str, gf.Component]) -> dict[str, tuple[float, float]]:
+def _resolve_relative_placements(
+        design: Design, comp_map: dict[str, gf.Component]
+) -> dict[str, tuple[float, float]]:
     """Resolve absolute (x, y) coordinates for all instances, handling relative constraints.
 
     Supports relation: 'right_of', 'left_of', 'above', 'below'
@@ -162,7 +164,7 @@ def compile_design(design: Design) -> gf.Component:
     untapped = add_pin_accesses(top, design, inst_refs, pdk)
     if untapped:
         import warnings
-        warnings.warn(f"untapped pins (no geometry to connect): {untapped}")
+        warnings.warn(f"untapped pins (no geometry to connect): {untapped}", stacklevel=2)
 
     # Route nets if defined in IR
     if design.nets:

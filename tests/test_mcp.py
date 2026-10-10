@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-import pytest
 from pathlib import Path
 
+import pytest
+
+from layout_canvas.mcp.bridge import BridgeClient, KLayoutBridgeServer
 from layout_canvas.mcp.server import LayoutCanvasMCPServer
-from layout_canvas.mcp.bridge import KLayoutBridgeServer, BridgeClient
 
 
 def test_mcp_initialize():

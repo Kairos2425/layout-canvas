@@ -299,7 +299,7 @@ class TestAcAnalysis:
         assert drive == "inp"
         lines, src = sim._apply_drive(lines, drive, 1.8, "ac")
         assert src == "V_inp"
-        assert any(l.endswith("ac 1") for l in lines)
+        assert any(ln.endswith("ac 1") for ln in lines)
 
 
 @pytest.mark.skipif(_NGSPICE is None, reason="ngspice not installed")

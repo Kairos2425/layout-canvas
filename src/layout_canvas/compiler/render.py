@@ -75,8 +75,10 @@ def render_svg(comp: Any, canvas_px: int = 600, max_polygons: int = 20000) -> di
 
     # Points are y-flipped into [0, height]; viewBox follows that space.
     svg_lines = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{left - 1.0} -1.0 {width + 2.0} {height + 2.0}" width="{canvas_px}">',
-        f'  <rect x="{left - 1.0}" y="-1.0" width="{width + 2.0}" height="{height + 2.0}" fill="#1e1e1e"/>',
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{left - 1.0} -1.0 '
+        f'{width + 2.0} {height + 2.0}" width="{canvas_px}">',
+        f'  <rect x="{left - 1.0}" y="-1.0" width="{width + 2.0}" '
+        f'height="{height + 2.0}" fill="#1e1e1e"/>',
     ]
     layers_seen: dict[str, dict[str, Any]] = {}
     for layer, polygons in sorted(by_layer.items()):

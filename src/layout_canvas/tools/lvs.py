@@ -83,9 +83,11 @@ def run_lvs(
         return LVSResult("error", None, report, cell, setup, proc.stdout, proc.stderr,
                          proc.returncode, ["Unable to parse LVS report"])
     if proc.returncode != 0 or not match:
-        return LVSResult("failed", False, report, cell, setup, proc.stdout, proc.stderr,
-                         proc.returncode, ["LVS mismatch" if not match else "Netgen exited non-zero"])
-    return LVSResult("passed", True, report, cell, setup, proc.stdout, proc.stderr, proc.returncode, [])
+        return LVSResult("failed", False, report, cell, setup, proc.stdout,
+                         proc.stderr, proc.returncode,
+                         ["LVS mismatch" if not match else "Netgen exited non-zero"])
+    return LVSResult("passed", True, report, cell, setup, proc.stdout,
+                     proc.stderr, proc.returncode, [])
 
 
 def _has_executable(exe: str) -> bool:
@@ -319,7 +321,9 @@ def _default_setup(tech: str) -> Path | None:
 
 
 def _unavailable(report: Path | None, message: str) -> LVSResult:
-    return LVSResult("unavailable", None, report if report and report.exists() else None, None, None, errors=[message])
+    return LVSResult("unavailable", None,
+                     report if report and report.exists() else None,
+                     None, None, errors=[message])
 
 
 def _text(value: Any) -> str:
@@ -329,6 +333,7 @@ def _text(value: Any) -> str:
 def _check_match(report: str) -> bool | None:
     if "circuits match uniquely" in report.lower():
         return True
-    if "do not match" in report.lower() or "mismatch" in report.lower() or "net mismatch" in report.lower():
+    if ("do not match" in report.lower() or "mismatch" in report.lower()
+            or "net mismatch" in report.lower()):
         return False
     return None

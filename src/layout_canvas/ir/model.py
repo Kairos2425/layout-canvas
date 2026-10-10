@@ -10,7 +10,7 @@ serialized as JSON, diffed, forked and compiled by other backends later.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -31,7 +31,9 @@ class Placement(_Strict):
     y: float = 0.0
     rotation: Literal[0, 90, 180, 270] = 0
     mirror: bool = False
-    relative_to: str | None = Field(default=None, description="Target instance ID for relative placement")
+    relative_to: str | None = Field(
+        default=None, description="Target instance ID for relative placement"
+    )
     relation: Literal["right_of", "left_of", "above", "below"] | None = Field(
         default=None, description="Spatial relation relative to target instance"
     )
@@ -53,7 +55,7 @@ class Net(_Strict):
     pins: list[PinRef] = Field(min_length=1)
 
 
-class ConstraintType(str, Enum):
+class ConstraintType(StrEnum):
     symmetric = "symmetric"
     align = "align"
     abut = "abut"

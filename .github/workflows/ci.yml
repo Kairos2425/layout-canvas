@@ -38,8 +38,8 @@ jobs:
 
       - name: Test Block compilation and export
         run: |
-          layout-canvas list-blocks
-          layout-canvas compile examples/diffamp.json --out diffamp.gds
+          layout-canvas pdk list
+          layout-canvas compile examples/diffamp.json -o diffamp.gds
 
       - name: Run test suite
         run: |

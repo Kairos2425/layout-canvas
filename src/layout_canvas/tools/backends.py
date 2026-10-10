@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -225,8 +225,8 @@ def probe_environment(timeout: int = 10) -> dict[str, Any]:
         verification.append("klayout-pya")
     # Descriptor PDKs loaded from LAYOUT_CANVAS_PDK_DIR/LAYOUT_CANVAS_PDKS —
     # what they unlock (extract/drc/prelude) plus per-file load diagnostics.
-    from layout_canvas.pdk import external_pdk_errors, external_pdks
     import layout_canvas.blocks.generic as _gen
+    from layout_canvas.pdk import external_pdk_errors, external_pdks
 
     ext_pdks = {
         name: {
@@ -247,7 +247,8 @@ def probe_environment(timeout: int = 10) -> dict[str, Any]:
         "block_generation_errors": _gen.generation_errors(),
         "simulators": {
             "available": [r["name"] for r in reports
-                          if r["kind"] == "spice_simulator" and r["status"] == "available" and r["can_run"]],
+                          if r["kind"] == "spice_simulator"
+                          and r["status"] == "available" and r["can_run"]],
             "detected_needs_license": [r["name"] for r in reports
                                        if r["kind"] == "spice_simulator" and r["license_required"]
                                        and r["status"] == "available"],
@@ -280,7 +281,8 @@ def _probe_pya() -> dict[str, Any]:
             "version": ver,
             "license_required": False,
             "can_run": ok,
-            "notes": "in-process engine: Region geometry checks + LayoutToNetlist extraction + NetlistComparer",
+            "notes": "in-process engine: Region geometry checks + "
+                    "LayoutToNetlist extraction + NetlistComparer",
         }
     except ImportError:
         return {

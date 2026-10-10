@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import gdsfactory as gf
 
-from layout_canvas.blocks.sky130.geom import centered_count, centered_positions, rect, snap, square
 from layout_canvas.blocks.ihp_sg13g2.layers import PIN_PURPOSE
+from layout_canvas.blocks.sky130.geom import centered_count, centered_positions, rect, snap, square
 
 __all__ = [
     "add_port",

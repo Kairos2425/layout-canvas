@@ -85,7 +85,7 @@ def register_diff_pair() -> None:
         half_l = length / 2
         poly_y0 = snap(2.8)
         poly_y1 = snap(3 + diff_h + 0.2)
-        for i, side in enumerate(pattern):
+        for i, _side in enumerate(pattern):
             x = snap(i * finger_pitch + finger_pitch / 2)
             rect(c, layers.POLY, x - half_l, poly_y0, x + half_l, poly_y1)
 
@@ -106,7 +106,7 @@ def register_diff_pair() -> None:
                     for i in range(len(pattern))]
         edges = [0.0] + [x + half_l for x in finger_x]
         starts = [x - half_l for x in finger_x] + [total_width]
-        segs = list(zip(edges, starts))  # (x0, x1) per S/D segment
+        segs = list(zip(edges, starts, strict=False))  # (x0, x1) per S/D segment
         seg_net: list[str] = []
         for j in range(len(segs)):
             if j == 0:
@@ -118,14 +118,15 @@ def register_diff_pair() -> None:
                                else ("outp" if pattern[j] == "A" else "outn"))
 
         # Per-segment contact column + li1 riser up to its met1 strap.
-        # Strap spacing must clear the strap height (0.48) plus margin 鈥?        # 0.4 pitch made neighbouring straps physically overlap (real short,
+        # Strap spacing must clear the strap height (0.48) plus margin 鈥?
+        # 0.4 pitch made neighbouring straps physically overlap (real short,
         # only visible once same-layer connectivity is honoured).
         # Strap spacing must clear the strap height (0.48) plus met1
         # min-space (0.14): 0.66 pitch. Tighter pitches caused both real
         # overlap (merged nets) and DRC min_space violations.
         strap_y = {"outp": 3 + diff_h + 0.55, "tail": 3 + diff_h + 1.21,
                    "outn": 3 + diff_h + 1.87}
-        for (sx0, sx1), net in zip(segs, seg_net):
+        for (sx0, sx1), net in zip(segs, seg_net, strict=False):
             if sx1 - sx0 < 0.4:
                 continue
             cx = snap((sx0 + sx1) / 2)
@@ -135,7 +136,8 @@ def register_diff_pair() -> None:
             for k in range(n_con):
                 # licon inset keeps li1 enclosure >= 0.06 (licon edge at
                 # sx0+0.125 vs li1 edge at sx0+0.06)
-                kx = snap(sx0 + 0.21 + (sx1 - sx0 - 0.42) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                kx = snap(sx0 + 0.21 + (sx1 - sx0 - 0.42) * (k / max(1, n_con - 1))
+                          if n_con > 1 else cx)
                 rect(c, layers.LICON, kx - 0.085, 3 + diff_h / 2 - 0.085,
                      kx + 0.085, 3 + diff_h / 2 + 0.085)
             rect(c, layers.LI, sx0 + 0.06, 3 + diff_h / 2 - 0.15,
@@ -153,7 +155,7 @@ def register_diff_pair() -> None:
         port_x = {"outp": total_width * 0.25, "outn": total_width * 0.75,
                   "tail": total_width / 2}
         for net, y in strap_y.items():
-            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, seg_net)
+            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, seg_net, strict=False)
                   if n == net and s[1] - s[0] >= 0.4]
             if xs:
                 x0 = min(xs) - 0.2

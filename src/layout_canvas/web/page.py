@@ -137,7 +137,8 @@ PAGE = """<!doctype html>
 <div id="stage">
   <div id="canvas"></div>
   <div id="legend"></div>
-  <div id="hint">click pin ○ → pin ○ to wire a net · P exports pending pin as a port · click block to select/move · wheel to zoom</div>
+  <div id="hint">click pin ○ → pin ○ to wire a net · P exports pending pin as a port ·
+    click block to select/move · wheel to zoom</div>
   <div id="askbox" style="display:none;position:absolute;left:50%;top:12px;
        transform:translateX(-50%);background:var(--panel);border:1px solid var(--acc);
        border-radius:7px;padding:8px 10px;z-index:20;box-shadow:0 4px 18px rgba(30,40,60,.2)">
@@ -487,7 +488,7 @@ function renderInspector() {
       '<div style="color:var(--mut);margin-top:4px">' + d.instances.length +
       ' instances · ' + (d.nets||[]).length + ' nets · ' +
       (d.ports||[]).length + ' ports</div>' +
-      '<h3 style="font-size:11px;text-transform:uppercase;color:var(--mut);margin-top:14px">Instances</h3>' +
+      '<h3 style="margin-top:14px">Instances</h3>' +
       d.instances.map(i => '<div class="blk" onclick="pick(\\''+i.id+'\\')">' +
         '<b>'+i.id+'</b><span>'+i.block+'</span></div>').join('');
     return;
@@ -677,7 +678,7 @@ function showSim(res) {
       (waves[n][0] !== undefined ? waves[n][0].toPrecision(4) : '—') + '</td></tr>';
   html += '</table>';
   if ((d.sweep || []).length > 1) {
-    html += '<h3 style="font-size:11px;text-transform:uppercase;color:var(--mut);margin-top:12px">transient</h3>';
+    html += '<h3>transient</h3>';
     for (const n of names) html += sparkline(n, d.sweep, waves[n]);
   }
   html += '<details style="margin-top:10px"><summary>log</summary><pre>' +

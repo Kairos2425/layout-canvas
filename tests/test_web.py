@@ -1,6 +1,5 @@
 """Tests for the local web review canvas API layer."""
 
-import json
 
 import layout_canvas.blocks.sky130  # noqa: F401  populate block registry
 from layout_canvas.web.app import _api
@@ -24,8 +23,8 @@ def test_preview_returns_svg():
 
 def test_preview_renders_real_geometry():
     """The preview draws per-layer polygons, not just port markers."""
-    from layout_canvas.compiler.render import render_svg
     from layout_canvas.blocks import base
+    from layout_canvas.compiler.render import render_svg
 
     comp = base.get("sky130.diff_pair").component()
     res = render_svg(comp)
@@ -116,7 +115,8 @@ def test_session_lifecycle_and_edit():
         # Stale revision is rejected, not silently overwritten.
         res = _api(
             "session/edit",
-            {"edits": [{"op": "set_placement", "instance": "dp", "x": 0.0}], "expected_revision": 0},
+            {"edits": [{"op": "set_placement", "instance": "dp", "x": 0.0}],
+             "expected_revision": 0},
         )
         assert res["status"] == "rejected"
         assert res["diagnostics"][0]["code"] == "revision-conflict"
@@ -167,7 +167,6 @@ def test_testbench_action():
 
 def test_import_gds_size_limit_and_oas(tmp_path):
     import base64
-    import tempfile
 
     import klayout.db as db
 

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 import gdsfactory as gf
+import pytest
 
 from layout_canvas.blocks.base import get
 from layout_canvas.blocks.sky130.guard_ring import build_guard_ring

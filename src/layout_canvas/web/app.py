@@ -54,7 +54,7 @@ def _instance_bboxes(design: Design, comp: Any) -> dict[str, list[float]]:
     pairing is stable.
     """
     boxes: dict[str, list[float]] = {}
-    for inst, ref in zip(design.instances, comp.insts):
+    for inst, ref in zip(design.instances, comp.insts, strict=False):
         bb = ref.bbox()
         boxes[inst.id] = [float(bb.left), float(bb.bottom), float(bb.right), float(bb.top)]
     return boxes
@@ -64,7 +64,7 @@ def _instance_pins(design: Design, comp: Any) -> dict[str, dict[str, list[float]
     """Instance pin coordinates in top-cell space — the click targets for the
     wiring gesture. {inst_id: {pin_name: [x, y]}}."""
     pins: dict[str, dict[str, list[float]]] = {}
-    for inst, ref in zip(design.instances, comp.insts):
+    for inst, ref in zip(design.instances, comp.insts, strict=False):
         inst_pins: dict[str, list[float]] = {}
         try:
             for p in ref.ports:
@@ -82,7 +82,8 @@ def _session_api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     if action == "open":
         raw = payload.get("ir_json")
         try:
-            design = Design.model_validate_json(raw) if isinstance(raw, str) else Design.model_validate(raw)
+            design = (Design.model_validate_json(raw) if isinstance(raw, str)
+                      else Design.model_validate(raw))
         except Exception as exc:
             return {"status": "error", "error": f"invalid IR: {exc}"}
         _SESSION = DesignSession(design)
@@ -241,7 +242,8 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         return _import_netlist_api(payload)
     raw = payload.get("ir_json")
     try:
-        design = Design.model_validate_json(raw) if isinstance(raw, str) else Design.model_validate(raw)
+        design = (Design.model_validate_json(raw) if isinstance(raw, str)
+                  else Design.model_validate(raw))
     except Exception as exc:
         return {"status": "error", "error": f"invalid IR: {exc}"}
     try:
@@ -310,6 +312,7 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             return {"status": "ok", "data": cell_abstract(design, comp)}
         if action == "drc":
             import tempfile
+
             from layout_canvas.tools.drc import run_drc
             gds = Path(tempfile.mkdtemp()) / f"{design.name}.gds"
             comp.write_gds(str(gds))
@@ -334,6 +337,7 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             return {"status": "ok", "data": res}
         if action == "virtuoso":
             import tempfile
+
             from layout_canvas.compiler.virtuoso import export_skill, export_spectre
 
             gds = Path(tempfile.mkdtemp()) / f"{design.name}.gds"
@@ -385,8 +389,8 @@ class _Handler(BaseHTTPRequestHandler):
             blocks = [b.spec.model_dump() for b in base.all_blocks().values()]
             self._send(200, json.dumps(blocks).encode(), "application/json")
         elif self.path == "/api/pdks":
-            from layout_canvas.pdk import all_pdks
             import layout_canvas.blocks.generic as _gen
+            from layout_canvas.pdk import all_pdks
 
             pdks = [
                 {
@@ -450,8 +454,8 @@ self.addEventListener("fetch", (e) => {
 
 
 def run(host: str = "127.0.0.1", port: int = 8080) -> None:
-    import layout_canvas.blocks.sky130  # noqa: F401  populate block registry
     import layout_canvas.blocks.generic  # noqa: F401  external gen_* blocks
+    import layout_canvas.blocks.sky130  # noqa: F401  populate block registry
     try:
         import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
     except Exception:

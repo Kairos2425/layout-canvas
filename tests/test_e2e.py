@@ -7,9 +7,9 @@ from pathlib import Path
 
 from layout_canvas.compiler.compile import compile_design
 from layout_canvas.compiler.netlist import export_spice
+from layout_canvas.ir.model import Design
 from layout_canvas.tools.drc import run_klayout_drc
 from layout_canvas.tools.lvs import run_lvs
-from layout_canvas.ir.model import Design
 
 
 def test_example_generates_artifacts_and_fail_closed_verification(tmp_path: Path) -> None:
@@ -25,7 +25,8 @@ def test_example_generates_artifacts_and_fail_closed_verification(tmp_path: Path
     export_spice(design, spice_path)
 
     assert gds_path.is_file() and gds_path.stat().st_size > 0
-    assert spice_path.is_file() and ".subckt simple_diffamp" in spice_path.read_text(encoding="utf-8")
+    assert spice_path.is_file()
+    assert ".subckt simple_diffamp" in spice_path.read_text(encoding="utf-8")
 
     drc = run_klayout_drc(gds_path)
     lvs = run_lvs(layout_path=gds_path, schematic_path=spice_path)

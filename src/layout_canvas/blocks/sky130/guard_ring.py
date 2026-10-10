@@ -6,8 +6,6 @@ biasing with DRC-clean TAP, DIFF, LICON, LI, and MET1 enclosures.
 
 from __future__ import annotations
 
-from typing import Any
-
 import gdsfactory as gf
 
 from layout_canvas.blocks.base import get, register
@@ -71,7 +69,8 @@ def register_guard_ring() -> None:
                 type="str",
                 default="ptap",
                 choices=["ptap", "ntap"],
-                description="Substrate tap type: 'ptap' (P+ substrate tap) or 'ntap' (N+ N-well tap)",
+                description="Substrate tap type: 'ptap' (P+ substrate tap) "
+                            "or 'ntap' (N+ N-well tap)",
             ),
         ],
         ports=[
@@ -108,9 +107,6 @@ def register_guard_ring() -> None:
         x_outer_max = x_inner_max + rw
         y_outer_min = y_inner_min - rw
         y_outer_max = y_inner_max + rw
-
-        total_w = x_outer_max - x_outer_min
-        total_h = y_outer_max - y_outer_min
 
         # 4 Rectangular Segments (Bottom, Top, Left, Right) forming a closed loop
         # Bottom segment
@@ -172,8 +168,6 @@ def register_guard_ring() -> None:
         # Regular contact array (LICON + MCON) along each segment
         contact_size = 0.17
         contact_pitch = 0.36
-        inset = (rw - contact_size) / 2
-
         def place_contacts_h(x0: float, x1: float, y_center: float) -> None:
             curr_x = x0 + contact_pitch / 2
             while curr_x + contact_size <= x1:

@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import sys
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
@@ -37,7 +36,8 @@ PROTOCOL_VERSION = "2024-11-05"
 
 
 class LayoutCanvasMCPServer:
-    """Standard MCP server supporting Block IR compilation, block generators, and KLayout GUI interaction."""
+    """Standard MCP server supporting Block IR compilation, block generators,
+    and KLayout GUI interaction."""
 
     def __init__(self, bridge_client: BridgeClient | None = None):
         self.bridge_client = bridge_client or BridgeClient()
@@ -48,30 +48,36 @@ class LayoutCanvasMCPServer:
         return [
             {
                 "name": "list_blocks",
-                "description": "List all available parametric analog/mixed-signal blocks with their specifications, parameters, ports, and PDKs.",
+                "description": "List all available parametric analog/mixed-signal blocks with "
+                               "their specifications, parameters, ports, and PDKs.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "pdk": {
                             "type": "string",
-                            "description": "Filter blocks by PDK name (e.g. 'sky130'). If omitted, returns all blocks.",
+                            "description": "Filter blocks by PDK name (e.g. 'sky130'). If "
+                                           "omitted, returns all blocks.",
                         }
                     },
                 },
             },
             {
                 "name": "generate_block",
-                "description": "Generate a standalone layout for a parametric block (e.g., diff_pair, current_mirror, ota_5t, strongarm, cap_array) and save as GDS or OASIS.",
+                "description": "Generate a standalone layout for a parametric block (e.g., "
+                               "diff_pair, current_mirror, ota_5t, strongarm, cap_array) and save "
+                               "as GDS or OASIS.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "name": {
                             "type": "string",
-                            "description": "Full name of the block (e.g. 'sky130.diff_pair', 'sky130.ota_5t')",
+                            "description": "Full name of the block (e.g. 'sky130.diff_pair', "
+                                           "'sky130.ota_5t')",
                         },
                         "params": {
                             "type": "object",
-                            "description": "Key-value dictionary of block parameters (e.g. {'width': 2.0, 'length': 0.5, 'fingers': 4})",
+                            "description": "Key-value dictionary of block parameters (e.g. "
+                                           "{'width': 2.0, 'length': 0.5, 'fingers': 4})",
                         },
                         "format": {
                             "type": "string",
@@ -81,7 +87,8 @@ class LayoutCanvasMCPServer:
                         },
                         "output_path": {
                             "type": "string",
-                            "description": "Optional output file path. If omitted, saves to a temporary file.",
+                            "description": "Optional output file path. If omitted, saves to a "
+                                           "temporary file.",
                         },
                     },
                     "required": ["name"],
@@ -89,17 +96,21 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "compile_ir",
-                "description": "Compile a Block IR JSON document (declarative layout specification) into a complete multi-instance routed GDS/OASIS layout.",
+                "description": "Compile a Block IR JSON document (declarative layout "
+                               "specification) into a complete multi-instance routed GDS/OASIS "
+                               "layout.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "ir_json": {
                             "type": ["string", "object"],
-                            "description": "Block IR design content as either a JSON string or a JSON object dict.",
+                            "description": "Block IR design content as either a JSON string or a "
+                                           "JSON object dict.",
                         },
                         "output_path": {
                             "type": "string",
-                            "description": "Destination path for the compiled GDS/OASIS layout file.",
+                            "description": "Destination path for the compiled GDS/OASIS layout "
+                                           "file.",
                         },
                     },
                     "required": ["ir_json", "output_path"],
@@ -107,7 +118,10 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "run_drc",
-                "description": "Run Design Rule Checking on a layout file. Engine 'pya' runs an in-process KLayout geometry-check subset (no external binary needed); engine 'klayout' runs a full foundry .drc deck via the KLayout executable.",
+                "description": "Run Design Rule Checking on a layout file. Engine 'pya' runs an "
+                               "in-process KLayout geometry-check subset (no external binary "
+                               "needed); engine 'klayout' runs a full foundry .drc deck via the "
+                               "KLayout executable.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -117,41 +131,53 @@ class LayoutCanvasMCPServer:
                         },
                         "deck_path": {
                             "type": "string",
-                            "description": "Optional path to custom DRC deck file (requires engine 'klayout').",
+                            "description": "Optional path to custom DRC deck file (requires "
+                                           "engine 'klayout').",
                         },
                         "tech": {"type": "string", "default": "sky130"},
-                        "engine": {"type": "string", "enum": ["auto", "pya", "klayout"], "default": "auto"},
+                        "engine": {"type": "string", "enum": ["auto", "pya", "klayout"],
+                                   "default": "auto"},
                     },
                     "required": ["gds_path"],
                 },
             },
             {
                 "name": "extract_netlist",
-                "description": "Extract a device-level SPICE netlist from a GDS layout using the in-process KLayout engine (LayoutToNetlist). Reports real extraction: device count, named nets, hierarchy, and extraction errors.",
+                "description": "Extract a device-level SPICE netlist from a GDS layout using the "
+                               "in-process KLayout engine (LayoutToNetlist). Reports real "
+                               "extraction: device count, named nets, hierarchy, and extraction "
+                               "errors.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "gds_path": {"type": "string", "description": "Path to the GDS layout file."},
+                        "gds_path": {"type": "string",
+                                     "description": "Path to the GDS layout file."},
                         "tech": {"type": "string", "enum": sorted(all_pdks()), "default": "sky130",
-                                 "description": "PDK name — built-ins plus descriptor PDKs from LAYOUT_CANVAS_PDK_DIR/LAYOUT_CANVAS_PDKS."},
-                        "output_path": {"type": "string", "description": "Optional path to write the extracted SPICE."},
+                                 "description": "PDK name — built-ins plus descriptor PDKs "
+                                                "from LAYOUT_CANVAS_PDK_DIR/LAYOUT_CANVAS_PDKS."},
+                        "output_path": {"type": "string",
+                                        "description": "Optional path to write the "
+                                                       "extracted SPICE."},
                     },
                     "required": ["gds_path"],
                 },
             },
             {
                 "name": "generate_netlist",
-                "description": "Generate a golden SPICE/CDL netlist from a Block IR JSON specification for LVS verification.",
+                "description": "Generate a golden SPICE/CDL netlist from a Block IR JSON "
+                               "specification for LVS verification.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "ir_json": {
                             "type": ["string", "object"],
-                            "description": "Block IR design content as either a JSON string or a JSON object dict.",
+                            "description": "Block IR design content as either a JSON string or a "
+                                           "JSON object dict.",
                         },
                         "output_path": {
                             "type": "string",
-                            "description": "Optional destination path for the generated SPICE netlist.",
+                            "description": "Optional destination path for the generated SPICE "
+                                           "netlist.",
                         },
                     },
                     "required": ["ir_json"],
@@ -159,7 +185,8 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "run_lvs",
-                "description": "Run Layout vs Schematic (LVS) verification comparing layout against SPICE netlist.",
+                "description": "Run Layout vs Schematic (LVS) verification comparing layout "
+                               "against SPICE netlist.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -171,32 +198,44 @@ class LayoutCanvasMCPServer:
                             "type": "string",
                             "description": "Path to golden schematic SPICE netlist.",
                         },
-                        "cell_name": {"type": "string", "description": "Top cell name (defaults to layout filename stem)."},
+                        "cell_name": {"type": "string",
+                                      "description": "Top cell name (defaults to layout "
+                                                     "filename stem)."},
                         "setup_path": {"type": "string", "description": "Netgen setup Tcl file."},
                         "tech": {"type": "string", "default": "sky130"},
-                        "engine": {"type": "string", "enum": ["auto", "netgen", "pya"], "default": "auto",
-                                   "description": "'pya' runs in-process KLayout extraction + NetlistComparer; 'netgen' uses the external binary."},
+                        "engine": {"type": "string", "enum": ["auto", "netgen", "pya"],
+                                   "default": "auto",
+                                   "description": "'pya' runs in-process KLayout extraction + "
+                                                  "NetlistComparer; 'netgen' uses the external "
+                                                  "binary."},
                     },
                     "required": ["layout_path", "schematic_path"],
                 },
             },
             {
                 "name": "verify_design",
-                "description": "One-shot physical verification of a design or session: compiles to GDS, extracts devices, runs DRC, and LVS-compares against the design's own reference netlist. Returns extract/drc/lvs sections plus an overall 'passed' flag. Fail-closed: unavailable engines report as such, never as a pass.",
+                "description": "One-shot physical verification of a design or session: compiles "
+                               "to GDS, extracts devices, runs DRC, and LVS-compares against the "
+                               "design's own reference netlist. Returns extract/drc/lvs sections "
+                               "plus an overall 'passed' flag. Fail-closed: unavailable engines "
+                               "report as such, never as a pass.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "session_id": {"type": "string", "description": "Open session to verify."},
                         "ir_json": {
                             "type": ["string", "object"],
-                            "description": "Block IR design content (JSON string or object) when no session is used.",
+                            "description": "Block IR design content (JSON string or object) when "
+                                           "no session is used.",
                         },
                     },
                 },
             },
             {
                 "name": "get_active_layout_info",
-                "description": "Query the currently open active layout inside the running KLayout GUI instance (active cell, cell hierarchy, bounding box, layer count).",
+                "description": "Query the currently open active layout inside the running KLayout "
+                               "GUI instance (active cell, cell hierarchy, bounding box, layer "
+                               "count).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -204,7 +243,8 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "render_preview_svg",
-                "description": "Render a Block IR or parametric block into an SVG string for visual layout inspection and multimodal AI agent preview.",
+                "description": "Render a Block IR or parametric block into an SVG string for "
+                               "visual layout inspection and multimodal AI agent preview.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -214,7 +254,8 @@ class LayoutCanvasMCPServer:
                         },
                         "block_name": {
                             "type": "string",
-                            "description": "Optional block name to render directly (e.g. 'sky130.guard_ring')",
+                            "description": "Optional block name to render directly (e.g. "
+                                           "'sky130.guard_ring')",
                         },
                         "params": {
                             "type": "object",
@@ -225,7 +266,8 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "insert_block_into_layout",
-                "description": "Instantiate and place a parametric block directly into the currently active layout inside the running KLayout GUI instance.",
+                "description": "Instantiate and place a parametric block directly into the "
+                               "currently active layout inside the running KLayout GUI instance.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -263,7 +305,8 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "open_design",
-                "description": "Open a Block IR design into a transactional editing session. Returns a session_id and revision used by snapshot/transact/undo.",
+                "description": "Open a Block IR design into a transactional editing session. "
+                               "Returns a session_id and revision used by snapshot/transact/undo.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -280,7 +323,8 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "snapshot",
-                "description": "Read the complete current design state and revision of a session — the agent's ground truth before editing.",
+                "description": "Read the complete current design state and revision of a session "
+                               "— the agent's ground truth before editing.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -291,7 +335,11 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "transact",
-                "description": "Apply typed edits to a session's design atomically. Carries an expected_revision optimistic lock; use dry_run to validate without committing. Ops: set_placement, set_params, add_instance, remove_instance, add_net, remove_net, set_net_pins, add_port, remove_port, add_constraint, remove_constraint, set_meta.",
+                "description": "Apply typed edits to a session's design atomically. Carries an "
+                               "expected_revision optimistic lock; use dry_run to validate "
+                               "without committing. Ops: set_placement, set_params, add_instance, "
+                               "remove_instance, add_net, remove_net, set_net_pins, add_port, "
+                               "remove_port, add_constraint, remove_constraint, set_meta.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -303,12 +351,14 @@ class LayoutCanvasMCPServer:
                         },
                         "expected_revision": {
                             "type": "integer",
-                            "description": "Optimistic lock: reject if the session revision has moved on.",
+                            "description": "Optimistic lock: reject if the session revision has "
+                                           "moved on.",
                         },
                         "dry_run": {
                             "type": "boolean",
                             "default": False,
-                            "description": "Validate and return the resulting design without committing.",
+                            "description": "Validate and return the resulting design without "
+                                           "committing.",
                         },
                     },
                     "required": ["session_id", "edits"],
@@ -327,7 +377,9 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "inspect_connectivity",
-                "description": "Read electrical facts — pin-to-net resolution, unconnected pins, degenerate nets — before submitting edits. Accepts a session_id or an ad-hoc ir_json.",
+                "description": "Read electrical facts — pin-to-net resolution, unconnected pins, "
+                               "degenerate nets — before submitting edits. Accepts a session_id "
+                               "or an ad-hoc ir_json.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -352,7 +404,8 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "compile_session",
-                "description": "Compile a session's current design to a GDS/OASIS file at output_path.",
+                "description": "Compile a session's current design to a GDS/OASIS file at "
+                               "output_path.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -364,7 +417,8 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "export_abstract",
-                "description": "Export the hierarchical cell abstract (bbox, pin positions, per-layer polygon counts) of a session design or ad-hoc ir_json.",
+                "description": "Export the hierarchical cell abstract (bbox, pin positions, "
+                               "per-layer polygon counts) of a session design or ad-hoc ir_json.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -375,7 +429,10 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "export_virtuoso",
-                "description": "Export a session design or ad-hoc ir_json for Cadence Virtuoso: a SKILL replay script that rebuilds the layout hierarchy in OA (dbCreateRect/Polygon/Label/Inst) plus a Spectre .scs design netlist.",
+                "description": "Export a session design or ad-hoc ir_json for Cadence Virtuoso: a "
+                               "SKILL replay script that rebuilds the layout hierarchy in OA "
+                               "(dbCreateRect/Polygon/Label/Inst) plus a Spectre .scs design "
+                               "netlist.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -384,15 +441,22 @@ class LayoutCanvasMCPServer:
                         "library": {"type": "string", "default": "canvas_lib",
                                     "description": "Target OA library name in Virtuoso."},
                         "tech_lib": {"type": "string",
-                                     "description": "OA tech library the replay attaches to so LPP names resolve (default: LAYOUT_CANVAS_VIRTUOSO_TECHLIB env or per-PDK default)."},
+                                     "description": "OA tech library the replay attaches to "
+                                                    "so LPP names resolve (default: "
+                                                    "LAYOUT_CANVAS_VIRTUOSO_TECHLIB env or "
+                                                    "per-PDK default)."},
                         "output_dir": {"type": "string",
-                                       "description": "Optional dir to write cell.il and design.scs."},
+                                       "description": "Optional dir to write cell.il "
+                                                      "and design.scs."},
                     },
                 },
             },
             {
                 "name": "run_simulation",
-                "description": "Simulate a design with ngspice (fail-closed). Provide session_id or ir_json plus 'stimulus' (sources, top X instantiation, analyses) and optional 'includes' model decks. Blocks without transistor-level emitters cause a named refusal.",
+                "description": "Simulate a design with ngspice (fail-closed). Provide session_id "
+                               "or ir_json plus 'stimulus' (sources, top X instantiation, "
+                               "analyses) and optional 'includes' model decks. Blocks without "
+                               "transistor-level emitters cause a named refusal.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -400,43 +464,59 @@ class LayoutCanvasMCPServer:
                         "ir_json": {"type": ["string", "object"]},
                         "stimulus": {
                             "type": "string",
-                            "description": "SPICE lines appended after the compiled netlist: sources, X top instance, .op/.tran/.ac etc.",
+                            "description": "SPICE lines appended after the compiled netlist: "
+                                           "sources, X top instance, .op/.tran/.ac etc.",
                         },
                         "includes": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Model deck paths to .include (e.g. sky130 device models).",
+                            "description": "Model deck paths to .include (e.g. sky130 device "
+                                           "models).",
                         },
                         "deck": {
                             "type": "string",
-                            "description": "Run a complete caller-provided SPICE deck verbatim instead of compiling a design.",
+                            "description": "Run a complete caller-provided SPICE deck verbatim "
+                                           "instead of compiling a design.",
                         },
                         "source": {
                             "type": "string",
                             "enum": ["schematic", "extracted"],
-                            "description": "'extracted' runs post-layout simulation: compile -> GDS -> KLayout extract -> foundry models. Default is the golden netlist.",
+                            "description": "'extracted' runs post-layout simulation: compile -> "
+                                           "GDS -> KLayout extract -> foundry models. Default is "
+                                           "the golden netlist.",
                         },
                         "probes": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Extra nets to record for source=extracted — block pin names resolve hierarchically (e.g. 'tail' -> xd1.tail).",
+                            "description": "Extra nets to record for source=extracted — block pin "
+                                           "names resolve hierarchically (e.g. 'tail' -> "
+                                           "xd1.tail).",
                         },
                         "analysis": {
                             "type": "string",
                             "enum": ["op", "tran", "ac", "dc"],
-                            "description": "Analysis for source=extracted decks (auto-bias path); 'ac'/'dc' add a sweep drive on an input port.",
+                            "description": "Analysis for source=extracted decks (auto-bias path); "
+                                           "'ac'/'dc' add a sweep drive on an input port.",
                         },
                         "simulator": {
                             "type": "string",
                             "default": "auto",
-                            "description": "Backend: auto | ngspice | xyce | ltspice | spectre | hspice | eldo. 'auto' picks the first probed-available simulator.",
+                            "description": "Backend: auto | ngspice | xyce | ltspice | spectre | "
+                                           "hspice | eldo. 'auto' picks the first "
+                                           "probed-available simulator.",
                         },
                     },
                 },
             },
             {
                 "name": "optimize",
-                "description": "Optimize a session design. objective='placement' (default) tightens placement margins toward an aspect ratio; objective='specs' runs coordinate descent over bounded numeric block params scored by testbench spec pass count (needs design.testbenches plus a simulator — ngspice — or every candidate reports unavailable). Each candidate is committed through transact (revisioned, undoable).",
+                "description": "Optimize a session design. objective='placement' (default) "
+                               "tightens placement margins toward an aspect ratio; "
+                               "objective='specs' runs coordinate descent over bounded numeric "
+                               "block params scored by testbench spec pass count (needs "
+                               "design.testbenches plus a simulator — ngspice — or every "
+                               "candidate reports unavailable). Each candidate is committed "
+                               "through transact (revisioned, undoable).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -445,11 +525,14 @@ class LayoutCanvasMCPServer:
                             "type": "string",
                             "enum": ["placement", "specs"],
                             "default": "placement",
-                            "description": "'placement' = PPA margin tightening; 'specs' = spec-pass-count coordinate descent (requires testbenches on the design).",
+                            "description": "'placement' = PPA margin tightening; 'specs' = "
+                                           "spec-pass-count coordinate descent (requires "
+                                           "testbenches on the design).",
                         },
                         "testbench": {
                             "type": "string",
-                            "description": "objective='specs' only: restrict scoring to this testbench name; omitted = all design testbenches.",
+                            "description": "objective='specs' only: restrict scoring to this "
+                                           "testbench name; omitted = all design testbenches.",
                         },
                         "target_aspect_ratio": {"type": "number", "default": 1.0},
                         "min_clearance": {"type": "number", "default": 0.5},
@@ -463,7 +546,9 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "register_cell",
-                "description": "Register a compiled design as a reusable cell block under 'alias'. Afterwards parent IR may instantiate it via block='<alias>'. Source: session_id or a .lcproj/IR file path.",
+                "description": "Register a compiled design as a reusable cell block under "
+                               "'alias'. Afterwards parent IR may instantiate it via "
+                               "block='<alias>'. Source: session_id or a .lcproj/IR file path.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -479,7 +564,11 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "import_gds",
-                "description": "Import a Virtuoso stream-out GDS as an instantiable cell block registered under 'alias'. Pins are discovered from pin-layer labels (the GDS must carry pin labels, e.g. met*/pn texts). spice_path is optional — without it the cell is layout-only and simulation/LVS stay fail-closed.",
+                "description": "Import a Virtuoso stream-out GDS as an instantiable cell block "
+                               "registered under 'alias'. Pins are discovered from pin-layer "
+                               "labels (the GDS must carry pin labels, e.g. met*/pn texts). "
+                               "spice_path is optional — without it the cell is layout-only and "
+                               "simulation/LVS stay fail-closed.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -494,15 +583,19 @@ class LayoutCanvasMCPServer:
                         "pdk": {
                             "type": "string",
                             "default": "sky130",
-                            "description": "PDK name used to resolve pin-label layers (e.g. 'sky130', 'ihp_sg13g2').",
+                            "description": "PDK name used to resolve pin-label layers (e.g. "
+                                           "'sky130', 'ihp_sg13g2').",
                         },
                         "cell_name": {
                             "type": "string",
-                            "description": "Top cell to import; required when the GDS has multiple top cells.",
+                            "description": "Top cell to import; required when the GDS has "
+                                           "multiple top cells.",
                         },
                         "spice_path": {
                             "type": "string",
-                            "description": "Optional SPICE netlist containing '.subckt <cell_name>' with matching pin count; enables simulation/LVS.",
+                            "description": "Optional SPICE netlist containing '.subckt "
+                                           "<cell_name>' with matching pin count; enables "
+                                           "simulation/LVS.",
                         },
                     },
                     "required": ["alias", "path"],
@@ -510,7 +603,14 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "import_netlist",
-                "description": "Import an upstream SPICE/Spectre netlist (e.g. an analog-canvas export) into a Block IR draft. Each instantiated subckt is matched to a parametric block by name + pin-name signature; unmappable instances are named in 'unresolved' and dropped — never guessed. Pass the returned 'ir' to open_design, then refine params/placement via transact. Provide 'path' or 'text', plus 'pdk' (default sky130) and 'top' when the top subckt is ambiguous.",
+                "description": "Import an upstream SPICE/Spectre netlist (e.g. an analog-canvas "
+                               "export) into a Block IR draft. Each instantiated subckt is "
+                               "matched to a parametric block by name + pin-name signature; "
+                               "unmappable instances are named in 'unresolved' and dropped — "
+                               "never guessed. Pass the returned 'ir' to open_design, then refine "
+                               "params/placement via transact. Provide 'path' or 'text', plus "
+                               "'pdk' (default sky130) and 'top' when the top subckt is "
+                               "ambiguous.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -520,7 +620,8 @@ class LayoutCanvasMCPServer:
                         },
                         "text": {
                             "type": "string",
-                            "description": "Raw netlist text (SPICE .subckt/X or Spectre subckt/instance dialects; auto-detected).",
+                            "description": "Raw netlist text (SPICE .subckt/X or Spectre "
+                                           "subckt/instance dialects; auto-detected).",
                         },
                         "pdk": {
                             "type": "string",
@@ -529,7 +630,8 @@ class LayoutCanvasMCPServer:
                         },
                         "top": {
                             "type": "string",
-                            "description": "Top subckt name; required when several subckts are uninstantiated.",
+                            "description": "Top subckt name; required when several subckts are "
+                                           "uninstantiated.",
                         },
                         "name": {
                             "type": "string",
@@ -540,7 +642,10 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "run_testbench",
-                "description": "Run a structured simulation testbench declared on the design (testbenches[].name). Evaluates each spec and reports per-spec pass/fail/unavailable with reasons. Provide 'name' for one bench, omit it to run all. Source: session_id or ir_json.",
+                "description": "Run a structured simulation testbench declared on the design "
+                               "(testbenches[].name). Evaluates each spec and reports per-spec "
+                               "pass/fail/unavailable with reasons. Provide 'name' for one bench, "
+                               "omit it to run all. Source: session_id or ir_json.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -551,14 +656,16 @@ class LayoutCanvasMCPServer:
                         },
                         "name": {
                             "type": "string",
-                            "description": "Testbench name from design.testbenches; omitted = run all.",
+                            "description": "Testbench name from design.testbenches; omitted = run "
+                                           "all.",
                         },
                     },
                 },
             },
             {
                 "name": "gallery_list",
-                "description": "List gallery entries with optional filters: verified_only (only entries whose publish-time verification passed), pdk, tag.",
+                "description": "List gallery entries with optional filters: verified_only (only "
+                               "entries whose publish-time verification passed), pdk, tag.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -570,7 +677,11 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "gallery_publish",
-                "description": "Publish a design (session_id or ir_json) to the local gallery with a preview, content hash dedup and publish-time DRC/LVS verification record. Sets ai_generated=true by default (agent-published); pass ai_generated=false for human-authored designs. allow_duplicate bypasses the content-hash dedup.",
+                "description": "Publish a design (session_id or ir_json) to the local gallery "
+                               "with a preview, content hash dedup and publish-time DRC/LVS "
+                               "verification record. Sets ai_generated=true by default "
+                               "(agent-published); pass ai_generated=false for human-authored "
+                               "designs. allow_duplicate bypasses the content-hash dedup.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -586,7 +697,9 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "gallery_stats",
-                "description": "Gallery contributor leaderboard: {authors: [{author, count, verified}], total, verified_count} — verified counts entries whose publish-time verification passed.",
+                "description": "Gallery contributor leaderboard: {authors: [{author, count, "
+                               "verified}], total, verified_count} — verified counts entries "
+                               "whose publish-time verification passed.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -594,7 +707,9 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "gallery_get",
-                "description": "Fetch a gallery entry by id — design JSON, meta (author/tags/design_hash/verification) and preview SVG — without opening a session.",
+                "description": "Fetch a gallery entry by id — design JSON, meta "
+                               "(author/tags/design_hash/verification) and preview SVG — without "
+                               "opening a session.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -605,7 +720,8 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "gallery_fork",
-                "description": "Open a gallery entry as a new editing session — returns session_id, revision 0, the design and its meta.",
+                "description": "Open a gallery entry as a new editing session — returns "
+                               "session_id, revision 0, the design and its meta.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -616,7 +732,12 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "probe_environment",
-                "description": "Probe the host for EDA tools: simulators (ngspice/Xyce/LTspice/Spectre/HSPICE/Eldo), DRC (KLayout/Magic/Calibre), LVS (Netgen), plus external PDK descriptors loaded from LAYOUT_CANVAS_PDK_DIR/LAYOUT_CANVAS_PDKS. Returns availability, version, and license gating per tool — all detection, no verdicts.",
+                "description": "Probe the host for EDA tools: simulators "
+                               "(ngspice/Xyce/LTspice/Spectre/HSPICE/Eldo), DRC "
+                               "(KLayout/Magic/Calibre), LVS (Netgen), plus external PDK "
+                               "descriptors loaded from LAYOUT_CANVAS_PDK_DIR/LAYOUT_CANVAS_PDKS. "
+                               "Returns availability, version, and license gating per tool — all "
+                               "detection, no verdicts.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
@@ -636,7 +757,8 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "load_project",
-                "description": "Load a .lcproj.json (or bare Block IR JSON) into a new session. Returns session_id, load status and diagnostics.",
+                "description": "Load a .lcproj.json (or bare Block IR JSON) into a new session. "
+                               "Returns session_id, load status and diagnostics.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -647,7 +769,8 @@ class LayoutCanvasMCPServer:
             },
             {
                 "name": "inspect_ppa",
-                "description": "Extract PPA (Power, Performance, Area, Wirelength) metrics from a Block IR design or generated layout.",
+                "description": "Extract PPA (Power, Performance, Area, Wirelength) metrics from a "
+                               "Block IR design or generated layout.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -708,7 +831,8 @@ class LayoutCanvasMCPServer:
                         "content": [
                             {
                                 "type": "text",
-                                "text": content if isinstance(content, str) else json.dumps(content, indent=2),
+                                "text": (content if isinstance(content, str)
+                                         else json.dumps(content, indent=2)),
                             }
                         ],
                         "isError": False,
@@ -738,7 +862,8 @@ class LayoutCanvasMCPServer:
 
     @staticmethod
     def _parse_design(raw_ir: Any) -> Design:
-        return Design.model_validate_json(raw_ir) if isinstance(raw_ir, str) else Design.model_validate(raw_ir)
+        return (Design.model_validate_json(raw_ir) if isinstance(raw_ir, str)
+                else Design.model_validate(raw_ir))
 
     def execute_tool(self, name: str, args: dict[str, Any]) -> Any:
         """Execute the specified tool logic."""
@@ -822,8 +947,7 @@ class LayoutCanvasMCPServer:
         elif name == "export_virtuoso":
             import tempfile
 
-            from layout_canvas.compiler.virtuoso import (
-                export_skill, export_spectre)
+            from layout_canvas.compiler.virtuoso import export_skill, export_spectre
             if args.get("session_id"):
                 design = self._get_session(args["session_id"]).design
             elif args.get("ir_json") is not None:
@@ -1104,7 +1228,9 @@ class LayoutCanvasMCPServer:
             else:
                 component.write_gds(p)
 
-            bbox = component.bbox() if hasattr(component, "bbox") and callable(component.bbox) else getattr(component, "bbox", None)
+            bbox = (component.bbox()
+                    if hasattr(component, "bbox") and callable(component.bbox)
+                    else getattr(component, "bbox", None))
             if bbox is not None:
                 if hasattr(bbox, "left"):
                     bbox_coords = [bbox.left, bbox.bottom, bbox.right, bbox.top]
@@ -1189,7 +1315,8 @@ class LayoutCanvasMCPServer:
         elif name == "render_preview_svg":
             if "ir_json" in args and args["ir_json"]:
                 raw_ir = args["ir_json"]
-                design = Design.model_validate_json(raw_ir) if isinstance(raw_ir, str) else Design.model_validate(raw_ir)
+                design = (Design.model_validate_json(raw_ir) if isinstance(raw_ir, str)
+                          else Design.model_validate(raw_ir))
                 comp = compile_design(design)
             elif "block_name" in args and args["block_name"]:
                 b_name = args["block_name"]
@@ -1202,7 +1329,8 @@ class LayoutCanvasMCPServer:
 
         elif name == "inspect_ppa":
             raw_ir = args["ir_json"]
-            design = Design.model_validate_json(raw_ir) if isinstance(raw_ir, str) else Design.model_validate(raw_ir)
+            design = (Design.model_validate_json(raw_ir) if isinstance(raw_ir, str)
+                      else Design.model_validate(raw_ir))
             comp = compile_design(design)
             return extract_ppa(comp, design)
 

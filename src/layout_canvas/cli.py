@@ -97,8 +97,8 @@ def main() -> int:
             design = Design.from_json(f.read())
 
         # Auto-import Sky130 blocks to populate registry
-        import layout_canvas.blocks.sky130  # noqa: F401
         import layout_canvas.blocks.generic  # noqa: F401  external gen_* blocks
+        import layout_canvas.blocks.sky130  # noqa: F401
 
         if args.format == "gds":
             export_gds(design, args.output)
@@ -154,8 +154,8 @@ def main() -> int:
         with open(args.input) as f:
             design = Design.from_json(f.read())
 
-        import layout_canvas.blocks.sky130  # noqa: F401
         import layout_canvas.blocks.generic  # noqa: F401
+        import layout_canvas.blocks.sky130  # noqa: F401
         export_spice(design, args.output)
         print(f"Generated SPICE netlist {design.name} → {args.output}", file=sys.stderr)
         return 0
@@ -191,8 +191,8 @@ def main() -> int:
     if args.cmd == "testbench":
         with open(args.input) as f:
             design = Design.from_json(f.read())
-        import layout_canvas.blocks.sky130  # noqa: F401
         import layout_canvas.blocks.generic  # noqa: F401
+        import layout_canvas.blocks.sky130  # noqa: F401
         try:
             import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
         except Exception:
@@ -250,8 +250,8 @@ def _virtuoso_accept(args) -> int:
     with open(args.input) as f:
         design = Design.from_json(f.read())
 
-    import layout_canvas.blocks.sky130  # noqa: F401
     import layout_canvas.blocks.generic  # noqa: F401
+    import layout_canvas.blocks.sky130  # noqa: F401
     try:
         import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
     except Exception:
@@ -329,7 +329,7 @@ def _pdk_template(name: str) -> dict:
     out = pdk.to_dict()
 
     if out.get("extract") is None:
-        from layout_canvas.tools.extract import LEAF_DEVICES, _RECIPES
+        from layout_canvas.tools.extract import _RECIPES, LEAF_DEVICES
 
         recipe = _RECIPES.get(name)
         if recipe is not None:
@@ -442,7 +442,7 @@ def _pdk_check(path: str) -> int:
         "leaf_devices": sorted(leaf),
         "drc_rules": len((pdk.drc or {}).get("rules", {})),
         "drc_enclosures": len((pdk.drc or {}).get("enclosure", [])),
-        "model_libs": sorted((pdk.model_libs or {})),
+        "model_libs": sorted(pdk.model_libs or {}),
         "oa_layers": len(pdk.oa_layers or {}),
         "gen_blocks": blocks,
         "warnings": warnings,

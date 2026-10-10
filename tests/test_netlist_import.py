@@ -2,12 +2,9 @@
 
 import pytest
 
-from layout_canvas.compiler.netlist_import import (
-    detect_dialect, import_netlist)
-from layout_canvas.ir.model import Design
-
 import layout_canvas.blocks  # noqa: F401 — populate registry
-
+from layout_canvas.compiler.netlist_import import detect_dialect, import_netlist
+from layout_canvas.ir.model import Design
 
 SPICE_OTA = """\
 * upstream schematic export (analog-canvas style)

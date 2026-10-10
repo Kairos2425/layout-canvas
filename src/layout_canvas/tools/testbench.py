@@ -73,7 +73,7 @@ def measure_signal(
         if sweep is None or len(sweep) != len(xs):
             raise ValueError("bw_3db needs a sweep axis matching the waveform")
         threshold = xs[0] / math.sqrt(2.0)
-        for x, f in zip(xs, sweep):
+        for x, f in zip(xs, sweep, strict=False):
             if x < threshold:
                 return float(f)
         raise ValueError(

@@ -25,9 +25,10 @@ import os
 import re
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from layout_canvas.blocks import base
 from layout_canvas.compiler.netlist import compile_netlist
@@ -351,7 +352,7 @@ def _ac_waves(names: list[str], waves_raw: dict[str, list[float]]) -> dict[str, 
         if re_xs is None:
             continue
         im_xs = waves_raw.get(f"v{i}i") or [0.0] * len(re_xs)
-        mags = [math.hypot(r, m) for r, m in zip(re_xs, im_xs)]
+        mags = [math.hypot(r, m) for r, m in zip(re_xs, im_xs, strict=False)]
         waves[name] = mags
         waves[f"{name}__db"] = [20.0 * math.log10(max(m, 1e-12)) for m in mags]
     return waves

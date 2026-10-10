@@ -41,7 +41,9 @@ OPS = (
 )
 
 
-def apply_edits(design: Design, edits: list[dict[str, Any]]) -> tuple[Design | None, list[Diagnostic]]:
+def apply_edits(
+        design: Design, edits: list[dict[str, Any]]
+) -> tuple[Design | None, list[Diagnostic]]:
     """Apply ``edits`` to a copy of ``design``. Returns (new_design, []) on
     success or (None, diagnostics) on the first failing edit."""
     candidate = design.model_copy(deep=True)
@@ -87,7 +89,8 @@ def _set_placement(design: Design, edit: dict[str, Any]) -> list[Diagnostic]:
         return [target]
     fields = {k: v for k, v in edit.items() if k in Placement.model_fields}
     if not fields:
-        return [Diagnostic("error", "bad-edit", "set_placement carries no placement fields", target.id)]
+        return [Diagnostic("error", "bad-edit",
+                           "set_placement carries no placement fields", target.id)]
     try:
         merged = {**target.placement.model_dump(), **fields}
         target.placement = Placement.model_validate(merged)
@@ -118,7 +121,8 @@ def _add_instance(design: Design, edit: dict[str, Any]) -> list[Diagnostic]:
     except ValidationError as exc:
         return [Diagnostic("error", "invalid-instance", str(exc))]
     if any(i.id == inst.id for i in design.instances):
-        return [Diagnostic("error", "duplicate-instance", f"instance {inst.id!r} already exists", inst.id)]
+        return [Diagnostic("error", "duplicate-instance",
+                           f"instance {inst.id!r} already exists", inst.id)]
     design.instances.append(inst)
     return []
 
@@ -190,7 +194,8 @@ def _set_net_pins(design: Design, edit: dict[str, Any]) -> list[Diagnostic]:
         return [target]
     pins = edit.get("pins")
     if not isinstance(pins, list) or not all(isinstance(p, str) for p in pins) or not pins:
-        return [Diagnostic("error", "bad-edit", "'pins' must be a non-empty string list", target.name)]
+        return [Diagnostic("error", "bad-edit",
+                           "'pins' must be a non-empty string list", target.name)]
     target.pins = list(pins)
     return []
 
@@ -204,7 +209,8 @@ def _add_port(design: Design, edit: dict[str, Any]) -> list[Diagnostic]:
     except ValidationError as exc:
         return [Diagnostic("error", "invalid-port", str(exc))]
     if any(p.name == port.name for p in design.ports):
-        return [Diagnostic("error", "duplicate-port", f"port {port.name!r} already exists", port.name)]
+        return [Diagnostic("error", "duplicate-port",
+                           f"port {port.name!r} already exists", port.name)]
     design.ports.append(port)
     return []
 

@@ -10,7 +10,8 @@ import json
 import logging
 import socket
 import threading
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger("layout_canvas.mcp.bridge")
 
@@ -21,7 +22,8 @@ DEFAULT_BRIDGE_PORT = 9099
 class BridgeClient:
     """Client for connecting from MCP server to KLayout plugin TCP listener."""
 
-    def __init__(self, host: str = DEFAULT_BRIDGE_HOST, port: int = DEFAULT_BRIDGE_PORT, timeout: float = 10.0):
+    def __init__(self, host: str = DEFAULT_BRIDGE_HOST,
+                 port: int = DEFAULT_BRIDGE_PORT, timeout: float = 10.0):
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -54,7 +56,9 @@ class BridgeClient:
             line = buffer.decode("utf-8").strip()
             return json.loads(line)
         except ConnectionRefusedError:
-            return {"error": {"code": -32000, "message": f"KLayout bridge not reachable at {self.host}:{self.port}. Ensure KLayout is running with Block Canvas plugin enabled."}}
+            return {"error": {"code": -32000, "message":
+                              f"KLayout bridge not reachable at {self.host}:{self.port}. "
+                              "Ensure KLayout is running with Block Canvas plugin enabled."}}
         except Exception as e:
             return {"error": {"code": -32603, "message": f"Bridge communication error: {e}"}}
         finally:
@@ -67,7 +71,9 @@ class BridgeClient:
 class KLayoutBridgeServer:
     """TCP Server that runs inside KLayout Python macro environment."""
 
-    def __init__(self, host: str = DEFAULT_BRIDGE_HOST, port: int = DEFAULT_BRIDGE_PORT, handler: Callable[[str, dict[str, Any]], Any] | None = None):
+    def __init__(self, host: str = DEFAULT_BRIDGE_HOST,
+                 port: int = DEFAULT_BRIDGE_PORT,
+                 handler: Callable[[str, dict[str, Any]], Any] | None = None):
         self.host = host
         self.port = port
         self.handler = handler
@@ -85,7 +91,8 @@ class KLayoutBridgeServer:
             self._server_sock.listen(5)
             self._server_sock.settimeout(1.0)
             self._running = True
-            self._thread = threading.Thread(target=self._serve, daemon=True, name="KLayoutBridgeServer")
+            self._thread = threading.Thread(
+                target=self._serve, daemon=True, name="KLayoutBridgeServer")
             self._thread.start()
             logger.info("KLayout Bridge Server listening on %s:%d", self.host, self.port)
             return True
@@ -115,7 +122,7 @@ class KLayoutBridgeServer:
                 if self._server_sock is None:
                     break
                 conn, _ = self._server_sock.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except Exception:
                 break
@@ -139,7 +146,8 @@ class KLayoutBridgeServer:
                 response = self._process_request(line)
                 conn.sendall(json.dumps(response).encode("utf-8") + b"\n")
             except Exception as e:
-                err_resp = {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": str(e)}}
+                err_resp = {"jsonrpc": "2.0", "id": None,
+                            "error": {"code": -32603, "message": str(e)}}
                 try:
                     conn.sendall(json.dumps(err_resp).encode("utf-8") + b"\n")
                 except Exception:
@@ -169,4 +177,5 @@ class KLayoutBridgeServer:
                 return {"jsonrpc": "2.0", "id": req_id, "error": result["error"]}
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
         except Exception as e:
-            return {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": f"Parse error: {e}"}}
+            return {"jsonrpc": "2.0", "id": None,
+                    "error": {"code": -32700, "message": f"Parse error: {e}"}}

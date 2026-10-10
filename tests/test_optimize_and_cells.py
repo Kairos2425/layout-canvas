@@ -1,6 +1,5 @@
 """Tests for session-aware optimizer and reusable cell blocks."""
 
-import gdsfactory as gf
 import pytest
 
 import layout_canvas.blocks.sky130  # noqa: F401
@@ -162,10 +161,7 @@ class TestSpecObjectiveOptimizer:
 def test_optimize_specs_real_ngspice(tmp_path):
     """Sabotaged spec on the lab: the optimizer must really tune params."""
     import json
-    import os
-    import shutil
 
-    ngspice = os.environ.get("LAYOUT_CANVAS_NGSPICE") or shutil.which("ngspice")
     payload = json.loads(_LAB.read_text())
     # keep only the schematic bench (cheap) and make outp unreachable
     payload["testbenches"] = [

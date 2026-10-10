@@ -95,6 +95,7 @@ def test_pya_lvs_self_match(tmp_path: Path):
     """Round-tripped extracted netlist vs itself must match — this validates
     the whole extract -> SPICE -> compare path end to end."""
     import klayout.db as db
+
     from layout_canvas.tools.extract import extract_netlist
 
     gds = _gds(_mirror_design(), tmp_path)

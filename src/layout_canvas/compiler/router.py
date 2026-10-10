@@ -6,7 +6,6 @@ and symmetric differential pair routing with optional shielding.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 import gdsfactory as gf
@@ -14,7 +13,6 @@ import gdsfactory as gf
 from layout_canvas.blocks.sky130 import layers
 from layout_canvas.blocks.sky130.geom import rect, snap
 from layout_canvas.ir.model import ConstraintType, Design
-
 
 # Contact stacks per (pdk, tap layer): ordered bottom-up to reach the first
 # routing metal. A pin whose declared layer is already the routing metal gets
@@ -233,9 +231,9 @@ def add_pin_accesses(
                          tx + half, ty + half)
             # contact stack at the tap point
             for lname, size in (stack or []):
-                l = pdk_desc.layer(lname)
+                lay = pdk_desc.layer(lname)
                 half = size / 2
-                rect(top, l, tx - half, ty - half, tx + half, ty + half)
+                rect(top, lay, tx - half, ty - half, tx + half, ty + half)
             # stub run between tap and port on the DECLARED (routing)
             # layer: the stack's top contact already lands the tap on that
             # layer, and running the stub on li1 through the active area
@@ -281,7 +279,8 @@ def route_design_nets(top: gf.Component, design: Design, inst_refs: dict[str, An
         obj_a = next((n for n in design.nets if n.name == net_a), None)
         obj_b = next((n for n in design.nets if n.name == net_b), None)
         if obj_a and obj_b:
-            _route_differential_pair(top, obj_a, obj_b, inst_refs)
+            route_differential_pair(top, net_p=obj_a, net_n=obj_b,
+                                    inst_refs=inst_refs)
             routed_nets.add(net_a)
             routed_nets.add(net_b)
 
@@ -316,14 +315,16 @@ def _get_pin_coords(pin_str: str, inst_refs: dict[str, Any]) -> tuple[float, flo
 def _get_obstacles(inst_refs: dict[str, Any]) -> list[tuple[float, float, float, float]]:
     """Gather bounding box obstacles of all placed instances."""
     obs = []
-    for ref, comp in inst_refs.values():
+    for ref, _comp in inst_refs.values():
         bb = ref.bbox()
         if hasattr(bb, "left"):
             obs.append((float(bb.left), float(bb.bottom), float(bb.right), float(bb.top)))
     return obs
 
 
-def _intersects_obstacle(x0: float, y0: float, x1: float, y1: float, obstacles: list[tuple[float, float, float, float]]) -> bool:
+def _intersects_obstacle(
+        x0: float, y0: float, x1: float, y1: float,
+        obstacles: list[tuple[float, float, float, float]]) -> bool:
     """Check if line segment intersects with any obstacle bounding box."""
     min_x, max_x = min(x0, x1), max(x0, x1)
     min_y, max_y = min(y0, y1), max(y0, y1)
@@ -408,11 +409,13 @@ def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
             x2r = _riser(x2, lo, hi, wire_w)
             hx0, hx1 = min(x1, x2r), max(x1, x2r)
             if hx1 > hx0:
-                rect(top, layers.MET1, hx0 - wire_w / 2, y1 - wire_w / 2, hx1 + wire_w / 2, y1 + wire_w / 2)
+                rect(top, layers.MET1, hx0 - wire_w / 2, y1 - wire_w / 2,
+                     hx1 + wire_w / 2, y1 + wire_w / 2)
             _stack(x2r, y1)
             _stack(x2r, y2)
             if hi > lo:
-                rect(top, layers.MET3, x2r - wire_w / 2, lo - wire_w / 2, x2r + wire_w / 2, hi + wire_w / 2)
+                rect(top, layers.MET3, x2r - wire_w / 2, lo - wire_w / 2,
+                     x2r + wire_w / 2, hi + wire_w / 2)
         else:
             # Channel detour (Z-shape): route via intermediate channel Y.
             # Every net owns a distinct channel so trunks cannot merge.
@@ -428,17 +431,20 @@ def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
             _stack(x1r, y1)
             _stack(x1r, detour_y)
             vy0, vy1 = min(y1, detour_y), max(y1, detour_y)
-            rect(top, layers.MET3, x1r - wire_w / 2, vy0 - wire_w / 2, x1r + wire_w / 2, vy1 + wire_w / 2)
+            rect(top, layers.MET3, x1r - wire_w / 2, vy0 - wire_w / 2,
+                 x1r + wire_w / 2, vy1 + wire_w / 2)
 
             # 2. Horizontal channel trunk on MET1
             hx0, hx1 = min(x1r, x2r), max(x1r, x2r)
-            rect(top, layers.MET1, hx0 - wire_w / 2, detour_y - wire_w / 2, hx1 + wire_w / 2, detour_y + wire_w / 2)
+            rect(top, layers.MET1, hx0 - wire_w / 2, detour_y - wire_w / 2,
+                 hx1 + wire_w / 2, detour_y + wire_w / 2)
 
             # 3. Vertical drop from detour_y to (x2r, y2) on MET3
             _stack(x2r, detour_y)
             _stack(x2r, y2)
             vy0, vy1 = min(detour_y, y2), max(detour_y, y2)
-            rect(top, layers.MET3, x2r - wire_w / 2, vy0 - wire_w / 2, x2r + wire_w / 2, vy1 + wire_w / 2)
+            rect(top, layers.MET3, x2r - wire_w / 2, vy0 - wire_w / 2,
+                 x2r + wire_w / 2, vy1 + wire_w / 2)
 
 
 def route_differential_pair(
@@ -483,28 +489,34 @@ def route_differential_pair(
     # Trunk P
     hx0_p, hx1_p = min(xp1, xp2), max(xp1, xp2)
     if hx1_p > hx0_p:
-        rect(top, layers.MET1, hx0_p - wire_w / 2, yp1 - wire_w / 2, hx1_p + wire_w / 2, yp1 + wire_w / 2)
+        rect(top, layers.MET1, hx0_p - wire_w / 2, yp1 - wire_w / 2,
+             hx1_p + wire_w / 2, yp1 + wire_w / 2)
     if abs(yp2 - yp1) > 1e-4:
         rect(top, layers.VIA1, xp2 - 0.13, yp1 - 0.13, xp2 + 0.13, yp1 + 0.13)
         vyp0, vyp1 = min(yp1, yp2), max(yp1, yp2)
-        rect(top, layers.MET2, xp2 - wire_w / 2, vyp0 - wire_w / 2, xp2 + wire_w / 2, vyp1 + wire_w / 2)
+        rect(top, layers.MET2, xp2 - wire_w / 2, vyp0 - wire_w / 2,
+             xp2 + wire_w / 2, vyp1 + wire_w / 2)
 
     # Trunk N
     hx0_n, hx1_n = min(xn1, xn2), max(xn1, xn2)
     if hx1_n > hx0_n:
-        rect(top, layers.MET1, hx0_n - wire_w / 2, yn1 - wire_w / 2, hx1_n + wire_w / 2, yn1 + wire_w / 2)
+        rect(top, layers.MET1, hx0_n - wire_w / 2, yn1 - wire_w / 2,
+             hx1_n + wire_w / 2, yn1 + wire_w / 2)
     if abs(yn2 - yn1) > 1e-4:
         rect(top, layers.VIA1, xn2 - 0.13, yn1 - 0.13, xn2 + 0.13, yn1 + 0.13)
         vyn0, vyn1 = min(yn1, yn2), max(yn1, yn2)
-        rect(top, layers.MET2, xn2 - wire_w / 2, vyn0 - wire_w / 2, xn2 + wire_w / 2, vyn1 + wire_w / 2)
+        rect(top, layers.MET2, xn2 - wire_w / 2, vyn0 - wire_w / 2,
+             xn2 + wire_w / 2, vyn1 + wire_w / 2)
 
     # Optional Ground / Substrate shielding lines
     if shield:
         shield_w = snap(wire_w * 0.8)
         shield_y_p = max(yp1, yp2) + spacing
         shield_y_n = min(yn1, yn2) - spacing
-        rect(top, layers.MET1, min(xp1, xn1) - wire_w / 2, shield_y_p - shield_w / 2, max(xp2, xn2) + wire_w / 2, shield_y_p + shield_w / 2)
-        rect(top, layers.MET1, min(xp1, xn1) - wire_w / 2, shield_y_n - shield_w / 2, max(xp2, xn2) + wire_w / 2, shield_y_n + shield_w / 2)
+        rect(top, layers.MET1, min(xp1, xn1) - wire_w / 2, shield_y_p - shield_w / 2,
+             max(xp2, xn2) + wire_w / 2, shield_y_p + shield_w / 2)
+        rect(top, layers.MET1, min(xp1, xn1) - wire_w / 2, shield_y_n - shield_w / 2,
+             max(xp2, xn2) + wire_w / 2, shield_y_n + shield_w / 2)
 
     return top
 
@@ -526,8 +538,10 @@ def route_symmetric_nets(
             x0, x1 = min(pt1[0], pt2[0]), max(pt1[0], pt2[0])
             y0, y1 = min(pt1[1], pt2[1]), max(pt1[1], pt2[1])
             if abs(x1 - x0) > 1e-4:
-                rect(top, layer, x0 - wire_w / 2, pt1[1] - wire_w / 2, x1 + wire_w / 2, pt1[1] + wire_w / 2)
+                rect(top, layer, x0 - wire_w / 2, pt1[1] - wire_w / 2,
+                     x1 + wire_w / 2, pt1[1] + wire_w / 2)
             if abs(y1 - y0) > 1e-4:
-                rect(top, layer, pt2[0] - wire_w / 2, y0 - wire_w / 2, pt2[0] + wire_w / 2, y1 + wire_w / 2)
+                rect(top, layer, pt2[0] - wire_w / 2, y0 - wire_w / 2,
+                     pt2[0] + wire_w / 2, y1 + wire_w / 2)
 
     return top

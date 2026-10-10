@@ -167,7 +167,8 @@ def register_gds_cell(
     emitter = None
     if spice_text is not None:
         netlist_text = _retarget_spice(spice_text, resolved_cell, alias, len(ports))
-        emitter = lambda **_: netlist_text
+        def emitter(**_):
+            return netlist_text
 
     pin_width = 0.2
     try:

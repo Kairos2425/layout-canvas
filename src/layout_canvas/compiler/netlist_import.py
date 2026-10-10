@@ -547,7 +547,7 @@ def import_netlist(
         # port binding: subckt pin order drives the instance node order
         port_names = {p.name.lower(): p.name for p in block.spec.ports}
         binding = {}
-        for pin, node in zip(sub.pins, inst.nodes):
+        for pin, node in zip(sub.pins, inst.nodes, strict=False):
             binding[port_names.get(pin.lower(), pin)] = node
         bindings[inst_id] = binding
         mapped.append({"instance": inst_id, "subckt": inst.master,

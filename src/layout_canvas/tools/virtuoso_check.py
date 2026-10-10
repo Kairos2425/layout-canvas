@@ -69,7 +69,9 @@ _CIW_WARN_RE = re.compile(r"\*WARNING\*")
 # ---------------------------------------------------------------------------
 
 
-def _layout_stats(gds_path: str | Path) -> tuple[Any, dict[str, dict[str, int]], set[tuple[int, int]]]:
+def _layout_stats(
+    gds_path: str | Path,
+) -> tuple[Any, dict[str, dict[str, int]], set[tuple[int, int]]]:
     """Per-cell expected counts and the (layer, datatype) set a GDS uses.
 
     Counts mirror ``export_skill``'s emit order exactly: text →
@@ -456,8 +458,8 @@ def _spectre_harness(
     decls = _scs_subckts(scs_text)
     masters = {m.group(1) for m in re.finditer(
         r"(?m)^\s*X\S*\s*\(\s*[^)]*?\s*\)\s*(\S+)",
-        "\n".join(l for l in scs_text.splitlines()
-                  if not l.strip().startswith("//")))}
+        "\n".join(ln for ln in scs_text.splitlines()
+                  if not ln.strip().startswith("//")))}
     top = None
     if top_hint and top_hint in decls:
         top = top_hint

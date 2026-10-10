@@ -41,7 +41,8 @@ def optimize_design_layout(
 
         # 2. Check if aspect ratio and clearances satisfy targets
         aspect_ratio = ppa["aspect_ratio"]
-        ar_diff = abs(aspect_ratio - target_aspect_ratio) if aspect_ratio is not None else float("inf")
+        ar_diff = (abs(aspect_ratio - target_aspect_ratio)
+                   if aspect_ratio is not None else float("inf"))
         if ar_diff <= 0.2:
             break
 

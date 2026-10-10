@@ -70,7 +70,7 @@ def register_current_mirror() -> None:
                     for i in range(len(pattern))]
         edges = [0.0] + [x + half_l for x in finger_x]
         starts = [x - half_l for x in finger_x] + [total_width]
-        segs = list(zip(edges, starts))
+        segs = list(zip(edges, starts, strict=False))
         seg_net: list[str] = []
         for j in range(len(segs)):
             if j == 0:
@@ -84,7 +84,7 @@ def register_current_mirror() -> None:
         strap_y = {"in": diff_bottom + diff_h + 0.60,
                    "vss": diff_bottom + diff_h + 1.32,
                    "out": diff_bottom + diff_h + 2.04}
-        for (sx0, sx1), net in zip(segs, seg_net):
+        for (sx0, sx1), net in zip(segs, seg_net, strict=False):
             if sx1 - sx0 < 0.4:
                 continue
             cx = snap((sx0 + sx1) / 2)
@@ -92,7 +92,8 @@ def register_current_mirror() -> None:
             # inset keeps Metal1 enclosure of CONT >= 0.07 (Cnt.d)
             n_con = max(1, int((sx1 - sx0 - 0.34) / 0.36) + 1)
             for k in range(n_con):
-                kx = snap(sx0 + 0.22 + (sx1 - sx0 - 0.44) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                kx = snap(sx0 + 0.22 + (sx1 - sx0 - 0.44) * (k / max(1, n_con - 1))
+                          if n_con > 1 else cx)
                 rect(c, layers.CONT, kx - 0.085, diff_bottom + diff_h / 2 - 0.085,
                      kx + 0.085, diff_bottom + diff_h / 2 + 0.085)
             rect(c, layers.METAL1, sx0 + 0.06, diff_bottom + diff_h / 2 - 0.16,
@@ -105,7 +106,7 @@ def register_current_mirror() -> None:
         # (out at fingers=2) otherwise leaves the pad floating
         port_x = {"in": total_width * 0.25, "out": total_width * 0.75}
         for net, y in strap_y.items():
-            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, seg_net)
+            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, seg_net, strict=False)
                   if n == net and s[1] - s[0] >= 0.4]
             if xs:
                 x0 = min(xs) - 0.2
@@ -212,7 +213,7 @@ def _netlist_current_mirror(fingers: int, width: float, length: float, type: str
         return "in" if pattern[j] == "A" else "out"
 
     lines = [".subckt current_mirror in out gate vss"]
-    for i, side in enumerate(pattern):
+    for i, _side in enumerate(pattern):
         lines.append(
             f"M{i + 1} {seg_net(i + 1)} gate {seg_net(i)} vss "
             f"{model} w={width}u l={length}u"

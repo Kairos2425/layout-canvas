@@ -101,7 +101,7 @@ class PDK:
         d: dict[str, Any],
         base_dir: str | Path | None = None,
         source: str | Path | None = None,
-    ) -> "PDK":
+    ) -> PDK:
         """Build a PDK from a ``*.pdk.json`` document.
 
         ``base_dir`` anchors relative ``model_libs`` paths; ``source`` is
@@ -413,11 +413,11 @@ _REGISTRY: dict[str, PDK] = {}
 # into every descriptor load). Listeners receive the PDK object / name
 # directly and must not call back into ``get_pdk``/``all_pdks`` — those
 # can re-enter ``_ensure_external`` mid-scan.
-_PDK_LISTENERS: list[Callable[["PDK"], None]] = []
+_PDK_LISTENERS: list[Callable[[PDK], None]] = []
 _PDK_REMOVED_LISTENERS: list[Callable[[str], None]] = []
 
 
-def add_pdk_listener(cb: Callable[["PDK"], None]) -> None:
+def add_pdk_listener(cb: Callable[[PDK], None]) -> None:
     """Subscribe ``cb(pdk)`` — fired on every ``register_pdk`` call."""
     _PDK_LISTENERS.append(cb)
 

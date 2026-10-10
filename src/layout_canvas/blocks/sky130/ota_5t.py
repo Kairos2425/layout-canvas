@@ -90,7 +90,7 @@ def register_ota_5t() -> None:
             starts_ = [x - half_l for x in
                        [snap(i * finger_pitch + finger_pitch / 2)
                         for i in range(len(pattern))]] + [finger_pitch * len(pattern)]
-            segs_ = list(zip(edges_, starts_))
+            segs_ = list(zip(edges_, starts_, strict=False))
             nets_ = []
             for j in range(len(segs_)):
                 if j == 0:
@@ -104,7 +104,7 @@ def register_ota_5t() -> None:
 
         def _sd_straps(y0: float, segs: list, nets: list,
                        strap_ys: dict[str, float]) -> None:
-            for (sx0, sx1), net in zip(segs, nets):
+            for (sx0, sx1), net in zip(segs, nets, strict=False):
                 if sx1 - sx0 < 0.4:
                     continue
                 cx = snap((sx0 + sx1) / 2)
@@ -112,7 +112,8 @@ def register_ota_5t() -> None:
                 n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
                 for k in range(n_con):
                     # licon inset keeps li1 enclosure >= 0.06
-                    kx = snap(sx0 + 0.21 + (sx1 - sx0 - 0.42) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                    kx = snap(sx0 + 0.21 + (sx1 - sx0 - 0.42) * (k / max(1, n_con - 1))
+                              if n_con > 1 else cx)
                     rect(c, layers.LICON, kx - 0.085, y0 + diff_h / 2 - 0.085,
                          kx + 0.085, y0 + diff_h / 2 + 0.085)
                 rect(c, layers.LI, sx0 + 0.06, y0 + diff_h / 2 - 0.15,
@@ -122,7 +123,7 @@ def register_ota_5t() -> None:
                 rect(c, layers.MCON, cx - 0.065, y_top - 0.065,
                      cx + 0.065, y_top + 0.065)
             for net, y in strap_ys.items():
-                xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets)
+                xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets, strict=False)
                       if n == net and s[1] - s[0] >= 0.4]
                 if xs:
                     rect(c, layers.MET1, min(xs) - 0.2, y - 0.24,
@@ -143,10 +144,10 @@ def register_ota_5t() -> None:
         t_edges = [tail_x0, tail_fx[0] + half_l, tail_fx[1] + half_l]
         t_starts = [tail_fx[0] - half_l, tail_fx[1] - half_l,
                     tail_x0 + 2 * tail_pitch]
-        t_segs = list(zip(t_edges, t_starts))
+        t_segs = list(zip(t_edges, t_starts, strict=False))
         t_nets = ["vss", "tail", "vss"]
         tail_strap_y = tail_y0 + tail_h + 0.55
-        for (sx0, sx1), net in zip(t_segs, t_nets):
+        for (sx0, sx1), net in zip(t_segs, t_nets, strict=False):
             cx = snap((sx0 + sx1) / 2)
             rect(c, layers.LICON, cx - 0.085, tail_y0 + tail_h / 2 - 0.085,
                  cx + 0.085, tail_y0 + tail_h / 2 + 0.085)
@@ -169,7 +170,8 @@ def register_ota_5t() -> None:
         # tail gate strap: pads on the poly overhang, per-finger li1 stubs
         # plus a horizontal strap joining them (without it the two gates
         # stay separate nets), then an mcon -> met1 port riser.
-        # tail gate strap: pads on the poly overhang BELOW the rail 鈥?        # a pad reaching into the diffusion lands the contact on the
+        # tail gate strap: pads on the poly overhang BELOW the rail 鈥?
+        # a pad reaching into the diffusion lands the contact on the
         # channel (parasitic) and skews the extracted gate length.
         # li1 top (strap_y+0.44) keeps li1 min-space below the tail stub
         # bottom (tail_y0+diff_h/2-0.15); contacts stay on the poly
@@ -260,7 +262,7 @@ def register_ota_5t() -> None:
         # shift segment math into the stripe's own x-origin
         ld_edges = [ld_x0] + [x + half_l for x in ld_fx]
         ld_starts = [x - half_l for x in ld_fx] + [ld_x0 + ld_pitch * ld_n]
-        ld_segs = list(zip(ld_edges, ld_starts))
+        ld_segs = list(zip(ld_edges, ld_starts, strict=False))
         ld_nets = []
         for j in range(len(ld_segs)):
             if j == 0:
@@ -297,9 +299,10 @@ def register_ota_5t() -> None:
         rect(c, layers.MCON, ntx - 0.065, nty - 0.065,
              ntx + 0.065, nty + 0.065)
         rect(c, layers.MET1, ntx - 0.19, nty - 0.19, ntx + 0.19, nty + 0.19)
-        # extend the vdd strap past the tap so the upper via lands on it 鈥?        # and past the vdd port x, or the port pad floats off the strap
+        # extend the vdd strap past the tap so the upper via lands on it 鈥?
+        # and past the vdd port x, or the port pad floats off the strap
         # (same single-segment failure as the mirror out pad)
-        xs_vdd = [snap((s[0] + s[1]) / 2) for s, n in zip(ld_segs, ld_nets)
+        xs_vdd = [snap((s[0] + s[1]) / 2) for s, n in zip(ld_segs, ld_nets, strict=False)
                   if n == "vdd" and s[1] - s[0] >= 0.4]
         if xs_vdd:
             vdd_port_x = snap(total_width * 0.4)
@@ -318,7 +321,7 @@ def register_ota_5t() -> None:
         # colliding channels at non-default finger counts (observed: out
         # and nwell-bulk risers merging at f8 -> out|vdd).
         def _seg_xrange(segs, nets, name):
-            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets)
+            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets, strict=False)
                   if n == name and s[1] - s[0] >= 0.4]
             return (min(xs) - 0.1, max(xs) + 0.1) if xs else None
 
@@ -463,7 +466,7 @@ def _netlist_ota_5t(diff_fingers: int, load_fingers: int, width: float) -> str:
         f"Mt1 tail vbias vss vss sky130_fd_pr__nfet_01v8 w={width}u l={length}u")
     lines.append(
         f"Mt2 vss vbias tail vss sky130_fd_pr__nfet_01v8 w={width}u l={length}u")
-    for i, side in enumerate(ld_pattern):
+    for i, _side in enumerate(ld_pattern):
         lines.append(
             f"Mp{i + 1} {seg_net(ld_pattern, i + 1, 'vdd', 'out1', 'out')} "
             f"out1 {seg_net(ld_pattern, i, 'vdd', 'out1', 'out')} vdd "

@@ -64,7 +64,7 @@ def register_ota_5t() -> None:
             fxs = [snap(x0 + i * pitch + pitch / 2) for i in range(len(pat))]
             edges = [x0] + [x + half_l for x in fxs]
             starts = [x - half_l for x in fxs] + [x0 + pitch * len(pat)]
-            segs = list(zip(edges, starts))
+            segs = list(zip(edges, starts, strict=False))
             nets = []
             for j in range(len(segs)):
                 if j == 0:
@@ -77,7 +77,7 @@ def register_ota_5t() -> None:
             return fxs, segs, nets
 
         def _sd_straps(y0, segs, nets, strap_ys):
-            for (sx0, sx1), net in zip(segs, nets):
+            for (sx0, sx1), net in zip(segs, nets, strict=False):
                 if sx1 - sx0 < 0.4:
                     continue
                 cx = snap((sx0 + sx1) / 2)
@@ -85,7 +85,8 @@ def register_ota_5t() -> None:
                 n_con = max(1, int((sx1 - sx0 - 0.34) / 0.36) + 1)
                 for k in range(n_con):
                     # inset keeps Metal1 enclosure of CONT >= 0.07 (Cnt.d)
-                    kx = snap(sx0 + 0.22 + (sx1 - sx0 - 0.44) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                    kx = snap(sx0 + 0.22 + (sx1 - sx0 - 0.44) * (k / max(1, n_con - 1))
+                              if n_con > 1 else cx)
                     rect(c, layers.CONT, kx - 0.085, y0 + diff_h / 2 - 0.085,
                          kx + 0.085, y0 + diff_h / 2 + 0.085)
                 rect(c, layers.METAL1, sx0 + 0.06, y0 + diff_h / 2 - 0.16,
@@ -95,7 +96,7 @@ def register_ota_5t() -> None:
                 rect(c, layers.VIA1, cx - 0.10, y_top - 0.10,
                      cx + 0.10, y_top + 0.10)
             for net, y in strap_ys.items():
-                xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets)
+                xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets, strict=False)
                       if n == net and s[1] - s[0] >= 0.4]
                 if xs:
                     rect(c, layers.METAL2, min(xs) - 0.2, y - 0.24,
@@ -115,10 +116,10 @@ def register_ota_5t() -> None:
         t_edges = [tail_x0, tail_fx[0] + half_l, tail_fx[1] + half_l]
         t_starts = [tail_fx[0] - half_l, tail_fx[1] - half_l,
                     tail_x0 + 2 * tail_pitch]
-        t_segs = list(zip(t_edges, t_starts))
+        t_segs = list(zip(t_edges, t_starts, strict=False))
         t_nets = ["vss", "tail", "vss"]
         tail_strap_y = tail_y0 + tail_h + 0.60
-        for (sx0, sx1), net in zip(t_segs, t_nets):
+        for (sx0, sx1), net in zip(t_segs, t_nets, strict=False):
             cx = snap((sx0 + sx1) / 2)
             rect(c, layers.CONT, cx - 0.085, tail_y0 + tail_h / 2 - 0.085,
                  cx + 0.085, tail_y0 + tail_h / 2 + 0.085)
@@ -136,7 +137,8 @@ def register_ota_5t() -> None:
                      cx + 0.10, tail_y0 + tail_h / 2 + 0.10)
                 rect(c, layers.METAL2, cx - 0.15, -0.65,
                      cx + 0.15, tail_y0 + tail_h / 2 + 0.11)
-        # tail gate strap: pads on the poly overhang BELOW the rail 鈥?        # a pad reaching into the diffusion lands the contact on the
+        # tail gate strap: pads on the poly overhang BELOW the rail 鈥?
+        # a pad reaching into the diffusion lands the contact on the
         # channel (parasitic) and skews the extracted gate length.
         # vbias M1 strap top (+0.43) must keep Metal1 min-space below the
         # tail S/D stub bottom (tail_y0+diff_h/2-0.16) AND the contacts
@@ -249,7 +251,7 @@ def register_ota_5t() -> None:
         rect(c, layers.METAL1, ntx - 0.16, nty - 0.16, ntx + 0.16, nty + 0.16)
         rect(c, layers.VIA1, ntx - 0.10, nty - 0.10, ntx + 0.10, nty + 0.10)
         rect(c, layers.METAL2, ntx - 0.15, nty - 0.15, ntx + 0.15, nty + 0.15)
-        xs_vdd = [snap((s[0] + s[1]) / 2) for s, n in zip(ld_segs, ld_nets)
+        xs_vdd = [snap((s[0] + s[1]) / 2) for s, n in zip(ld_segs, ld_nets, strict=False)
                   if n == "vdd" and s[1] - s[0] >= 0.4]
         if xs_vdd:
             # strap must also reach the vdd port pad (0.4 * total_width)
@@ -267,7 +269,7 @@ def register_ota_5t() -> None:
         # riser channels from actual strap extents + clearance, not fixed
         # fractions (colliding risers merged nets at non-default sizes)
         def _seg_xrange(segs, nets, name):
-            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets)
+            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets, strict=False)
                   if n == name and s[1] - s[0] >= 0.4]
             return (min(xs) - 0.1, max(xs) + 0.1) if xs else None
 
@@ -400,7 +402,7 @@ def _netlist_ota_5t(diff_fingers: int, load_fingers: int, width: float) -> str:
         f"Mt1 tail vbias vss vss {NMOS} w={width}u l={length}u")
     lines.append(
         f"Mt2 vss vbias tail vss {NMOS} w={width}u l={length}u")
-    for i, side in enumerate(ld_pattern):
+    for i, _side in enumerate(ld_pattern):
         lines.append(
             f"Mp{i + 1} {seg_net(ld_pattern, i + 1, 'vdd', 'out1', 'out')} "
             f"out1 {seg_net(ld_pattern, i, 'vdd', 'out1', 'out')} vdd "

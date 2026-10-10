@@ -281,7 +281,7 @@ def _finger_rail(c: gf.Component, pdk: PDK, d: _D, *,
                 for i in range(len(pattern))]
     edges = [0.0] + [x + half_l for x in finger_x]
     starts = [x - half_l for x in finger_x] + [total_width]
-    segs = list(zip(edges, starts))
+    segs = list(zip(edges, starts, strict=False))
     seg_net = _diff_pair_nets(drain_a, drain_b, source, pattern)
 
     # Per-segment contact column + li1 riser up to its met1 strap; straps
@@ -290,7 +290,7 @@ def _finger_rail(c: gf.Component, pdk: PDK, d: _D, *,
     strap_y[source] = strap_y[drain_a] + d.strap_pitch
     strap_y[drain_b] = strap_y[source] + d.strap_pitch
     seg_min = d.licon + 0.23  # skip slivers that cannot host a contact
-    for (sx0, sx1), net in zip(segs, seg_net):
+    for (sx0, sx1), net in zip(segs, seg_net, strict=False):
         if sx1 - sx0 < seg_min:
             continue
         cx = snap((sx0 + sx1) / 2)
@@ -318,7 +318,7 @@ def _finger_rail(c: gf.Component, pdk: PDK, d: _D, *,
     # segments on a second, anonymous net).
     strap_ext = strap_ext or {}
     for net, y in strap_y.items():
-        xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, seg_net)
+        xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, seg_net, strict=False)
               if n == net and s[1] - s[0] >= seg_min]
         if xs:
             x0 = min(xs) - 0.2
@@ -829,9 +829,9 @@ def _build_guard_ring(pdk: PDK, d: _D):
 def _netlist_guard_ring(pdk: PDK):
     def _nl(width: float, height: float, ring_width: float,
             ptype: str) -> str:
-        return ("* generic guard ring ({ptype})\n"
-                ".subckt gen_guard_ring_{ptype} tap tap_n tap_s tap_w tap_e\n"
-                ".ends\n").format(ptype=ptype)
+        return (f"* generic guard ring ({ptype})\n"
+                f".subckt gen_guard_ring_{ptype} tap tap_n tap_s tap_w tap_e\n"
+                ".ends\n")
 
     return _nl
 

@@ -2,8 +2,8 @@
 
 import pytest
 
-from layout_canvas.engine import DesignSession
 from layout_canvas.derived.connectivity import inspect_connectivity
+from layout_canvas.engine import DesignSession
 from layout_canvas.ir.model import Design
 from layout_canvas.mcp.server import LayoutCanvasMCPServer
 

@@ -33,7 +33,9 @@ def _point(port: Any) -> tuple[float, float] | None:
         return None
 
 
-def _instance_ports(component: gf.Component, design: Design) -> dict[str, dict[str, tuple[float, float]]]:
+def _instance_ports(
+        component: gf.Component, design: Design
+) -> dict[str, dict[str, tuple[float, float]]]:
     """Map IR instance/port names to transformed coordinates in the top cell."""
     result: dict[str, dict[str, tuple[float, float]]] = {}
     refs: Iterable[Any] = component.insts

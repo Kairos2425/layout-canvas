@@ -61,7 +61,7 @@ def register_strongarm() -> None:
             fxs = [snap(x0 + i * pitch + pitch / 2) for i in range(len(pat))]
             edges = [x0] + [x + half_l for x in fxs]
             starts = [x - half_l for x in fxs] + [x0 + pitch * len(pat)]
-            segs = list(zip(edges, starts))
+            segs = list(zip(edges, starts, strict=False))
             nets = []
             for j in range(len(segs)):
                 if j == 0:
@@ -74,7 +74,7 @@ def register_strongarm() -> None:
             return fxs, segs, nets
 
         def _sd_straps(y0, segs, nets, strap_ys):
-            for (sx0, sx1), net in zip(segs, nets):
+            for (sx0, sx1), net in zip(segs, nets, strict=False):
                 if sx1 - sx0 < 0.4:
                     continue
                 cx = snap((sx0 + sx1) / 2)
@@ -82,7 +82,8 @@ def register_strongarm() -> None:
                 n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
                 for k in range(n_con):
                     # licon inset keeps li1 enclosure >= 0.06
-                    kx = snap(sx0 + 0.21 + (sx1 - sx0 - 0.42) * (k / max(1, n_con - 1)) if n_con > 1 else cx)
+                    kx = snap(sx0 + 0.21 + (sx1 - sx0 - 0.42) * (k / max(1, n_con - 1))
+                              if n_con > 1 else cx)
                     rect(c, layers.LICON, kx - 0.085, y0 + diff_h / 2 - 0.085,
                          kx + 0.085, y0 + diff_h / 2 + 0.085)
                 rect(c, layers.LI, sx0 + 0.06, y0 + diff_h / 2 - 0.15,
@@ -92,7 +93,7 @@ def register_strongarm() -> None:
                 rect(c, layers.MCON, cx - 0.065, y_top - 0.065,
                      cx + 0.065, y_top + 0.065)
             for net, y in strap_ys.items():
-                xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets)
+                xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets, strict=False)
                       if n == net and s[1] - s[0] >= 0.4]
                 if xs:
                     rect(c, layers.MET1, min(xs) - 0.2, y - 0.24,
@@ -103,7 +104,7 @@ def register_strongarm() -> None:
             li1-stub -> mcon -> met1 at strap_b_y (same recipe as
             diff_pair, proven not to short)."""
             tap_y = y0 - max(0.50 - diff_h / 2, 0.15)
-            for fx, side in zip(fxs, sides):
+            for fx, side in zip(fxs, sides, strict=False):
                 rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, y0 - 0.005)
                 rect(c, layers.LICON, fx - 0.085, tap_y - 0.085,
                      fx + 0.085, tap_y + 0.085)
@@ -142,10 +143,10 @@ def register_strongarm() -> None:
         t_edges = [tail_x0, tail_fx[0] + half_l, tail_fx[1] + half_l]
         t_starts = [tail_fx[0] - half_l, tail_fx[1] - half_l,
                     tail_x0 + 2 * tail_pitch]
-        t_segs = list(zip(t_edges, t_starts))
+        t_segs = list(zip(t_edges, t_starts, strict=False))
         t_nets = ["vss", "tail", "vss"]
         tail_strap_y = tail_y0 + tail_h + 0.55
-        for (sx0, sx1), net in zip(t_segs, t_nets):
+        for (sx0, sx1), net in zip(t_segs, t_nets, strict=False):
             cx = snap((sx0 + sx1) / 2)
             rect(c, layers.LICON, cx - 0.085, tail_y0 + tail_h / 2 - 0.085,
                  cx + 0.085, tail_y0 + tail_h / 2 + 0.085)
@@ -194,12 +195,15 @@ def register_strongarm() -> None:
                     "tail": dp_y0 + diff_h + 1.21,
                     "d2": dp_y0 + diff_h + 1.87}
         _sd_straps(dp_y0, dp_segs, dp_nets, dp_strap)
-        _gate_strap(dp_y0, dp_fx, pattern, dp_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55, dp_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10)
+        _gate_strap(dp_y0, dp_fx, pattern,
+                    dp_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55,
+                    dp_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10)
         # inp/inn port risers (met1) 鈥?same recipe as diff_pair
         port_y = dp_y0 + diff_h / 2
-        gy_a, gy_b = dp_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55, dp_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10
-        gxs = {"A": [x for x, s in zip(dp_fx, pattern) if s == "A"],
-               "B": [x for x, s in zip(dp_fx, pattern) if s == "B"]}
+        gy_a, gy_b = (dp_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55,
+                      dp_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10)
+        gxs = {"A": [x for x, s in zip(dp_fx, pattern, strict=False) if s == "A"],
+               "B": [x for x, s in zip(dp_fx, pattern, strict=False) if s == "B"]}
         px = {"A": total_width * 0.25, "B": total_width * 0.75 + 0.3}
         for side, xs in gxs.items():
             if not xs:
@@ -230,15 +234,18 @@ def register_strongarm() -> None:
                     "outp": nl_y0 + diff_h + 1.87}
         _sd_straps(nl_y0, nl_segs, nl_nets, nl_strap)
         # nlatch shared source strap -> guard ring (vss)
-        xs_vss = [snap((s[0] + s[1]) / 2) for s, n in zip(nl_segs, nl_nets)
+        xs_vss = [snap((s[0] + s[1]) / 2) for s, n in zip(nl_segs, nl_nets, strict=False)
                   if n == "vss" and s[1] - s[0] >= 0.4]
         if xs_vss:
             rect(c, layers.MET1, -0.65, nl_strap["vss"] - 0.24,
                  min(xs_vss), nl_strap["vss"] + 0.24)
-        _gate_strap(nl_y0, nl_fx, pattern, nl_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55, nl_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10)
+        _gate_strap(nl_y0, nl_fx, pattern,
+                    nl_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55,
+                    nl_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10)
         # latch gates: A-side fingers -> d1, B-side -> d2 (straps joined
         # into the met2 risers below)
-        nl_gy_a, nl_gy_b = nl_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55, nl_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10
+        nl_gy_a, nl_gy_b = (nl_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55,
+                            nl_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10)
         for side, xs in gxs.items():
             if not xs:
                 continue
@@ -263,9 +270,12 @@ def register_strongarm() -> None:
                     "vdd": pl_y0 + diff_h + 1.21,
                     "outp": pl_y0 + diff_h + 1.87}
         _sd_straps(pl_y0, pl_segs, pl_nets, pl_strap)
-        _gate_strap(pl_y0, pl_fx, pattern, pl_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55, pl_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10)
+        _gate_strap(pl_y0, pl_fx, pattern,
+                    pl_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55,
+                    pl_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10)
         # cross-coupled gates: A-side fingers -> outp, B-side -> outn
-        pl_gy_a, pl_gy_b = pl_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55, pl_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10
+        pl_gy_a, pl_gy_b = (pl_y0 - max(0.50 - diff_h / 2, 0.15) - 0.55,
+                            pl_y0 - max(0.50 - diff_h / 2, 0.15) - 1.10)
         for side, xs in gxs.items():
             if not xs:
                 continue
@@ -285,7 +295,7 @@ def register_strongarm() -> None:
         rect(c, layers.MCON, ntx - 0.065, nty - 0.065,
              ntx + 0.065, nty + 0.065)
         rect(c, layers.MET1, ntx - 0.19, nty - 0.19, ntx + 0.19, nty + 0.19)
-        xs_vdd = [snap((s[0] + s[1]) / 2) for s, n in zip(pl_segs, pl_nets)
+        xs_vdd = [snap((s[0] + s[1]) / 2) for s, n in zip(pl_segs, pl_nets, strict=False)
                   if n == "vdd" and s[1] - s[0] >= 0.4]
         if xs_vdd:
             # strap must also cover the vdd port pad (0.5 * total_width)
@@ -306,7 +316,7 @@ def register_strongarm() -> None:
             _via1(x, y)
 
         def _seg_xrange(segs, nets, name):
-            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets)
+            xs = [snap((s[0] + s[1]) / 2) for s, n in zip(segs, nets, strict=False)
                   if n == name and s[1] - s[0] >= 0.4]
             return (min(xs) - 0.2, max(xs) + 0.2) if xs else None
 
@@ -347,7 +357,8 @@ def register_strongarm() -> None:
 
         b_fx = gxs["B"]
 
-        # d2 first (narrow intersection), then d1 on a distinct channel 鈥?        # two met2 risers sharing x and overlapping in y would merge.
+        # d2 first (narrow intersection), then d1 on a distinct channel 鈥?
+        # two met2 risers sharing x and overlapping in y would merge.
         r = _inter(_seg_xrange(dp_segs, dp_nets, "d2"), gx_b)
         x_d2 = _pick_x(r) or snap(total_width * 0.75)
         r = _inter(_seg_xrange(dp_segs, dp_nets, "d1"), gx_a)
@@ -384,7 +395,8 @@ def register_strongarm() -> None:
              x_on + 0.19, pl_strap["outn"] + 0.19)
         _strap_via(x_on, pl_gy_b, on_li1=False)
         # outp riser: nlatch outp strap -> platch outp strap + platch A
-        # gate strap. Must use a DIFFERENT x than the outn riser 鈥?        # overlapping risers would merge the outputs.
+        # gate strap. Must use a DIFFERENT x than the outn riser 鈥?
+        # overlapping risers would merge the outputs.
         r = _inter(_seg_xrange(nl_segs, nl_nets, "outp"),
                    _seg_xrange(pl_segs, pl_nets, "outp"), gx_a)
         x_op = _pick_x(r, list(b_fx) + [x_d1, x_d2, x_on], clear=0.55) \

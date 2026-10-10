@@ -6,10 +6,10 @@ for closed-loop LVS (Layout Versus Schematic) verification with Netgen and Xyce 
 
 from __future__ import annotations
 
-from pathlib import Path
 import hashlib
 import json
 import re
+from pathlib import Path
 
 from layout_canvas.blocks import base
 from layout_canvas.ir.model import Design
@@ -28,7 +28,8 @@ def compile_netlist(design: Design) -> str:
     # per block name: two instances with different parameters must not silently
     # share the first instance's geometry/netlist.  The digest is derived from
     # the resolved parameter values, making names deterministic across runs.
-    variants: dict[tuple[str, tuple[tuple[str, object], ...]], tuple[base.Block, dict[str, object], str]] = {}
+    variants: dict[tuple[str, tuple[tuple[str, object], ...]],
+                   tuple[base.Block, dict[str, object], str]] = {}
     for inst in design.instances:
         try:
             block = base.get(inst.block)
@@ -46,7 +47,6 @@ def compile_netlist(design: Design) -> str:
     lines.append("* --- Primitive Subcircuit Models ---")
     for block, params, subckt_name in variants.values():
         # Get block default netlist or emit subcircuit definition
-        defaults = block.defaults()
         try:
             subckt_code = block.spice(**params)
             lines.append(_rename_subckt(subckt_code, subckt_name, block))

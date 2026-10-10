@@ -106,7 +106,8 @@ def test_constraint_can_name_routing_nets_and_reject_unknown_net():
             Instance(id="B", block="sky130.current_mirror"),
         ],
         nets=[Net(name="p", pins=["A.out", "B.in"]), Net(name="n", pins=["A.in", "B.out"])],
-        constraints=[Constraint(type=ConstraintType.symmetric, instances=["A", "B"], nets=["p", "n"])],
+        constraints=[Constraint(type=ConstraintType.symmetric,
+                                instances=["A", "B"], nets=["p", "n"])],
     )
     assert d.constraints[0].nets == ["p", "n"]
     with pytest.raises(ValueError, match="unknown net"):
@@ -114,5 +115,6 @@ def test_constraint_can_name_routing_nets_and_reject_unknown_net():
             name="bad_routing_constraints",
             pdk="sky130",
             instances=[Instance(id="A", block="sky130.current_mirror")],
-            constraints=[Constraint(type=ConstraintType.symmetric, instances=["A"], nets=["p", "n"])],
+            constraints=[Constraint(type=ConstraintType.symmetric,
+                                    instances=["A"], nets=["p", "n"])],
         )

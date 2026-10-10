@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import gdsfactory as gf
-import pytest
 
 from layout_canvas.compiler.router import route_differential_pair, route_symmetric_nets
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from layout_canvas.compiler.netlist import compile_netlist, export_spice
 from layout_canvas.ir.model import Design, Instance, Net, Port
 
