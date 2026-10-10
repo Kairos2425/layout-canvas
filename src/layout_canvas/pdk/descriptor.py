@@ -110,6 +110,18 @@ class PDK:
         """
         if not isinstance(d, dict):
             raise ValueError("pdk descriptor must be a JSON object")
+        extends = d.get("extends")
+        if extends is not None:
+            if not isinstance(extends, str):
+                raise ValueError("pdk 'extends' must be a base pdk name")
+            try:
+                base_doc = _full_descriptor_dict(extends)
+            except KeyError:
+                raise ValueError(
+                    f"pdk 'extends' {extends!r}: unknown base pdk "
+                    f"(registered: {sorted(_REGISTRY)})") from None
+            d = _deep_merge(
+                base_doc, {k: v for k, v in d.items() if k != "extends"})
         name = d.get("name")
         if not isinstance(name, str) or not name.strip():
             raise ValueError("pdk descriptor needs a non-empty string 'name'")
@@ -203,6 +215,83 @@ class PDK:
                 for pair, oa_name in self.oa_layers.items()
             }
         return out
+
+
+def _full_descriptor_dict(name: str) -> dict[str, Any]:
+    """Complete descriptor JSON for a registered PDK.
+
+    ``to_dict()`` alone is not the full truth for built-ins: their
+    extraction recipe and DRC tables live in ``tools/extract.py`` and
+    ``tools/drc.py``. This merges those in so the result is a standalone
+    ``*.pdk.json`` — used by ``extends`` resolution here and by
+    ``pdk dump``/``pdk init`` in the CLI. Looks up ``_REGISTRY``
+    directly (no lazy external scan) so it is safe to call while an
+    external scan is itself parsing a descriptor.
+    """
+    pdk = _REGISTRY.get(name)
+    if pdk is None:
+        raise KeyError(f"unknown pdk {name!r}")
+    out = pdk.to_dict()
+
+    if out.get("extract") is None:
+        from layout_canvas.tools.extract import _RECIPES, LEAF_DEVICES
+
+        recipe = _RECIPES.get(name)
+        if recipe is not None:
+            out["extract"] = {
+                "roles": {
+                    role: ([*recipe[role]] if recipe.get(role) else None)
+                    for role in EXTRACTION_ROLES
+                },
+                "text_datatypes": list(recipe.get("text_datatypes", ())),
+                "leaf_devices": {
+                    model: [cls_name, pol]
+                    for model, (cls_name, pol) in
+                    LEAF_DEVICES.get(name, {}).items()
+                },
+            }
+
+    # (layer, datatype) -> preferred name: drawing names win, then roles.
+    names = {pair: lname for lname, pair in pdk.layers.items()}
+    for role, pair in (out.get("extract") or {}).get("roles", {}).items():
+        if pair:
+            names.setdefault(tuple(pair), role)
+
+    def _nm(pair) -> str:
+        return names.get(tuple(pair), f"{pair[0]}/{pair[1]}")
+
+    if out.get("drc") is None:
+        from layout_canvas.tools.drc import _PYA_ENCLOSURE, _PYA_RULES
+
+        rules = _PYA_RULES.get(name)
+        enclosure = _PYA_ENCLOSURE.get(name)
+        if rules or enclosure:
+            out["drc"] = {
+                "rules": {
+                    _nm(pair): [[kind, value] for kind, value in checks]
+                    for pair, checks in (rules or {}).items()
+                },
+                "enclosure": [
+                    {"label": label, "cut": _nm(cut),
+                     "enclosed_by": [_nm(o) for o in outers], "enc": value}
+                    for label, cut, outers, value in (enclosure or [])
+                ],
+            }
+    return out
+
+
+def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """``extends`` merge: dicts merge recursively; every other value
+    (scalars, lists, explicit ``null``) in the overlay replaces the base
+    wholesale. A section the overlay omits is inherited unchanged."""
+    out = dict(base)
+    for key, value in overlay.items():
+        if (key in out and isinstance(out[key], dict)
+                and isinstance(value, dict)):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
 
 
 def _layer_pair(spec: Any, *, where: str) -> Layer:

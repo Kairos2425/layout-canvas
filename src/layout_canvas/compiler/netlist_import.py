@@ -18,6 +18,7 @@ never emits an instance it cannot compile.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from layout_canvas.blocks import base
@@ -328,13 +329,31 @@ def _norm(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
+# Supply/substrate pin names collapse to a single 'rail' role for
+# signature matching: a pmos mirror's 'vdd' pin and the nmos block's
+# 'vss' port are the same role spelled differently. Multiplicity is
+# preserved (Counter, not set) so a 2-rail subckt never aliases onto a
+# 1-rail block.
+_RAIL_PINS = {"vdd", "vcc", "vss", "gnd", "vee", "vsub", "vdda", "vssa",
+              "vpwr", "vgnd", "vpp", "vbb", "sub", "ground"}
+
+
+def _canon_pin(name: str) -> str:
+    low = name.lower()
+    return "rail" if low in _RAIL_PINS else low
+
+
+def _pin_sig(names) -> Counter:
+    return Counter(_canon_pin(n) for n in names)
+
+
 def _match_subckt(sub: _Subckt, pdk: str, blocks: dict) -> tuple[str | None, str]:
     """Map a netlist subckt to ``<pdk>.<block>``. Returns (block, reason)."""
     candidates = {n: b for n, b in blocks.items() if b.spec.pdk == pdk}
     if not candidates:
         return None, f"no blocks registered for pdk {pdk!r}"
 
-    sub_pins = {p.lower() for p in sub.pins}
+    sub_sig = _pin_sig(sub.pins)
     sub_norm = _norm(sub.name)
 
     # 1. name match — upstream subckt named like the block ('ota_5t',
@@ -345,20 +364,20 @@ def _match_subckt(sub: _Subckt, pdk: str, blocks: dict) -> tuple[str | None, str
     ]
     pin_hits = [
         n for n, b in candidates.items()
-        if {p.name.lower() for p in b.spec.ports} == sub_pins
+        if _pin_sig(p.name for p in b.spec.ports) == sub_sig
     ]
     for n in name_hits:
         if n in pin_hits:
             return n, "name+pin match"
         return None, (
             f"name matches {n!r} but pins differ: "
-            f"netlist={sorted(sub_pins)} "
-            f"block={sorted(p.name.lower() for p in candidates[n].spec.ports)}")
+            f"netlist={sorted(sub.pins)} "
+            f"block={sorted(p.name for p in candidates[n].spec.ports)}")
     if len(pin_hits) == 1:
         return pin_hits[0], "pin-signature match"
     if len(pin_hits) > 1:
         return None, f"ambiguous pin signature — candidates {pin_hits}"
-    return None, f"no block in pdk {pdk!r} matches pins {sorted(sub_pins)}"
+    return None, f"no block in pdk {pdk!r} matches pins {sorted(sub.pins)}"
 
 
 # Netlist param spelling → IR block param name. `m` deliberately excluded:
@@ -548,11 +567,20 @@ def import_netlist(
                     "relative_to": instances_ir[-1]["id"],
                     "relation": "right_of", "margin": 5.0}),
         })
-        # port binding: subckt pin order drives the instance node order
+        # port binding: subckt pin order drives the instance node order.
+        # A pin with no literal port-name match falls back to its rail
+        # role — but only when exactly one block port carries that role,
+        # otherwise the binding would be a guess.
         port_names = {p.name.lower(): p.name for p in block.spec.ports}
+        port_canons = _pin_sig(p.name for p in block.spec.ports)
         binding = {}
         for pin, node in zip(sub.pins, inst.nodes, strict=False):
-            binding[port_names.get(pin.lower(), pin)] = node
+            port = port_names.get(pin.lower())
+            if port is None and port_canons[_canon_pin(pin)] == 1:
+                port = next(
+                    p.name for p in block.spec.ports
+                    if _canon_pin(p.name) == _canon_pin(pin))
+            binding[port or pin] = node
         bindings[inst_id] = binding
         mapped.append({"instance": inst_id, "subckt": inst.master,
                        "block": block_name,

@@ -98,7 +98,11 @@ res = simulate_extracted(d, probes=["out", "tail"], vdd=1.8)
 
 ### MCP (AI agents)
 
-Point any MCP client at `layout-canvas mcp` (stdio). Agents get the full loop:
+Point any MCP client at `layout-canvas mcp` (stdio). MCP is an open
+protocol, not a Claude/Cursor feature — Claude Desktop, Cursor, Windsurf,
+Cline, Zed and Continue all speak it natively, and OpenAI Agents SDK /
+LangChain / a plain Python script using the `mcp` package can call the
+same tools. Agents get the full loop:
 `open_design` → `insert_block_into_layout` / `transact` → `verify_design` →
 `run_simulation(source="extracted", probes=[...])` → `export_virtuoso` /
 `save_project`. `probe_environment` reports which EDA tools are live.

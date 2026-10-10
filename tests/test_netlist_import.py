@@ -229,3 +229,33 @@ XCM iin iout vss current_mirror
         weird = "subckt foo a b\nM1 (a b b b) nmos w=1u\nends foo\nX1 a b foo\n"
         res = import_netlist(weird, pdk="sky130")
         assert res["status"] in ("ok", "partial", "failed")
+
+
+class TestRailPinAliases:
+    SPECTRE_PMIRROR = """\
+subckt pmos_mirror ( in out gate vdd )
+    M1 (in in vdd vdd) pch w=2u l=0.5u
+    M2 (out in vdd vdd) pch w=2u l=0.5u
+ends pmos_mirror
+subckt top ( in out gate vdd vss )
+    XM (in out gate vdd) pmos_mirror
+ends top
+"""
+
+    def test_pmos_mirror_maps_via_rail_alias(self):
+        res = import_netlist(self.SPECTRE_PMIRROR, pdk="sky130", top="top")
+        assert res["status"] == "ok"
+        inst = res["ir"]["instances"][0]
+        assert inst["block"] == "sky130.current_mirror"
+        assert inst["params"].get("type") == "pmos"
+        # the vdd pin binds to the block's 'vss' port, not left dangling
+        port_vdd = next(p for p in res["ir"]["ports"] if p["name"] == "vdd")
+        assert port_vdd["pin"] == "XM.vss"
+
+    def test_rail_arity_still_guarded(self):
+        # a 1-rail subckt must not alias onto a multi-pin block whose
+        # rail count differs — arity survives canonicalisation
+        net = ".subckt ota inp inn outp outn vdd\n.ends\nX1 a b c d vdd ota\n"
+        res = import_netlist(net, pdk="sky130")
+        assert res["status"] in ("partial", "failed")
+        assert res["unresolved"]

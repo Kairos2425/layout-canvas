@@ -37,13 +37,25 @@ Commercial PDKs attach as a JSON descriptor that stays on private paths —
 **never in git** (`*.pdk.json` is gitignored).
 
 ```bash
-layout-canvas pdk dump sky130 > myprocess.pdk.json   # complete template
+# Fast path (minutes): inherit an open PDK wholesale, override only
+# what differs — layers, leaf_devices, oa_layers. $doc field explains.
+layout-canvas pdk init myprocess --extends sky130 -o myprocess.pdk.json
+
+# Full-control path (hours): start from the complete template instead.
+layout-canvas pdk dump sky130 > myprocess.pdk.json
 # edit: layer/datatype map, pin_label datatype, extract.roles,
 #       leaf_devices, drc subset, oa_layers, model_libs.spice_prelude_file
+
 layout-canvas pdk check myprocess.pdk.json           # offline validation +
                                                      # capability report
 export LAYOUT_CANVAS_PDK_DIR=/secure/pdks            # directory of *.pdk.json
 ```
+
+`"extends": "<base>"` deep-merges: every section you omit is inherited
+from the base (built-in `sky130`/`ihp_sg13g2` or any registered PDK),
+every entry you write overrides or adds. A same-node commercial PDK can
+realistically be an `extends` + `layers` + `oa_layers` + `leaf_devices`
+document — tens of lines, not hundreds.
 
 `pdk check` tells you exactly what the descriptor unlocks — which
 `extract.roles` are covered, which `gen_*` generators register, which DRC

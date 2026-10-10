@@ -452,3 +452,53 @@ def test_cli_pdk_check_validates_and_reports(tmp_path: Path,
         sys, "argv", ["layout-canvas", "pdk", "check", str(broken)])
     assert main() == 2
     assert "invalid JSON" in capsys.readouterr().err
+
+
+class TestExtendsInheritance:
+    def test_extends_inherits_and_overrides(self):
+        # {extends: base} deep-merges: omitted sections inherit, given
+        # sections override entry-wise. This is the minutes-level
+        # commercial-PDK onramp.
+        from layout_canvas.pdk.descriptor import PDK
+
+        doc = {
+            "name": "acme28",
+            "extends": "sky130",
+            "extract": {
+                "leaf_devices": {
+                    "acme28_nch": ["acme28_nch", "nmos"],
+                    "acme28_pch": ["acme28_pch", "pmos"],
+                }
+            },
+        }
+        pdk = PDK.from_dict(doc)
+        base = get_pdk("sky130")
+        assert pdk.layers == base.layers            # inherited untouched
+        # sky130's extraction truth lives in the tool tables — extends
+        # inherits the merged view, so roles come through populated.
+        roles = pdk.extract["roles"]
+        assert roles["diff"] and roles["well_n"] and roles["met1"]
+        leaf = set(pdk.extract["leaf_devices"])
+        assert {"acme28_nch", "acme28_pch"} <= leaf   # added
+        assert "sky130_fd_pr__nfet_01v8" in leaf      # inherited entries stay
+        with pytest.raises(ValueError, match="unknown base"):
+            PDK.from_dict({"name": "x", "extends": "no_such_pdk"})
+
+    def test_cli_pdk_init_scaffolds_extends(self, tmp_path: Path,
+                                          monkeypatch: pytest.MonkeyPatch,
+                                          capsys):
+        from layout_canvas.cli import main
+
+        out = tmp_path / "acme28.pdk.json"
+        monkeypatch.setattr(
+            sys, "argv",
+            ["layout-canvas", "pdk", "init", "acme28", "--extends", "sky130",
+             "-o", str(out)])
+        assert main() == 0
+        monkeypatch.setattr(
+            sys, "argv", ["layout-canvas", "pdk", "check", str(out)])
+        assert main() == 0
+        rep = json.loads(capsys.readouterr().out)
+        assert rep["status"] == "ok"
+        assert rep["extends"] == "sky130"
+        assert rep["gen_blocks"]  # inherits everything needed to unlock

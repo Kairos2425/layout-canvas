@@ -46,14 +46,21 @@ def main() -> int:
         "pdk",
         help="List registered PDKs or dump a descriptor JSON template")
     pdkp.add_argument(
-        "action", choices=["list", "dump", "check"],
+        "action", choices=["list", "dump", "check", "init"],
         help="'list' shows every registered PDK; 'dump NAME' prints a "
              "*.pdk.json template for NAME (built-ins included — a "
              "starting point for commercial PDK descriptors); "
              "'check FILE' validates a descriptor offline and reports the "
-             "capabilities it would unlock")
-    pdkp.add_argument("name", nargs="?", help="PDK name for 'dump', "
+             "capabilities it would unlock; 'init NAME --extends BASE' "
+             "writes a minimal descriptor that inherits BASE's layer "
+             "map, extraction recipe and DRC so only the fields that "
+             "differ need filling in")
+    pdkp.add_argument("name", nargs="?", help="PDK name for 'dump'/'init', "
                         "*.pdk.json path for 'check'")
+    pdkp.add_argument("--extends", default="sky130",
+                      help="base PDK 'init' inherits from (default sky130)")
+    pdkp.add_argument("-o", "--output", default=None,
+                      help="descriptor path for 'init' (default stdout)")
 
     # testbench command
     tb = sub.add_parser("testbench", help="Run design testbenches and report spec results")
@@ -138,6 +145,11 @@ def main() -> int:
                 print("pdk check needs a *.pdk.json path", file=sys.stderr)
                 return 2
             return _pdk_check(args.name)
+        if args.action == "init":
+            if not args.name:
+                print("pdk init needs a new PDK name", file=sys.stderr)
+                return 2
+            return _pdk_init(args.name, args.extends, args.output)
         if not args.name:
             print("pdk dump needs a PDK name (see 'layout-canvas pdk list')",
                   file=sys.stderr)
@@ -319,62 +331,59 @@ def _pdk_template(name: str) -> dict:
     """JSON-able ``*.pdk.json`` template for ``pdk dump NAME``.
 
     External descriptors serialise their own sections; for built-ins the
-    extract/DRC truth lives in the tool tables (``tools/extract.py``,
-    ``tools/drc.py``), which are merged in here so the dump is a complete
-    starting point for commercial descriptors.
+    extract/DRC truth lives in the tool tables — merged into one
+    standalone document by ``_full_descriptor_dict`` (shared with
+    ``extends`` resolution).
     """
     from layout_canvas.pdk import get_pdk
+    from layout_canvas.pdk.descriptor import _full_descriptor_dict
 
-    pdk = get_pdk(name)
-    out = pdk.to_dict()
+    get_pdk(name)  # raises KeyError naming the unknown PDK
+    return _full_descriptor_dict(name)
 
-    if out.get("extract") is None:
-        from layout_canvas.tools.extract import _RECIPES, LEAF_DEVICES
 
-        recipe = _RECIPES.get(name)
-        if recipe is not None:
-            from layout_canvas.pdk.descriptor import EXTRACTION_ROLES
+def _pdk_init(name: str, extends: str, output: str | None) -> int:
+    """Write a minimal ``extends``-style descriptor for ``pdk init``.
 
-            out["extract"] = {
-                "roles": {
-                    role: ([*recipe[role]] if recipe.get(role) else None)
-                    for role in EXTRACTION_ROLES
-                },
-                "text_datatypes": list(recipe.get("text_datatypes", ())),
-                "leaf_devices": {
-                    model: [cls_name, pol]
-                    for model, (cls_name, pol) in
-                    LEAF_DEVICES.get(name, {}).items()
-                },
+    The file inherits the base PDK's layer map, extraction recipe and
+    DRC; the author only overrides what actually differs — layer
+    numbers, leaf-device model names, OA layer names. This is the
+    minutes-not-hours onboarding path for commercial PDKs.
+    """
+    import json
+    from pathlib import Path
+
+    from layout_canvas.pdk import get_pdk
+
+    try:
+        base = get_pdk(extends)
+    except KeyError:
+        print(f"pdk init: base PDK {extends!r} unknown "
+              f"(see 'layout-canvas pdk list')", file=sys.stderr)
+        return 2
+    doc = {
+        "$doc": "inherits layers/extract/drc/oa_layers from "
+                f"'{extends}' — override only what differs; validate "
+                "with 'layout-canvas pdk check FILE'",
+        "name": name,
+        "extends": extends,
+        "layers": {},
+        "extract": {
+            "leaf_devices": {
+                f"{name}_nch": [f"{name}_nch", "nmos"],
+                f"{name}_pch": [f"{name}_pch", "pmos"],
             }
-
-    # (layer, datatype) -> preferred name: drawing names win, then roles.
-    names = {pair: lname for lname, pair in pdk.layers.items()}
-    for role, pair in (out.get("extract") or {}).get("roles", {}).items():
-        if pair:
-            names.setdefault(tuple(pair), role)
-
-    def _nm(pair) -> str:
-        return names.get(tuple(pair), f"{pair[0]}/{pair[1]}")
-
-    if out.get("drc") is None:
-        from layout_canvas.tools.drc import _PYA_ENCLOSURE, _PYA_RULES
-
-        rules = _PYA_RULES.get(name)
-        enclosure = _PYA_ENCLOSURE.get(name)
-        if rules or enclosure:
-            out["drc"] = {
-                "rules": {
-                    _nm(pair): [[kind, value] for kind, value in checks]
-                    for pair, checks in (rules or {}).items()
-                },
-                "enclosure": [
-                    {"label": label, "cut": _nm(cut),
-                     "enclosed_by": [_nm(o) for o in outers], "enc": value}
-                    for label, cut, outers, value in (enclosure or [])
-                ],
-            }
-    return out
+        },
+        "oa_layers": {},
+    }
+    text = json.dumps(doc, indent=2) + "\n"
+    if output:
+        Path(output).write_text(text, encoding="utf-8")
+        print(f"wrote {output} (inherits {base.name}: "
+              f"{len(base.layers)} layers)", file=sys.stderr)
+    else:
+        print(text, end="")
+    return 0
 
 
 def _pdk_check(path: str) -> int:
@@ -433,6 +442,7 @@ def _pdk_check(path: str) -> int:
     print(json.dumps({
         "file": str(file),
         "pdk": pdk.name,
+        "extends": doc.get("extends"),
         "status": "ok",
         "layers": len(pdk.layers),
         "pin_purpose": pdk.pin_purpose,
