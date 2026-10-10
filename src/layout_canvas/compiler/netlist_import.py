@@ -182,9 +182,9 @@ def _parse_spice(text: str) -> _Parsed:
                                  master=body[-1], params=params)
             else:
                 inst = None
-            target = current if current is not None else parsed
             if inst is not None:
-                target.instances.append(inst)  # type: ignore[attr-defined]
+                (current.instances if current is not None
+                 else parsed.top_instances).append(inst)
             else:
                 if current is not None:
                     current.leaf_devices += 1
@@ -480,13 +480,17 @@ def import_netlist(
     else:
         uninstantiated = [s for s in parsed.subckts.values()
                           if s.name not in instantiated]
-        if len(uninstantiated) == 1:
-            top_sub = uninstantiated[0]
-        elif not parsed.subckts and parsed.top_instances:
+        if parsed.top_instances:
+            # Top-level instances ARE the top of a flat/mixed netlist;
+            # uninstantiated subckt defs are just unused wrappers.
             top_sub = _Subckt(name=design_name or "imported_top", pins=[],
                               instances=parsed.top_instances)
-            diags.append("flat netlist — no .subckt; top-level instances "
-                         "imported, no ports derivable")
+            diags.append("flat top-level instances imported; "
+                         "uninstantiated subckt defs "
+                         f"{[s.name for s in uninstantiated]} ignored, "
+                         "no ports derivable")
+        elif len(uninstantiated) == 1:
+            top_sub = uninstantiated[0]
         elif len(uninstantiated) > 1:
             return {"status": "failed", "dialect": dialect, "pdk": pdk,
                     "design_name": design_name or "imported",

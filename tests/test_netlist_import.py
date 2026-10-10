@@ -203,3 +203,29 @@ class TestEndToEnd:
         comp = compile_design(design)
         assert comp is not None
         assert comp.bbox().area() > 0
+
+
+class TestFlatNetlist:
+    def test_flat_spice_x_instances_no_crash(self):
+        # Regression: top-level X cards used to hit parsed.instances
+        # (AttributeError) -- flat netlists must import via top_instances.
+        net = """\
+.subckt diff_pair inp inn outp outn tail vss
+.ends
+.subckt current_mirror iin iout vss
+.ends
+XDP inp inn outp outn tail vss diff_pair
+XCM iin iout vss current_mirror
+.end
+"""
+        res = import_netlist(net, pdk="sky130")
+        assert res["status"] in ("ok", "partial")
+        assert res["ir"] is not None
+        assert any("flat" in d for d in res["diagnostics"])
+
+    def test_misdetected_file_fails_closed_not_crashes(self):
+        # Spectre-syntax headers w/o parens misdetected as spice must
+        # degrade to unresolved diagnostics, never raise.
+        weird = "subckt foo a b\nM1 (a b b b) nmos w=1u\nends foo\nX1 a b foo\n"
+        res = import_netlist(weird, pdk="sky130")
+        assert res["status"] in ("ok", "partial", "failed")
