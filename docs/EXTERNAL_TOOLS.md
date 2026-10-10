@@ -47,6 +47,7 @@ reports `unavailable`, never a hang):
 | `LAYOUT_CANVAS_VIRTUOSO_HOST` | ssh target (`user@host` or ssh-config alias) |
 | `LAYOUT_CANVAS_VIRTUOSO_DIR` | remote working directory for upload/replay/logs |
 | `LAYOUT_CANVAS_SPECTRE_MODELS` | remote spectre model deck (`include`d by the harness) |
+| `LAYOUT_CANVAS_VIRTUOSO_TECHLIB` | OA tech library the `.il` attaches to — LPP names only resolve with one (defaults: `sky130_fd_pr`, `SG13G2`) |
 
 `virtuoso-accept --dry-run` needs none of these — it validates the
 generated `.il`/`.scs` locally against the GDS. Full setup:

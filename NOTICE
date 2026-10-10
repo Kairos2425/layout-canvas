@@ -1,0 +1,23 @@
+layout-canvas
+Copyright (c) 2026 layout-canvas contributors
+
+This product includes software developed by the layout-canvas project.
+
+Third-party attribution
+-----------------------
+Files under `examples/models/sky130/` are verbatim from
+google/skywater-pdk-libs-sky130_fd_pr and remain licensed under the
+Apache License, Version 2.0 (copyright SkyWater / Google contributors).
+
+Trademark
+---------
+"Layout Canvas" and the layout-canvas name are trademarks of the project
+authors. The MIT license covers the software only — it does not grant
+permission to use the project name or marks for derivative products or
+services. Forks should be renamed.
+
+Commercial use
+--------------
+The core is MIT-licensed and free for commercial use. The authors also
+offer commercial arrangements (private PDK enablement, enterprise support,
+hosted gallery/registry services) — see `docs/COMMERCIAL.md`.

@@ -92,8 +92,9 @@ layout-canvas web --port 8080                        # local canvas
 layout-canvas mcp                                    # MCP stdio server
 layout-canvas pdk list                               # registered PDKs + load errors
 layout-canvas pdk dump sky130 > my.pdk.json          # descriptor template
+layout-canvas pdk check my.pdk.json                  # validate + capability report
 layout-canvas virtuoso-accept design.json --dry-run  # SKILL/Spectre static checks
-layout-canvas virtuoso-accept design.json --host eda01 --lib canvas_lib
+layout-canvas virtuoso-accept design.json --host eda01 --lib canvas_lib --tech-lib sky130_fd_pr
 ```
 
 External PDKs: drop a `*.pdk.json` descriptor into a private dir, set

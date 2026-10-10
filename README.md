@@ -28,18 +28,16 @@ Block IR (JSON) ── compile ──▶ gdsfactory ──▶ GDS
 | **PEX sim** | Extracted netlist → BSIM4/PSP foundry models via ngspice; internal-node probes (`xd1.tail`), custom testbenches |
 | **External PDKs** | `*.pdk.json` descriptors via `LAYOUT_CANVAS_PDK_DIR`/`LAYOUT_CANVAS_PDKS` — layer map + extract recipe + DRC subset + model prelude + generic `gen_diff_pair`/`gen_current_mirror`/`gen_guard_ring` generators, no code (`docs/PDK_DESCRIPTORS.md`) |
 | **Testbenches** | Named sim setups on the IR (schematic/extracted, op/tran/ac/dc, probes) + per-spec pass/fail/unavailable with reasons — `final/min/max/mean/pp/db/bw_3db` plus transient `settling`/`slew`/`overshoot` (with `tol`); CLI exit codes, session run history |
-| **Export** | Virtuoso SKILL (shapes/instances) + Spectre netlist, GDS/OASIS, SPICE — plus `virtuoso-accept`: static SKILL/.scs checks anywhere, real Virtuoso/spectre acceptance over SSH on an EDA host (`docs/VIRTUOSO_ACCEPTANCE.md`) |
+| **Export** | Virtuoso SKILL (shapes/instances, tech-lib attach, mirror/mag transforms) + Spectre netlist, GDS/OASIS, SPICE — plus `virtuoso-accept`: static SKILL/.scs checks anywhere, real Virtuoso/spectre acceptance over SSH on an EDA host (`docs/VIRTUOSO_ACCEPTANCE.md`; 30-min bring-up: `docs/CADENCE_INTEGRATION.md`) |
 | **Import** | `import-netlist`: upstream SPICE/Spectre subckt netlists → Block IR draft (blocks matched by name + port signature; unmapped instances named, never guessed) — the upstream-pipeline on-ramp |
 | **Interfaces** | CLI · local web canvas · MCP stdio server (35 tools) |
 
 ## Install
 
 ```bash
-git clone https://github.com/Kairos2425/layout-canvas
-cd layout-canvas
-pip install -e ".[dev]"
+pip install layout-canvas  # PyPI — or: pip install git+https://github.com/Kairos2425/layout-canvas
 pip install klayout        # in-process DRC/LVS/extraction engine
-pytest                     # 217 tests; tool-dependent tests auto-skip
+pytest                     # 245 tests; tool-dependent tests auto-skip
 ```
 
 Optional tools (probed adapters — absent tools report `unavailable`, never fake results):
@@ -116,7 +114,7 @@ src/layout_canvas/
   tools/       drc, extract, lvs, sim, verify, backends
   web/         local canvas app + gallery
   mcp/         stdio MCP server
-tests/         217 tests incl. real-ngspice / real-PDK smokes
+tests/         245 tests incl. real-ngspice / real-PDK smokes
 docs/          architecture, ADRs 0001-0009, external-tool setup
 deploy/        Dockerfile + compose for the web app
 ```
@@ -139,8 +137,10 @@ deploy/        Dockerfile + compose for the web app
 
 ## License
 
-MIT — see `LICENSE`. Bundled Sky130 model files under
-`examples/models/sky130/` are upstream SkyWater files and remain Apache-2.0.
+MIT — see `LICENSE`. The "Layout Canvas" name is reserved (see `NOTICE`);
+bundled Sky130 model files under `examples/models/sky130/` are upstream
+SkyWater files and remain Apache-2.0. Commercial arrangements (private PDK
+enablement, enterprise deployment, support): `docs/COMMERCIAL.md`.
 
 ## Prior art & references
 

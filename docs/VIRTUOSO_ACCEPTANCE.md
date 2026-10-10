@@ -46,6 +46,7 @@ not a pass.
 | `LAYOUT_CANVAS_VIRTUOSO_HOST` | ssh target: `user@eda-host` or an ssh-config alias (`--host` overrides) |
 | `LAYOUT_CANVAS_VIRTUOSO_DIR` | remote working directory for the upload/replay/log artifacts |
 | `LAYOUT_CANVAS_SPECTRE_MODELS` | remote path(s) to the PDK model deck (`include`d by the generated harness); unset ⇒ the spectre leg reports `unavailable` |
+| `LAYOUT_CANVAS_VIRTUOSO_TECHLIB` | OA tech library the emitted `.il` attaches the design library to (`techSetTechLibName`). Defaults: `sky130` → `sky130_fd_pr`, `ihp_sg13g2` → `SG13G2`. Unknown tech + unset → the `.il` prints a warning and the remote check reports `tech_lib: unavailable` — LPP names cannot resolve without one. |
 
 No credentials ever appear in code, config files or docs — authentication
 is delegated to your ssh keys/agent.

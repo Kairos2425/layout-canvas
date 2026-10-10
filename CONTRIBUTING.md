@@ -62,4 +62,11 @@ def _build(width: float) -> gf.Component:
 ## License
 
 All contributions are licensed under MIT — see `LICENSE`. Bundled Sky130 model
-files under `examples/models/sky130/` remain Apache-2.0 (upstream SkyWater).
+files under `examples/models/sky130/` remain Apache-2.0 (upstream SkyWater),
+and `NOTICE` reserves the "Layout Canvas" name.
+
+By contributing you certify the [Developer Certificate of Origin](https://developercertificate.org/)
+(DCO 1.1): you wrote the change or have the right to submit it under MIT, and
+you understand it becomes part of the open core. If you can, add
+`Signed-off-by: Name <email>` to the commit; either way, opening a PR
+constitutes the certification.
