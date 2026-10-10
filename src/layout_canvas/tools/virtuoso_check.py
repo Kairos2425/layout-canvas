@@ -37,10 +37,12 @@ from pathlib import Path
 from typing import Any
 
 from layout_canvas.compiler.virtuoso import (
+    TECHLIB_ENV,
     _oa_name,
     export_skill,
     export_spectre,
     oa_layer_map,
+    resolve_tech_lib,
 )
 
 HOST_ENV = "LAYOUT_CANVAS_VIRTUOSO_HOST"
@@ -52,6 +54,7 @@ _SETUP_HINT = (
     f"  {HOST_ENV}=user@eda-host   (ssh target or ~/.ssh/config alias)\n"
     f"  {DIR_ENV}=~/layout_canvas_accept   (remote working directory)\n"
     f"  {MODELS_ENV}=/pdk/models/tt.scs   (optional, enables the spectre leg)\n"
+    f"  {TECHLIB_ENV}=sky130_fd_pr        (OA tech library for LPP names)\n"
     "Auth is key-based only (ssh -o BatchMode=yes — no passwords). "
     "Full setup guide: docs/VIRTUOSO_ACCEPTANCE.md"
 )
@@ -152,13 +155,15 @@ def _emit_artifacts(
     tech: str,
     library: str,
     spice_text: str | None,
+    tech_lib: str | None = None,
 ) -> dict[str, Any]:
     """Generate the .il/.scs texts plus the GDS-side truth tables.
 
     ``spice_text`` lets the caller supply the golden schematic netlist;
     ``None`` means "derive it from the GDS" via real extraction.
     """
-    il_text = export_skill(gds_path, library, tech)
+    tech_lib = resolve_tech_lib(tech, tech_lib)
+    il_text = export_skill(gds_path, library, tech, tech_lib=tech_lib)
     ly, cells, layers_used = _layout_stats(gds_path)
     out: dict[str, Any] = {
         "il": il_text,
@@ -168,6 +173,7 @@ def _emit_artifacts(
         "unmapped_layers": _unmapped_layers(layers_used, tech),
         "scs": None,
         "scs_reason": "",
+        "tech_lib": tech_lib,
     }
     spice = spice_text
     reason = ""
@@ -189,8 +195,9 @@ def _strip_skill_strings(text: str) -> str:
     """Remove ``"..."`` literals and ``;`` comments so paren counting is real."""
     out = []
     for line in text.splitlines():
-        line = line.split(";", 1)[0]
-        out.append(re.sub(r'"(?:[^"\\]|\\.)*"', '""', line))
+        # strings first — a ";" inside a literal is not a comment
+        line = re.sub(r'"(?:[^"\\]|\\.)*"', '""', line)
+        out.append(line.split(";", 1)[0])
     return "\n".join(out)
 
 
@@ -341,6 +348,7 @@ def static_report(
     *,
     spice_text: str | None = None,
     workdir: str | Path | None = None,
+    tech_lib: str | None = None,
 ) -> dict[str, Any]:
     """Cadence-free acceptance of the SKILL/Spectre exports of ``gds_path``.
 
@@ -365,7 +373,7 @@ def static_report(
                 "unmapped_layers": [],
                 "gds": str(gds_path)}
 
-    art = _emit_artifacts(gds_path, tech, library, spice_text)
+    art = _emit_artifacts(gds_path, tech, library, spice_text, tech_lib)
     checks: list[dict[str, Any]] = []
     checks.extend(_check_skill(art["il"], art["cells"], art["oa_names"]))
 
@@ -394,6 +402,7 @@ def static_report(
         "cells": len(art["cells"]),
         "library": library,
         "tech": tech,
+        "tech_lib": art["tech_lib"],
         "paths": paths,
     }
 
@@ -578,6 +587,7 @@ def remote_acceptance(
     library: str = "canvas_lib",
     spice_text: str | None = None,
     spectre_models: str | list[str] | None = None,
+    tech_lib: str | None = None,
     timeout: int = 300,
 ) -> dict[str, Any]:
     """Real Virtuoso/Spectre acceptance on a remote EDA host over SSH.
@@ -599,10 +609,12 @@ def remote_acceptance(
         spectre_models = os.environ.get(MODELS_ENV)
     models = ([spectre_models] if isinstance(spectre_models, str)
               else list(spectre_models or []))
+    tech_lib = resolve_tech_lib(tech, tech_lib)
 
     result: dict[str, Any] = {
         "status": "unavailable",
         "host": host, "workdir": workdir,
+        "tech_lib": tech_lib,
         "checks": [], "unmapped_layers": [],
     }
     if not host:
@@ -626,7 +638,7 @@ def remote_acceptance(
         return result
 
     try:
-        art = _emit_artifacts(gds_path, tech, library, spice_text)
+        art = _emit_artifacts(gds_path, tech, library, spice_text, tech_lib)
     except Exception as exc:
         result["status"] = "failed"
         result["error"] = f"artifact generation failed: {exc}"
@@ -634,6 +646,11 @@ def remote_acceptance(
     result["unmapped_layers"] = art["unmapped_layers"]
     checks: list[dict[str, Any]] = result["checks"]
     stem = gds_path.stem
+    checks.append(_check(
+        "tech_lib", "pass" if tech_lib else "unavailable",
+        "OA tech library the .il attaches to (LPP names need it)" if tech_lib
+        else f"no tech library known for tech '{tech}' — set {TECHLIB_ENV} "
+             "or pass tech_lib; the replay will fail on undefined LPPs"))
 
     # The replayed .il gets an explicit exit() so the -replay session ends.
     il_local = staging / f"{stem}.il"

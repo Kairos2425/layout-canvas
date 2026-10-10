@@ -412,3 +412,43 @@ def test_cli_pdk_list_and_dump(pdk_dir: Path, monkeypatch: pytest.MonkeyPatch, c
     reparsed = PDK.from_dict(tpl)
     assert reparsed.name == "sky130"
     assert reparsed.drc["rules"][(72, 20)] == [("width", 0.36), ("space", 0.34)]
+
+def test_cli_pdk_check_validates_and_reports(tmp_path: Path,
+                                             monkeypatch: pytest.MonkeyPatch,
+                                             capsys):
+    """`pdk check FILE` is the commercial-PDK onramp: offline validation
+    plus a capability report (roles/gen blocks/warnings) — no env needed."""
+    from layout_canvas.cli import main
+
+    target = _write(tmp_path, "demo65.pdk.json", _DEMO65)
+    monkeypatch.setattr(
+        sys, "argv", ["layout-canvas", "pdk", "check", str(target)])
+    assert main() == 0
+    rep = json.loads(capsys.readouterr().out)
+    assert rep["status"] == "ok"
+    assert rep["pdk"] == "demo65"
+    assert rep["drc_rules"] == 12
+    assert rep["drc_enclosures"] == 7
+    assert set(rep["gen_blocks"]) == {
+        "demo65.gen_diff_pair",
+        "demo65.gen_current_mirror",
+        "demo65.gen_guard_ring",
+    }
+    assert "capm" in rep["extract_roles"]["covered"]
+
+    # a descriptor missing the MOS derivation contract is rejected
+    gutted = dict(_DEMO65)
+    gutted["name"] = "gut65"
+    gutted["extract"] = {"roles": {"diff": [65, 20]}}
+    bad = _write(tmp_path, "gut65.pdk.json", gutted)
+    monkeypatch.setattr(
+        sys, "argv", ["layout-canvas", "pdk", "check", str(bad)])
+    assert main() == 2
+    assert "rejected" in capsys.readouterr().err
+
+    # and invalid JSON is a diagnostic, not a traceback
+    broken = _write(tmp_path, "broken.pdk.json", "{ not json")
+    monkeypatch.setattr(
+        sys, "argv", ["layout-canvas", "pdk", "check", str(broken)])
+    assert main() == 2
+    assert "invalid JSON" in capsys.readouterr().err

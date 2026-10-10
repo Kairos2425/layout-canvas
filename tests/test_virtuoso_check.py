@@ -365,3 +365,89 @@ class TestCliDryRun:
         out = capsys.readouterr().out
         assert "[static] status=static_ok" in out
         assert "--dry-run" in out
+
+class TestTechLibAttach:
+    """Real-Virtuoso LPP resolution: dbCreate* calls name layers like
+    ("diff" "drawing") which only exist in a techfile — the emitted .il must
+    attach the PDK's tech library, or every create call errors."""
+
+    def test_default_techlib_attached(self, tmp_path):
+        gds = _compile(_design(), tmp_path)
+        il = export_skill(gds, "canvas_lib", "sky130")
+        assert 'techSetTechLibName(libId "sky130_fd_pr")' in il
+        assert 'ddGetObj("sky130_fd_pr")' in il  # guarded: visible only
+
+    def test_arg_and_env_override(self, tmp_path, monkeypatch):
+        gds = _compile(_design(), tmp_path)
+        il = export_skill(gds, "lib", "sky130", tech_lib="my_tech")
+        assert 'techSetTechLibName(libId "my_tech")' in il
+        monkeypatch.setenv(virtuoso_check.TECHLIB_ENV, "env_tech")
+        il = export_skill(gds, "lib", "sky130")
+        assert 'techSetTechLibName(libId "env_tech")' in il
+
+    def test_unknown_tech_warns_instead_of_attaching(self, tmp_path,
+                                                     monkeypatch):
+        monkeypatch.delenv(virtuoso_check.TECHLIB_ENV, raising=False)
+        gds = _compile(_design(), tmp_path)
+        il = export_skill(gds, "lib", "no_such_pdk")
+        assert "techSetTechLibName" not in il
+        assert "no tech library configured" in il
+
+    def test_remote_reports_missing_techlib(self, tmp_path, monkeypatch):
+        """An exotic tech with no known/default tech lib surfaces as an
+        unavailable check, not a replay mysteriously full of *Error*s."""
+        monkeypatch.delenv(virtuoso_check.TECHLIB_ENV, raising=False)
+        gds = _compile(_design(), tmp_path)
+        res = virtuoso_check.remote_acceptance(
+            "eda@host", "/tmp/x", gds, "no_such_pdk")
+        st = {c["name"]: c for c in res["checks"]}
+        # ssh genuinely fails in CI — whatever leg ran, tech_lib is flagged
+        assert st["tech_lib"]["status"] == "unavailable"
+
+
+class TestInstNamingAndTransforms:
+    def test_inst_names_unique_per_cellview(self, tmp_path):
+        """Two instances of the same child cell must not both emit
+        "<child>_I0_0" — Virtuoso errors on duplicate instance names."""
+        import re
+
+        import klayout.db as kdb
+
+        ly = kdb.Layout()
+        ly.dbu = 0.001
+        top = ly.create_cell("top")
+        leaf = ly.create_cell("leaf")
+        li = ly.layer(65, 20)
+        leaf.shapes(li).insert(kdb.DBox(0, 0, 1, 1))
+        top.insert(kdb.DCellInstArray(
+            leaf.cell_index(), kdb.DTrans(kdb.DVector(0, 0))))
+        top.insert(kdb.DCellInstArray(
+            leaf.cell_index(), kdb.DTrans(kdb.DVector(5, 0))))
+        gds = tmp_path / "p.gds"
+        ly.write(str(gds))
+        il = export_skill(gds, "lib", "sky130")
+        names = re.findall(r'dbCreateInst\(cv master "([^"]+)"', il)
+        assert len(names) == 2 and len(set(names)) == 2
+
+    def test_mirror_and_mag_survive(self, tmp_path):
+        """GDS mirrored/magnified placements must become MY/MX* orients and
+        a real magnification — silently dropping them redraws wrongly."""
+        import re
+
+        import klayout.db as kdb
+
+        ly = kdb.Layout()
+        ly.dbu = 0.001
+        top = ly.create_cell("top")
+        leaf = ly.create_cell("leaf")
+        li = ly.layer(65, 20)
+        leaf.shapes(li).insert(kdb.DBox(0, 0, 1, 1))
+        top.insert(kdb.DCellInstArray(
+            leaf.cell_index(),
+            kdb.DCplxTrans(1.5, 0, True, kdb.DVector(5, 0))))
+        gds = tmp_path / "p.gds"
+        ly.write(str(gds))
+        il = export_skill(gds, "lib", "sky130")
+        m = re.search(r'dbCreateInst\(cv master "[^"]+" 5:0 "(\w+)" ([\d.]+)\)',
+                      il)
+        assert m and m.group(1) == "MX" and float(m.group(2)) == 1.5

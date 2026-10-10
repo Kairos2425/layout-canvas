@@ -383,6 +383,8 @@ class LayoutCanvasMCPServer:
                         "ir_json": {"type": ["string", "object"]},
                         "library": {"type": "string", "default": "canvas_lib",
                                     "description": "Target OA library name in Virtuoso."},
+                        "tech_lib": {"type": "string",
+                                     "description": "OA tech library the replay attaches to so LPP names resolve (default: LAYOUT_CANVAS_VIRTUOSO_TECHLIB env or per-PDK default)."},
                         "output_dir": {"type": "string",
                                        "description": "Optional dir to write cell.il and design.scs."},
                     },
@@ -833,7 +835,8 @@ class LayoutCanvasMCPServer:
             out_dir.mkdir(parents=True, exist_ok=True)
             gds = out_dir / f"{design.name}.gds"
             comp.write_gds(str(gds))
-            skill = export_skill(gds, args.get("library", "canvas_lib"), design.pdk)
+            skill = export_skill(gds, args.get("library", "canvas_lib"),
+                                 design.pdk, tech_lib=args.get("tech_lib"))
             spectre = export_spectre(compile_netlist(design))
             (out_dir / f"{design.name}.il").write_text(skill, encoding="utf-8")
             (out_dir / f"{design.name}.scs").write_text(spectre, encoding="utf-8")

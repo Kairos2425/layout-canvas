@@ -46,11 +46,14 @@ def main() -> int:
         "pdk",
         help="List registered PDKs or dump a descriptor JSON template")
     pdkp.add_argument(
-        "action", choices=["list", "dump"],
+        "action", choices=["list", "dump", "check"],
         help="'list' shows every registered PDK; 'dump NAME' prints a "
              "*.pdk.json template for NAME (built-ins included — a "
-             "starting point for commercial PDK descriptors)")
-    pdkp.add_argument("name", nargs="?", help="PDK name for 'dump'")
+             "starting point for commercial PDK descriptors); "
+             "'check FILE' validates a descriptor offline and reports the "
+             "capabilities it would unlock")
+    pdkp.add_argument("name", nargs="?", help="PDK name for 'dump', "
+                        "*.pdk.json path for 'check'")
 
     # testbench command
     tb = sub.add_parser("testbench", help="Run design testbenches and report spec results")
@@ -67,6 +70,10 @@ def main() -> int:
                                      "(or LAYOUT_CANVAS_VIRTUOSO_HOST)")
     vacc.add_argument("--lib", default="canvas_lib",
                       help="OA library name for the SKILL replay")
+    vacc.add_argument("--tech-lib", default=None,
+                      help="OA tech library the replay attaches to (or "
+                           "LAYOUT_CANVAS_VIRTUOSO_TECHLIB; needed for LPP "
+                           "names to resolve)")
     vacc.add_argument("--dry-run", action="store_true",
                       help="compile + static checks only; never touch SSH")
 
@@ -126,6 +133,11 @@ def main() -> int:
                 "generation_errors": _gen.generation_errors(),
             }, indent=2))
             return 0
+        if args.action == "check":
+            if not args.name:
+                print("pdk check needs a *.pdk.json path", file=sys.stderr)
+                return 2
+            return _pdk_check(args.name)
         if not args.name:
             print("pdk dump needs a PDK name (see 'layout-canvas pdk list')",
                   file=sys.stderr)
@@ -252,7 +264,8 @@ def _virtuoso_accept(args) -> int:
     spice = compile_netlist(design)
 
     rep = virtuoso_check.static_report(
-        gds, design.pdk, library=args.lib, spice_text=spice)
+        gds, design.pdk, library=args.lib, spice_text=spice,
+        tech_lib=args.tech_lib)
     print(f"[static] status={rep['status']} "
           f"({_summarize_checks(rep['checks'])})")
     for chk in rep["checks"]:
@@ -275,7 +288,7 @@ def _virtuoso_accept(args) -> int:
     else:
         remote = virtuoso_check.remote_acceptance(
             host, None, gds, design.pdk,
-            library=args.lib, spice_text=spice)
+            library=args.lib, spice_text=spice, tech_lib=args.tech_lib)
         print(f"[remote] status={remote['status']} host={host}")
         for chk in remote.get("checks", []):
             if chk["status"] != "pass":
@@ -362,6 +375,82 @@ def _pdk_template(name: str) -> dict:
                 ],
             }
     return out
+
+
+def _pdk_check(path: str) -> int:
+    """Offline-validate one ``*.pdk.json`` and report what it would unlock.
+
+    Loads the descriptor exactly the way ``LAYOUT_CANVAS_PDK_DIR`` scanning
+    would (``PDK.from_dict`` validation — bad role names, shadowed built-ins
+    and malformed sections are rejected here, not discovered later), then
+    reports capability coverage using the same gates ``blocks/generic.py``
+    applies when registering ``gen_*`` blocks. Exit 0 = loadable,
+    2 = rejected.
+    """
+    import json
+    from pathlib import Path
+
+    from layout_canvas.blocks import generic as _gen
+    from layout_canvas.pdk.descriptor import EXTRACTION_ROLES, PDK
+
+    file = Path(path)
+    try:
+        doc = json.loads(file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"pdk check {file}: invalid JSON — {exc}", file=sys.stderr)
+        return 2
+    try:
+        pdk = PDK.from_dict(doc, base_dir=file.parent, source=str(file))
+    except Exception as exc:
+        print(f"pdk check {file}: descriptor rejected — {exc}",
+              file=sys.stderr)
+        return 2
+
+    roles = (pdk.extract or {}).get("roles") or {}
+    covered = [r for r in EXTRACTION_ROLES if roles.get(r)]
+    leaf = (pdk.extract or {}).get("leaf_devices") or {}
+    polarities = sorted({pol for _, pol in leaf.values()})
+
+    blocks = []
+    mos_ok = all(roles.get(r) for r in _gen._MOS_ROLES) and polarities
+    if mos_ok:
+        blocks.append(f"{pdk.name}.gen_diff_pair")
+        if "pmos" in polarities or _gen._can_ptap(pdk):
+            blocks.append(f"{pdk.name}.gen_current_mirror")
+    if all(roles.get(r) for r in _gen._GUARD_RING_ROLES):
+        blocks.append(f"{pdk.name}.gen_guard_ring")
+
+    warnings = []
+    if mos_ok and not _gen._can_ptap(pdk):
+        warnings.append("no tap/psdm bulk path — blocks omit substrate rings")
+    if mos_ok and "pmos" in polarities and not _gen._can_pmos(pdk):
+        warnings.append("pmos leaf present but no well_n/ntap path — "
+                        "pmos variants will be refused")
+    if not roles:
+        warnings.append("no extract.roles — PDK loads but unlocks nothing "
+                        "(no gen_* blocks, no extraction)")
+
+    print(json.dumps({
+        "file": str(file),
+        "pdk": pdk.name,
+        "status": "ok",
+        "layers": len(pdk.layers),
+        "pin_purpose": pdk.pin_purpose,
+        "extract_roles": {"covered": covered,
+                          "missing": [r for r in EXTRACTION_ROLES
+                                      if not roles.get(r)]},
+        "leaf_devices": sorted(leaf),
+        "drc_rules": len((pdk.drc or {}).get("rules", {})),
+        "drc_enclosures": len((pdk.drc or {}).get("enclosure", [])),
+        "model_libs": sorted((pdk.model_libs or {})),
+        "oa_layers": len(pdk.oa_layers or {}),
+        "gen_blocks": blocks,
+        "warnings": warnings,
+    }, indent=2))
+    if warnings:
+        for w in warnings:
+            print(f"  warning: {w}", file=sys.stderr)
+    return 0
 
 
 if __name__ == "__main__":
