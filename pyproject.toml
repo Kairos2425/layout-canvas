@@ -4,19 +4,38 @@ build-backend = "hatchling.build"
 
 [project]
 name = "layout-canvas"
-version = "0.0.1"
+version = "0.1.0"
 description = "Block-level, AI-native analog layout canvas: Block IR + parametric blocks + DRC/LVS/PEX verification + Virtuoso export."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "layout-canvas contributors" }]
+keywords = ["eda", "analog", "layout", "gds", "pdk", "drc", "lvs",
+            "spectre", "virtuoso", "mcp", "llm-agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
 dependencies = [
     "gdsfactory>=8.0",
     "pydantic>=2.5",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.5", "jsonschema>=4"]
+dev = ["pytest>=8", "ruff>=0.5", "jsonschema>=4", "build>=1.2", "twine>=5"]
+
+[project.urls]
+Repository = "https://github.com/Kairos2425/layout-canvas"
+Issues = "https://github.com/Kairos2425/layout-canvas/issues"
+Documentation = "https://github.com/Kairos2425/layout-canvas/tree/main/docs"
+Gallery = "https://github.com/Kairos2425/layout-canvas-gallery"
 
 [project.scripts]
 layout-canvas = "layout_canvas.cli:main"
