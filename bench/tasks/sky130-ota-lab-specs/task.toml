@@ -1,0 +1,18 @@
+schema_version = 1
+id = "sky130-ota-lab-specs"
+type = "spec"
+title = "Run the ota_lab testbenches: every spec passes and area stays bounded"
+deliverable = "starter/design.json"
+pdk = "sky130"
+
+# Baseline-compare tolerance for sim-derived values (deterministic checks
+# always compare exactly).
+[tolerances]
+sim_rel = 0.05          # ±5% of the frozen value
+sim_abs = 0.0
+
+[bounds]
+# 2 op_schematic + 2 op_pex + 3 ac spec entries; partial credit is a
+# fail reported on the individual spec.* checks (not re-bounded here).
+"specs.total" = { equals = 7, deterministic = true, unit = "count" }
+"ppa.area_um2" = { max = 2000.0, unit = "um2", deterministic = true }

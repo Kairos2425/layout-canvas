@@ -1,0 +1,18 @@
+schema_version = 1
+id = "sky130-imported-cell-lvs"
+type = "import"
+title = "Import the fixture GDS cell, instantiate it in a parent, verify LVS"
+deliverable = "starter/design.json"
+pdk = "sky130"
+
+[import]
+alias = "bench.imported_dp"
+gds = "inputs/src_dp_sky130.gds"
+spice = "inputs/src_dp_sky130.spice"
+# cell_name omitted: fixture has a single top cell
+
+[bounds]
+"import.ports" = { equals = 6, deterministic = true, unit = "count" }
+# imported diff_pair f2 flattened + mirror f2 fingers — see reference.json
+"extract.devices" = { equals = 8, deterministic = true, unit = "count" }
+"ppa.area_um2" = { max = 900.0, unit = "um2", deterministic = true }

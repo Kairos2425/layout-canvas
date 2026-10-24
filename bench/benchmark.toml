@@ -1,0 +1,39 @@
+# layout-canvas frozen benchmark manifest.
+#
+# A score only means something against a FROZEN release: `state` and
+# `release_id` pin the task set, bounds and baselines that produced any
+# scorecard. Changing a task's bounds, starter, inputs or the task list
+# invalidates comparison — bump `release_id` and re-freeze every
+# `tasks/*/results/reference.json` in the same change (see bench/README.md,
+# "Release & freeze protocol").
+
+release_id = "layout-canvas-bench-v1"
+state = "frozen"          # frozen | development — dev manifests print a warning
+metric_schema = "flat-scalar-v2"
+frozen_with = "ngspice unavailable at freeze time — spec checks frozen as 'unavailable' (see tasks/*/results/reference.json provenance)"
+
+# Task slots: the eval set is exactly this list, in this order.
+# A task dir that exists but is not listed here does not score.
+[[tasks]]
+id = "sky130-diffamp-verify"
+surface = "compile baseline: sky130 IR -> GDS -> extract -> DRC=0 -> LVS match"
+
+[[tasks]]
+id = "ihp-mirror-verify"
+surface = "cross-PDK: ihp_sg13g2 mirror compile + verify"
+
+[[tasks]]
+id = "sky130-ota-lab-specs"
+surface = "spec judgement: 3 testbenches, all specs + area bound + worst-case spec annotation"
+
+[[tasks]]
+id = "sky130-imported-cell-lvs"
+surface = "external asset reuse: fixture GDS import -> parent design -> verify"
+
+[[tasks]]
+id = "demo65-descriptor-pdk"
+surface = "external process: descriptor *.pdk.json drives gen_* blocks + verify"
+
+[[tasks]]
+id = "sky130-optimize-specs"
+surface = "bounded optimization: objective=specs -> specs_passed + iterations + final_area"

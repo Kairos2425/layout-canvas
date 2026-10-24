@@ -40,6 +40,12 @@ waves.dat
 # private PDK descriptors never enter git (docs/PDK_DESCRIPTORS.md)
 *.pdk.json
 
+# bench: run products stay local; task fixtures under bench/tasks are
+# public synthetic data (not private PDK material) — re-include them.
+bench/runs/
+!bench/tasks/**/*.gds
+!bench/tasks/**/*.pdk.json
+
 # investor/fundraising docs stay local — never committed or pushed
 INVESTOR_*.md
 

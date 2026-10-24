@@ -1,0 +1,156 @@
+# layout-canvas bench — frozen evaluation set for the layout compiler
+
+A small, frozen benchmark suite for the layout-canvas compiler, modeled on
+the upstream **analog-design-bench** (Arcadia-1 "Long-Horizon Analog Design
+Bench") methodology and adapted to layout compilation. Fail-closed
+throughout: a missing tool, model or capability reports `unavailable` —
+counted in coverage, never as a pass.
+
+```bash
+layout-canvas bench                          # run all tasks
+layout-canvas bench --task ihp-mirror-verify # run one task
+layout-canvas bench --check-baseline         # regression gate vs frozen baselines
+layout-canvas bench --freeze                 # re-freeze results/reference.json
+python bench/run.py --check-baseline         # same runner, no CLI indirection
+```
+
+Each run writes `bench/runs/<UTC ts>/scorecard.json` (`metric_schema:
+"flat-scalar-v2"`) with per-task checks/metrics, coverage and provenance
+(tool versions, git sha, per-task input sha256, platform, timestamp).
+
+## Methodology — what we internalized from upstream
+
+1. **Scores only exist against a frozen release.**
+   `benchmark.toml` carries `release_id` + `state = "frozen"` and the
+   ordered task-slot table. Change any bound, starter, input or slot and
+   the release is a different benchmark: bump `release_id` and re-freeze
+   every `tasks/*/results/reference.json` in the same change.
+
+2. **Task directories are self-describing.**
+   Each `tasks/<id>/` holds `task.toml` (schema_version, id, deliverable,
+   type, bounds), `instruction.md` (the spec in measurable language plus
+   anti-cheat clauses), `starter/` (public starting point),
+   `solution/` (reference), `inputs/` (fixtures for import/descriptor
+   tasks) and `results/reference.json` (frozen golden baseline).
+
+3. **The public starter is not the eval.**
+   `instruction.md` states only the spec surface. Every task that
+   compiles additionally faces the *hidden checks* —
+   `drc.total_violations == 0` and `lvs.match == true` on the in-process
+   KLayout engine — whether or not the instruction mentions them. This
+   is our equivalent of upstream's hidden test set: optimizing toward
+   the declared bound while breaking connectivity still fails.
+
+4. **Worst-case annotation.**
+   Spec tasks report which criterion sits closest to its bound
+   (`specs.worst_case` / `specs.worst_margin_frac`) — our analogue of
+   upstream's PVT-corner annotation, expressed over the task's parameter
+   variants rather than process corners.
+
+5. **`flat-scalar-v2` metric schema.**
+   Every task result is `checks[]` + `metrics[]` where checks carry
+   `{id, measured_value, spec, status, unit, message, deterministic,
+   tol, tol_rel, capability}`; the scorecard adds `coverage`,
+   `evidence_complete` and `failure`. Deterministic checks compare
+   exactly against baseline; sim-derived checks inside their recorded
+   tolerance.
+
+6. **Provenance is part of the score.**
+   Every scorecard records ngspice/KLayout versions, git sha, the
+   sha256 of every file the task consumed, platform and UTC timestamp.
+   A number without provenance is not a baseline.
+
+7. **Baselines are gates, not references to copy.**
+   `results/reference.json` is checked in per task; `--check-baseline`
+   diffs a live run against it — deterministic metrics must match
+   *exactly*, sim values must stay within the task's declared
+   `tolerances`. A regression exits non-zero listing every diff.
+
+## Task types
+
+| `type` | Runner semantics |
+|---|---|
+| `verify` | load starter IR → compile → extract + DRC + LVS → bounds |
+| `spec` | verify pipeline + run every declared testbench; each spec entry is its own check |
+| `optimize` | `DesignSession` → `optimize_session(objective="specs")` inside `run.max_iterations`; score = `specs_passed` + `iterations` + `final_area_um2`; the tuned layout is re-verified |
+| `import` | `register_gds_cell` from `inputs/` (gds + optional spice emitter) → instantiate in parent starter → verify; the alias is unregistered afterwards |
+
+All types get the hidden DRC/LVS checks once compilation succeeds.
+
+## The six tasks
+
+| id | capability surface |
+|---|---|
+| `sky130-diffamp-verify` | baseline compile: sky130 diffamp IR → GDS → DRC=0 → LVS match |
+| `ihp-mirror-verify` | cross-PDK compile + verify (ihp_sg13g2 mirror) |
+| `sky130-ota-lab-specs` | spec judgement: 3 testbenches, 7 spec entries, area bound, worst-case spec |
+| `sky130-imported-cell-lvs` | external asset reuse: fixture GDS import → parent verify |
+| `demo65-descriptor-pdk` | process externalized: `inputs/demo65.pdk.json` drives `gen_*` blocks + verify |
+| `sky130-optimize-specs` | bounded spec-driven tuning: must reach all-specs-pass ≤ 6 rounds |
+
+## `task.toml` schema (schema_version = 1)
+
+```toml
+id = "my-task"                    # must equal the directory name
+type = "verify"                   # verify | spec | optimize | import
+title = "…"
+deliverable = "starter/design.json"
+pdk = "sky130"
+
+[env]                             # optional env vars for the run,
+LAYOUT_CANVAS_PDKS = "inputs/demo65.pdk.json"   # paths resolve vs task dir
+
+[run]                             # optimize tasks
+max_iterations = 6
+
+[import]                          # import tasks
+alias = "bench.imported_dp"; gds = "inputs/cell.gds"; spice = "inputs/cell.spice"
+
+[tolerances]                      # baseline-compare tolerances for sim values
+sim_rel = 0.05; sim_abs = 0.0
+
+[bounds]                          # declared checks: metric -> spec
+"extract.devices" = { equals = 16, deterministic = true, unit = "count" }
+"ppa.area_um2" = { max = 1600.0, unit = "um2" }
+```
+
+A malformed `task.toml` is a `TaskError` naming the file and the field —
+never a silent zero.
+
+## Adding a task
+
+1. `mkdir bench/tasks/<id>` with `task.toml`, `instruction.md`,
+   `starter/design.json`, `solution/design.json` (+ `inputs/` for
+   import/descriptor fixtures).
+2. Add a `[[tasks]]` slot in `benchmark.toml` describing its surface.
+3. Run `layout-canvas bench --task <id>` until green.
+4. `layout-canvas bench --task <id> --freeze` to write its baseline —
+   review the diff carefully; a frozen reference is a contract.
+
+## Release & freeze protocol
+
+- `state = "frozen"`: bounds, starters, inputs and the task list are
+  immutable. Any change → bump `release_id` and re-freeze every
+  reference in the same change.
+- Freeze with the real toolchain you want the gate to mean
+  (`LAYOUT_CANVAS_NGSPICE` for sim tasks). Freezing without a
+  capability records honest `unavailable` checks; a later
+  capability-equipped run reports them as *evidence gained* notes, not
+  silent passes.
+- `bench/runs/` is gitignored; `results/reference.json` is checked in.
+- Never edit a reference to make a diff green — investigate the
+  regression or bump the release.
+
+## Anti-cheat clauses (what the runner enforces)
+
+- Hidden `drc_clean` + `lvs_match` checks on every compiled task.
+- `capability` semantics: spec/sim checks are capability-gated — a
+  missing ngspice yields `unavailable` task status (coverage shows it),
+  never a fabricated pass and never a fake fail of unrelated checks.
+- Deterministic baseline gate: `extract.devices`, `drc.total_violations`,
+  `lvs.match`, declared `deterministic` bounds must match the frozen
+  reference exactly.
+- Input integrity: per-task sha256 of starter+inputs in every
+  scorecard's provenance.
+- The optimizer only moves params through `DesignSession.transact` —
+  revisions are recorded; there is no out-of-band edit path to fake.

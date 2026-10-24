@@ -1,0 +1,46 @@
+{
+    "ir_version": "0.1",
+    "name": "bench_demo65",
+    "pdk": "demo65",
+    "instances": [
+        {
+            "id": "dp",
+            "block": "demo65.gen_diff_pair",
+            "params": {
+                "fingers": 2,
+                "width": 1.0,
+                "length": 0.5,
+                "tail_width": 2.0,
+                "type": "nmos"
+            },
+            "placement": {"x": -3.4, "y": -4.0, "rotation": 0, "mirror": false}
+        },
+        {
+            "id": "ring",
+            "block": "demo65.gen_guard_ring",
+            "params": {
+                "width": 12.0,
+                "height": 12.0,
+                "ring_width": 0.8,
+                "ptype": "ptap"
+            },
+            "placement": {"x": 0.0, "y": 0.0, "rotation": 0, "mirror": false}
+        }
+    ],
+    "nets": [
+        {"name": "vss", "pins": ["dp.vss", "ring.tap", "ring.tap_n",
+                                  "ring.tap_s", "ring.tap_w", "ring.tap_e"]}
+    ],
+    "ports": [
+        {"name": "INP", "pin": "dp.inp", "direction": "input"},
+        {"name": "INN", "pin": "dp.inn", "direction": "input"},
+        {"name": "OUTP", "pin": "dp.outp", "direction": "output"},
+        {"name": "OUTN", "pin": "dp.outn", "direction": "output"},
+        {"name": "TAIL", "pin": "dp.tail", "direction": "input"},
+        {"name": "VSS", "pin": "ring.tap", "direction": "inout"}
+    ],
+    "meta": {
+        "author": "layout-canvas",
+        "description": "Bench starter: descriptor-driven gen_diff_pair inside a gen_guard_ring on demo65"
+    }
+}

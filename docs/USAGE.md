@@ -95,6 +95,10 @@ layout-canvas pdk dump sky130 > my.pdk.json          # descriptor template
 layout-canvas pdk check my.pdk.json                  # validate + capability report
 layout-canvas virtuoso-accept design.json --dry-run  # SKILL/Spectre static checks
 layout-canvas virtuoso-accept design.json --host eda01 --lib canvas_lib --tech-lib sky130_fd_pr
+layout-canvas bench                                  # frozen benchmark suite
+layout-canvas bench --task sky130-diffamp-verify     # one task
+layout-canvas bench --check-baseline                 # regression gate vs frozen refs
+layout-canvas bench --freeze                         # re-freeze baselines (see bench/README.md)
 ```
 
 External PDKs: drop a `*.pdk.json` descriptor into a private dir, set
@@ -401,3 +405,28 @@ it on a network. See `docs/DEPLOYMENT.md`.
 - **PEX** = the extracted netlist itself is simulated in ngspice, with
   device cards rewritten onto foundry wrapper subckts (Sky130 BSIM4 /
   IHP PSP103) — not the schematic.
+
+## 9. Benchmark (`bench/`)
+
+`bench/` is a **frozen evaluation set** for the compiler (methodology in
+`bench/README.md`, modeled on the upstream analog-design-bench):
+`benchmark.toml` pins `release_id` + `state="frozen"` and the task slots;
+six task directories cover verify / spec / optimize / import surfaces
+across sky130, ihp_sg13g2 and an external descriptor PDK. Every run
+emits a `flat-scalar-v2` scorecard under `bench/runs/` with per-check
+`{id, measured_value, spec, status, unit}`, coverage and provenance
+(tool versions, git sha, input sha256).
+
+Key semantics:
+
+- **Hidden checks** — every compiled task must also produce
+  `drc.total_violations == 0` and `lvs.match == true`, even when
+  `instruction.md` never mentions them.
+- **`--check-baseline`** gates deterministic metrics (DRC, LVS, device
+  census) on exact equality with the checked-in
+  `tasks/*/results/reference.json`; sim values compare inside the
+  task's `tolerances`. Regressions exit 1.
+- **Fail-closed** — a missing ngspice/engine reports `unavailable`
+  (counted in `coverage.total`, never `runnable` or pass).
+- Refreeze only per the release protocol: bump `release_id` and
+  `--freeze` all baselines in one change.

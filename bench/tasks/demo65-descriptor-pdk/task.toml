@@ -1,0 +1,18 @@
+schema_version = 1
+id = "demo65-descriptor-pdk"
+type = "verify"
+title = "External descriptor PDK: gen_diff_pair + gen_guard_ring compile and verify"
+deliverable = "starter/design.json"
+pdk = "demo65"
+
+# Descriptor-driven run: the demo65 *.pdk.json ships inside the task dir
+# (self-contained fixture — a synthetic teaching PDK, not private data).
+[env]
+LAYOUT_CANVAS_PDKS = "inputs/demo65.pdk.json"
+
+[bounds]
+# gen_diff_pair f2 -> 4 finger devices; the guard ring contributes none.
+"extract.devices" = { equals = 4, deterministic = true, unit = "count" }
+# The descriptor's extract.roles must drive LayoutToNetlist.
+"extract.status" = { equals = "ok", deterministic = true }
+"ppa.area_um2" = { max = 800.0, unit = "um2", deterministic = true }

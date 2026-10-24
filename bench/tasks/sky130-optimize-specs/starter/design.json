@@ -1,0 +1,77 @@
+{
+    "ir_version": "0.1",
+    "name": "ota_lab_tune",
+    "pdk": "sky130",
+    "instances": [
+        {
+            "id": "DPAIR",
+            "block": "sky130.diff_pair",
+            "params": {
+                "fingers": 4,
+                "width": 4.0,
+                "length": 1.0,
+                "tail_width": 4.0
+            },
+            "placement": {"x": 0.0, "y": 10.0, "rotation": 0, "mirror": false}
+        },
+        {
+            "id": "LOAD",
+            "block": "sky130.current_mirror",
+            "params": {
+                "fingers": 4,
+                "width": 1.5,
+                "length": 0.5,
+                "type": "pmos"
+            },
+            "placement": {"x": 5.0, "y": 20.0, "rotation": 0, "mirror": true}
+        },
+        {
+            "id": "TAIL",
+            "block": "sky130.current_mirror",
+            "params": {
+                "fingers": 4,
+                "width": 2.0,
+                "length": 0.5,
+                "type": "nmos"
+            },
+            "placement": {"x": 15.0, "y": 20.0, "rotation": 0, "mirror": true}
+        }
+    ],
+    "nets": [
+        {"name": "vdd", "pins": ["LOAD.vss", "TAIL.gate"]},
+        {"name": "outp", "pins": ["DPAIR.outp", "LOAD.in", "LOAD.gate"]},
+        {"name": "outn", "pins": ["DPAIR.outn", "LOAD.out"]},
+        {"name": "tail", "pins": ["DPAIR.tail", "TAIL.in"]},
+        {"name": "vss", "pins": ["DPAIR.vss", "TAIL.out", "TAIL.vss"]}
+    ],
+    "constraints": [
+        {
+            "type": "align",
+            "instances": ["LOAD", "TAIL"],
+            "edge": "top",
+            "note": "Mirror cells on the same row"
+        }
+    ],
+    "ports": [
+        {"name": "inp", "pin": "DPAIR.inp", "direction": "input"},
+        {"name": "inn", "pin": "DPAIR.inn", "direction": "input"},
+        {"name": "outp", "pin": "DPAIR.outp", "direction": "output"},
+        {"name": "outn", "pin": "DPAIR.outn", "direction": "output"}
+    ],
+    "testbenches": [
+        {
+            "name": "tb_op_schematic",
+            "source": "schematic",
+            "analysis": "op",
+            "vdd": 1.8,
+            "specs": [
+                {"name": "outp_op", "signal": "outp", "measure": "final",
+                 "min": 0.55, "max": 0.575, "unit": "V"}
+            ]
+        }
+    ],
+    "meta": {
+        "author": "layout-canvas",
+        "description": "Bench starter: ota_lab topology with outp_op deliberately narrowed to [0.55, 0.575] V (measured ~0.61 at ship params) — retuning required"
+    }
+}

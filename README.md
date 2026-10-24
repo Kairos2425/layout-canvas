@@ -30,6 +30,7 @@ Block IR (JSON) ── compile ──▶ gdsfactory ──▶ GDS
 | **Testbenches** | Named sim setups on the IR (schematic/extracted, op/tran/ac/dc, probes) + per-spec pass/fail/unavailable with reasons — `final/min/max/mean/pp/db/bw_3db` plus transient `settling`/`slew`/`overshoot` (with `tol`); CLI exit codes, session run history |
 | **Export** | Virtuoso SKILL (shapes/instances, tech-lib attach, mirror/mag transforms) + Spectre netlist, GDS/OASIS, SPICE — plus `virtuoso-accept`: static SKILL/.scs checks anywhere, real Virtuoso/spectre acceptance over SSH on an EDA host (`docs/VIRTUOSO_ACCEPTANCE.md`; 30-min bring-up: `docs/CADENCE_INTEGRATION.md`) |
 | **Import** | `import-netlist`: upstream SPICE/Spectre subckt netlists → Block IR draft (blocks matched by name + port signature; unmapped instances named, never guessed) — the upstream-pipeline on-ramp |
+| **Benchmark** | `layout-canvas bench` — frozen eval set in `bench/` (verify/spec/optimize/import tasks across sky130, ihp_sg13g2, descriptor PDKs; hidden DRC/LVS checks, `flat-scalar-v2` scorecards, `--check-baseline` regression gate) — `bench/README.md` |
 | **Interfaces** | CLI · local web canvas · MCP stdio server (35 tools) |
 
 ## Install
@@ -119,6 +120,7 @@ src/layout_canvas/
   web/         local canvas app + gallery
   mcp/         stdio MCP server
 tests/         245 tests incl. real-ngspice / real-PDK smokes
+bench/         frozen benchmark suite + baselines (bench/README.md)
 docs/          architecture, ADRs 0001-0009, external-tool setup
 deploy/        Dockerfile + compose for the web app
 ```

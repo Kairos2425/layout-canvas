@@ -84,6 +84,24 @@ def main() -> int:
     vacc.add_argument("--dry-run", action="store_true",
                       help="compile + static checks only; never touch SSH")
 
+    # bench command
+    bp = sub.add_parser(
+        "bench",
+        help="Run the frozen benchmark suite in bench/ (task scorecards, "
+             "baseline regression gate — see bench/README.md)")
+    bp.add_argument("--task", help="run a single task id")
+    bp.add_argument("--check-baseline", action="store_true",
+                    help="gate against tasks/*/results/reference.json; "
+                         "exit 1 on any regression")
+    bp.add_argument("--freeze", action="store_true",
+                    help="rewrite tasks/*/results/reference.json from "
+                         "this run (baseline freeze)")
+    bp.add_argument("--out", help="scorecard output directory "
+                    "(default bench/runs/<timestamp>/)")
+    bp.add_argument("--bench-dir",
+                    help="bench root (default: repo bench/ or "
+                         "LAYOUT_CANVAS_BENCH)")
+
     # mcp command
     sub.add_parser("mcp", help="Start Model Context Protocol (MCP) stdio server for AI agents")
 
@@ -233,6 +251,9 @@ def main() -> int:
                 print(line)
         return 0 if all(r.get("spec_status") == "pass" for r in runs) else 1
 
+    if args.cmd == "bench":
+        return _bench(args)
+
     if args.cmd == "virtuoso-accept":
         return _virtuoso_accept(args)
 
@@ -318,6 +339,53 @@ def _virtuoso_accept(args) -> int:
     ok = rep["status"] == "static_ok" and (
         remote is None or remote["status"] == "verified")
     return 0 if ok else 1
+
+
+def _bench(args) -> int:
+    """``bench`` — delegate to ``bench/run.py`` in the repository checkout.
+
+    The bench is repo data, not package code: it is located by walking
+    parents of this file for ``bench/benchmark.toml`` (editable install
+    or source tree), then ``LAYOUT_CANVAS_BENCH`` and the cwd.
+    """
+    import importlib.util
+    import os
+    from pathlib import Path
+
+    candidates: list[Path] = []
+    if args.bench_dir:
+        candidates.append(Path(args.bench_dir))
+    env = os.environ.get("LAYOUT_CANVAS_BENCH")
+    if env:
+        candidates.append(Path(env))
+    candidates.extend(base / "bench"
+                      for base in Path(__file__).resolve().parents)
+    candidates.append(Path.cwd() / "bench")
+    bench_dir = next(
+        (c for c in candidates if (c / "benchmark.toml").is_file()), None)
+    if bench_dir is None:
+        print("layout-canvas bench: no bench/benchmark.toml found "
+              "(searched package parents, LAYOUT_CANVAS_BENCH, cwd)",
+              file=sys.stderr)
+        return 2
+    run_py = bench_dir / "run.py"
+    spec = importlib.util.spec_from_file_location("lc_bench_run", run_py)
+    mod = importlib.util.module_from_spec(spec)
+    # dataclasses in run.py resolve their module through sys.modules —
+    # register before exec_module or __module__ lookups return None.
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    argv = []
+    if args.task:
+        argv += ["--task", args.task]
+    if args.check_baseline:
+        argv += ["--check-baseline"]
+    if args.freeze:
+        argv += ["--freeze"]
+    if args.out:
+        argv += ["--out", args.out]
+    argv += ["--bench-dir", str(bench_dir)]
+    return mod.main(argv)
 
 
 def _summarize_checks(checks: list[dict]) -> str:

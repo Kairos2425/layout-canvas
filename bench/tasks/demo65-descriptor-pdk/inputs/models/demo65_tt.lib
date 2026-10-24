@@ -1,0 +1,6 @@
+* demo65 TT corner stub — bench fixture, not a real device model.
+* Presence proves model_libs.spice_prelude_file resolves against the
+* descriptor's own directory.
+.param demo65_vth=0.5
+.model demo65_nch nmos level=1 vto=0.5 kp=100u
+.model demo65_pch pmos level=1 vto=-0.5 kp=40u

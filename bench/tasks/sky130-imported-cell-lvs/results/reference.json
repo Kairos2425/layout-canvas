@@ -1,0 +1,206 @@
+{
+  "task": "sky130-imported-cell-lvs",
+  "type": "import",
+  "release_id": "layout-canvas-bench-v1",
+  "frozen_at": "2026-10-24T02:37:30Z",
+  "status": "pass",
+  "checks": [
+    {
+      "id": "hidden.drc_clean",
+      "measured_value": 0,
+      "spec": "== 0 violations",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "hidden.lvs_match",
+      "measured_value": true,
+      "spec": "== true",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "bound.import.ports",
+      "measured_value": 6,
+      "spec": "== 6 count",
+      "status": "pass",
+      "unit": "count",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "bound.extract.devices",
+      "measured_value": 8,
+      "spec": "== 8 count",
+      "status": "pass",
+      "unit": "count",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "bound.ppa.area_um2",
+      "measured_value": 152.712,
+      "spec": "[-inf, 900.0] um2",
+      "status": "pass",
+      "unit": "um2",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    }
+  ],
+  "metrics": [
+    {
+      "id": "compile.ok",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "drc.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "drc.total_violations",
+      "value": 0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.devices",
+      "value": 8,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.nets",
+      "value": 24,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.status",
+      "value": "ok",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "import.alias",
+      "value": "bench.imported_dp",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "import.has_netlist",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "import.ports",
+      "value": 6,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "lvs.match",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "lvs.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.area_um2",
+      "value": 152.712,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.height_um",
+      "value": 9.09,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.hpwl_um",
+      "value": 17.11,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.instance_count",
+      "value": 2,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.net_count",
+      "value": 2,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.port_count",
+      "value": 2,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.width_um",
+      "value": 16.8,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "verify.passed",
+      "value": true,
+      "unit": "",
+      "note": ""
+    }
+  ],
+  "provenance": {
+    "git_sha": "aa068f74fb113c35842e1e5d8f258b9c7e6bdc78",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "python": "3.13.7",
+    "tools": {
+      "ngspice": {
+        "status": "available",
+        "version": null,
+        "binary": "E:\\Reliability-PINN-Lab\\.tmp\\ngspice47\\Spice64\\bin\\ngspice_con.exe"
+      },
+      "klayout": {
+        "version": "0.30.12",
+        "pya": true
+      }
+    },
+    "input_sha256": {
+      "starter/design.json": "d63c60059197b8a3c794f49847ca0b5dfee6ba7206100d2cac2f2e7194339db6",
+      "inputs/src_dp_sky130.gds": "225d9c8edda1b44557ffa0e2fe822665d0e30356f4b81b8ea577bc70f7c9303b",
+      "inputs/src_dp_sky130.spice": "4644b84f7887eb15b8c6abf7ab853d5bd1338916ababe8338d5a8209644f5fe6"
+    }
+  }
+}

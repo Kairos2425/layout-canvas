@@ -1,0 +1,11 @@
+schema_version = 1
+id = "ihp-mirror-verify"
+type = "verify"
+title = "Compile an IHP SG13G2 current mirror and prove the layout verifies"
+deliverable = "starter/design.json"
+pdk = "ihp_sg13g2"
+
+[bounds]
+# current_mirror f2 -> ABBA -> 4 physical finger devices
+"extract.devices" = { equals = 4, deterministic = true, unit = "count" }
+"ppa.area_um2" = { max = 300.0, unit = "um2", deterministic = true }

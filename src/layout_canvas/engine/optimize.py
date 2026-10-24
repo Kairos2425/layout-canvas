@@ -155,17 +155,52 @@ def _tunable_params(session: DesignSession) -> list[dict[str, Any]]:
     return out
 
 
+def _spec_margin(entry: dict[str, Any]) -> float:
+    """Signed distance into a spec's bound, normalized and clipped to
+    ``[-1, 0]``: 0 for a pass, negative for a measured fail, -1 when the
+    spec cannot even be measured. This is the descent gradient a bare
+    pass/fail count lacks — a candidate that moves a failing spec closer
+    to its bound must score above one that moved it further away.
+    """
+    status = entry.get("status")
+    if status == "pass":
+        return 0.0
+    if status != "fail":
+        return -1.0
+    value = entry.get("value")
+    if value is None:
+        return -1.0
+    lo, hi = entry.get("min"), entry.get("max")
+    scale = max(
+        abs(lo) if lo is not None else 0.0,
+        abs(hi) if hi is not None else 0.0,
+        (hi - lo) if lo is not None and hi is not None else 0.0,
+        1e-12,
+    )
+    if lo is not None and value < lo:
+        dist = value - lo
+    elif hi is not None and value > hi:
+        dist = hi - value
+    else:
+        return 0.0
+    return max(dist / scale, -1.0)
+
+
 def _score(
     session: DesignSession,
     testbench: str | None,
-) -> tuple[tuple[float, float], str]:
-    """Run the testbench(es) and return ((n_specs_passed, -area), status).
+) -> tuple[tuple[float, float, float, float], str]:
+    """Score the design as ((feasible, n_passed, margin_sum, -area), status).
 
-    The score is lexicographic: more passing specs always wins; ties go to
-    the smaller layout. ``status`` is the fail-closed spec rollup —
-    ``unavailable`` when simulation cannot run, never faked.
+    Lexicographic: a physically broken candidate (compile/DRC/LVS fail)
+    ranks below every feasible one; among feasible candidates more passing
+    specs win, equal pass counts resolve on summed spec margin (the
+    gradient term), and remaining ties go to the smaller layout. ``status``
+    is the fail-closed spec rollup — ``unavailable`` when simulation
+    cannot run, never faked.
     """
     from layout_canvas.tools.testbench import _spec_status, run_all, run_testbench
+    from layout_canvas.tools.verify import verify_design
 
     design = session.design
     if testbench is not None:
@@ -179,8 +214,22 @@ def _score(
         area = extract_ppa(compile_design(design), design).get("area_um2")
     except Exception:
         area = None
-    # A design that no longer compiles scores worst on the area axis.
-    return (float(n_passed), -(area if area is not None else 1e18)), status
+    feasible = 0
+    if area is not None:
+        # Params that break extraction/DRC/LVS (e.g. a shrunk dimension
+        # severing a net) must never outscore a physically valid layout.
+        try:
+            feasible = 1 if verify_design(design).get("passed") else 0
+        except Exception:
+            feasible = 0
+    margin = sum(_spec_margin(e) for e in entries)
+    # A design that no longer compiles also scores worst on the area axis.
+    return (
+        float(feasible),
+        float(n_passed),
+        margin,
+        -(area if area is not None else 1e18),
+    ), status
 
 
 def _optimize_specs(
@@ -190,11 +239,14 @@ def _optimize_specs(
 ) -> Envelope:
     """Coordinate descent on block params toward all-specs-pass.
 
-    Per parameter: try value×0.75 and ×1.33 (clamped to [min, max], ints
-    rounded). Each candidate is committed through ``transact`` — kept when
-    the lexicographic score (specs passed, -area) improves, reverted via
-    transact otherwise. Stops on all-pass, a full round without
-    improvement, or ``max_iterations``.
+    Per parameter try value×(0.75, 0.9, 1.1, 1.33), clamped to [min, max]
+    and rounded for ints. The coarse pair explores; the fine pair lands
+    inside spec bands narrower than a param's coarse-step sensitivity —
+    without them a descent can only straddle the band forever. Each
+    candidate is committed through ``transact`` — kept when the
+    lexicographic score (feasible, specs passed, margin, -area) improves,
+    reverted via transact otherwise. Stops on all-pass, a full round
+    without improvement, or ``max_iterations``.
     """
     design = session.design
     if not design.testbenches:
@@ -234,9 +286,37 @@ def _optimize_specs(
         "revision": session.revision,
         "param": None,
         "value": None,
-        "score": [best[0], best[1]],
+        "score": list(best),
         "spec_status": best_status,
     })
+    if best_status == "unavailable":
+        # Specs cannot be evaluated at all — there is no descent signal,
+        # and the area tiebreak would just shrink the layout for nothing
+        # (and can drift into LVS-invalid states). Fail closed: report and
+        # stop rather than silently tuning a meaningless objective.
+        summary = {
+            "objective": "specs",
+            "testbench": testbench,
+            "iterations": 0,
+            "evals": 0,
+            "initial_score": list(initial_score),
+            "final_score": list(best),
+            "spec_status": "unavailable",
+            "all_passed": False,
+        }
+        session.record_run("optimize", summary)
+        return Envelope(
+            "ok",
+            session.revision,
+            [Diagnostic(
+                "warning", "specs-unavailable",
+                "specs could not be evaluated (simulator or signals "
+                "unavailable); no parameter tuning attempted")],
+            {**summary, "history": history, "tunable_params": [
+                {"instance": t["instance"], "name": t["name"],
+                 "min": t["min"], "max": t["max"], "value": t["value"]}
+                for t in tunables]},
+        )
 
     iterations = 0
     for iteration in range(1, max_iterations + 1):
@@ -250,7 +330,7 @@ def _optimize_specs(
             # what a losing candidate reverts to.
             base_val = t["value"]
             kept = base_val
-            for factor in (0.75, 1.33):
+            for factor in (0.75, 0.9, 1.1, 1.33):
                 cand = base_val * factor
                 cand = min(max(cand, t["min"]), t["max"])
                 if t["is_int"]:
@@ -282,7 +362,7 @@ def _optimize_specs(
                     "revision": session.revision,
                     "param": f"{t['instance']}.{t['name']}",
                     "value": int(cand) if t["is_int"] else cand,
-                    "score": [score[0], score[1]],
+                    "score": list(score),
                     "spec_status": cur_status,
                 })
                 if score > best:
@@ -314,8 +394,8 @@ def _optimize_specs(
         "testbench": testbench,
         "iterations": iterations,
         "evals": len(history) - 1,
-        "initial_score": [initial_score[0], initial_score[1]],
-        "final_score": [best[0], best[1]],
+        "initial_score": list(initial_score),
+        "final_score": list(best),
         "spec_status": best_status,
         "all_passed": all_passed,
     }

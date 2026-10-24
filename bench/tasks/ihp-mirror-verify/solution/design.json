@@ -1,0 +1,26 @@
+{
+    "ir_version": "0.1",
+    "name": "bench_ihp_mirror",
+    "pdk": "ihp_sg13g2",
+    "instances": [
+        {
+            "id": "cm",
+            "block": "ihp_sg13g2.current_mirror",
+            "params": {
+                "fingers": 2,
+                "width": 0.5,
+                "type": "nmos"
+            }
+        }
+    ],
+    "ports": [
+        {"name": "IN", "pin": "cm.in", "direction": "input"},
+        {"name": "OUT", "pin": "cm.out", "direction": "output"},
+        {"name": "GATE", "pin": "cm.gate", "direction": "input"},
+        {"name": "VSS", "pin": "cm.vss", "direction": "inout"}
+    ],
+    "meta": {
+        "author": "layout-canvas",
+        "description": "Bench starter: single SG13G2 nmos current mirror for cross-PDK verification"
+    }
+}

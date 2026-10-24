@@ -1,0 +1,24 @@
+{
+    "ir_version": "0.1",
+    "name": "parent_ext",
+    "pdk": "sky130",
+    "instances": [
+        {"id": "u1", "block": "bench.imported_dp", "params": {}},
+        {"id": "u2", "block": "sky130.current_mirror",
+         "params": {"fingers": 2},
+         "placement": {"relative_to": "u1", "relation": "right_of",
+                       "margin": 1.0}}
+    ],
+    "nets": [
+        {"name": "tail", "pins": ["u1.tail", "u2.in"]},
+        {"name": "vss", "pins": ["u1.vss", "u2.vss"]}
+    ],
+    "ports": [
+        {"name": "INP", "pin": "u1.inp", "direction": "input"},
+        {"name": "OUTP", "pin": "u1.outp", "direction": "output"}
+    ],
+    "meta": {
+        "author": "layout-canvas",
+        "description": "Bench starter: parent instantiating the imported fixture cell + a sky130 mirror"
+    }
+}

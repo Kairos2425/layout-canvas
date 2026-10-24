@@ -1,0 +1,13 @@
+schema_version = 1
+id = "sky130-diffamp-verify"
+type = "verify"
+title = "Compile the sky130 diffamp IR and prove the layout verifies"
+deliverable = "starter/design.json"
+pdk = "sky130"
+
+[bounds]
+# Deterministic device census: a regression in block generation or
+# extraction changing the leaf-device count fails exactly.
+"extract.devices" = { equals = 16, deterministic = true, unit = "count" }
+# Deterministic geometry metric — the baseline compares it exactly.
+"ppa.area_um2" = { max = 1600.0, unit = "um2", deterministic = true }

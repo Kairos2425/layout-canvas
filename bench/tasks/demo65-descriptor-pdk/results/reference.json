@@ -1,0 +1,188 @@
+{
+  "task": "demo65-descriptor-pdk",
+  "type": "verify",
+  "release_id": "layout-canvas-bench-v1",
+  "frozen_at": "2026-10-24T02:37:30Z",
+  "status": "pass",
+  "checks": [
+    {
+      "id": "hidden.drc_clean",
+      "measured_value": 0,
+      "spec": "== 0 violations",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "hidden.lvs_match",
+      "measured_value": true,
+      "spec": "== true",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "bound.extract.devices",
+      "measured_value": 4,
+      "spec": "== 4 count",
+      "status": "pass",
+      "unit": "count",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "bound.extract.status",
+      "measured_value": "ok",
+      "spec": "== ok",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "bound.ppa.area_um2",
+      "measured_value": 222.547,
+      "spec": "[-inf, 800.0] um2",
+      "status": "pass",
+      "unit": "um2",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    }
+  ],
+  "metrics": [
+    {
+      "id": "compile.ok",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "drc.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "drc.total_violations",
+      "value": 0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.devices",
+      "value": 4,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.nets",
+      "value": 13,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.status",
+      "value": "ok",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "lvs.match",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "lvs.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.area_um2",
+      "value": 222.547,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.height_um",
+      "value": 16.08,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.hpwl_um",
+      "value": 25.6,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.instance_count",
+      "value": 2,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.net_count",
+      "value": 1,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.port_count",
+      "value": 6,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.width_um",
+      "value": 13.84,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "verify.passed",
+      "value": true,
+      "unit": "",
+      "note": ""
+    }
+  ],
+  "provenance": {
+    "git_sha": "aa068f74fb113c35842e1e5d8f258b9c7e6bdc78",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "python": "3.13.7",
+    "tools": {
+      "ngspice": {
+        "status": "available",
+        "version": null,
+        "binary": "E:\\Reliability-PINN-Lab\\.tmp\\ngspice47\\Spice64\\bin\\ngspice_con.exe"
+      },
+      "klayout": {
+        "version": "0.30.12",
+        "pya": true
+      }
+    },
+    "input_sha256": {
+      "starter/design.json": "036d13b256815712302a60605809ef48a3423b197fbdd9106af9dd7b72f392ce",
+      "inputs/demo65.pdk.json": "ce109df54f2f9c42996af65484a5ece61980a3e3783f00c56738f56d2989c2e9",
+      "inputs/models/demo65_tt.lib": "a9d41e5ea1f5f7a9ae130ba32363df9369e071083c62e5a9a17385816247d97a"
+    }
+  }
+}

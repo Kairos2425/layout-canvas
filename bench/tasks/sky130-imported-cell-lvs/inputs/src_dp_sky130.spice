@@ -1,0 +1,15 @@
+* Layout Canvas Generated SPICE Netlist for src_dp_sky130
+* PDK: sky130
+
+* --- Primitive Subcircuit Models ---
+.subckt sky130_diff_pair__ee4f6607ea inp inn outp outn tail vss
+M1 tail inp outp vss sky130_fd_pr__nfet_01v8 w=1.0u l=0.5u
+M2 outn inn tail vss sky130_fd_pr__nfet_01v8 w=1.0u l=0.5u
+M3 tail inn outn vss sky130_fd_pr__nfet_01v8 w=1.0u l=0.5u
+M4 outp inp tail vss sky130_fd_pr__nfet_01v8 w=1.0u l=0.5u
+.ends sky130_diff_pair__ee4f6607ea
+
+* --- Top Level Design: src_dp_sky130 ---
+.subckt src_dp_sky130 inp inn outp outn tail vss
+Xdp inp inn outp outn tail vss sky130_diff_pair__ee4f6607ea
+.ends src_dp_sky130

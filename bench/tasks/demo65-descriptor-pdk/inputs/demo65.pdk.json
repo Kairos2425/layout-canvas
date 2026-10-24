@@ -1,0 +1,66 @@
+{
+    "$doc": "bench fixture — synthetic 'demo65' teaching PDK; sky130 layer numbers/rules so generated geometry verifies, with leaf devices renamed to prove the descriptor (not the built-in tables) drove extraction. Not private PDK data.",
+    "name": "demo65",
+    "pin_purpose": 16,
+    "layers": {
+        "diff": [65, 20], "tap": [65, 44], "nwell": [64, 20],
+        "poly": [66, 20], "licon": [66, 44], "li1": [67, 20],
+        "mcon": [67, 44], "met1": [68, 20], "via1": [68, 44],
+        "met2": [69, 20], "via2": [69, 44], "met3": [70, 20],
+        "via3": [70, 44], "met4": [71, 20], "via4": [71, 44],
+        "met5": [72, 20], "nsdm": [93, 44], "psdm": [94, 20]
+    },
+    "rules": {
+        "min_instance_margin_um": 0.5,
+        "default_routing_layer": "met2"
+    },
+    "model_libs": {"spice_prelude_file": "models/demo65_tt.lib"},
+    "extract": {
+        "roles": {
+            "well_n": [64, 20], "diff": [65, 20], "tap": [65, 44],
+            "poly": [66, 20], "licon": [66, 44], "li1": [67, 20],
+            "mcon": [67, 44], "met1": [68, 20], "via1": [68, 44],
+            "met2": [69, 20], "via2": [69, 44], "met3": [70, 20],
+            "via3": [70, 44], "met4": [71, 20], "via4": [71, 44],
+            "met5": [72, 20], "nsdm": [93, 44], "psdm": [94, 20],
+            "capm": [89, 44]
+        },
+        "text_datatypes": [16],
+        "leaf_devices": {
+            "demo65_nch": ["demo65_nch", "nmos"],
+            "demo65_pch": ["demo65_pch", "pmos"]
+        }
+    },
+    "drc": {
+        "rules": {
+            "well_n": [["width", 0.84], ["space", 1.27]],
+            "diff": [["width", 0.15], ["space", 0.27]],
+            "poly": [["width", 0.15], ["space", 0.21]],
+            "li1": [["width", 0.17], ["space", 0.17]],
+            "met1": [["width", 0.14], ["space", 0.14]],
+            "met2": [["width", 0.14], ["space", 0.14]],
+            "met3": [["width", 0.30], ["space", 0.30]],
+            "met4": [["width", 0.30], ["space", 0.30]],
+            "met5": [["width", 0.36], ["space", 0.34]],
+            "nsdm": [["width", 0.38], ["space", 0.38]],
+            "psdm": [["width", 0.38], ["space", 0.38]],
+            "capm": [["width", 0.50]]
+        },
+        "enclosure": [
+            {"label": "licon.li", "cut": "licon",
+             "enclosed_by": ["li1"], "enc": 0.06},
+            {"label": "mcon.li", "cut": "mcon",
+             "enclosed_by": ["li1"], "enc": 0.03},
+            {"label": "mcon.m1", "cut": "mcon",
+             "enclosed_by": ["met1"], "enc": 0.03},
+            {"label": "via.m1", "cut": "via1",
+             "enclosed_by": ["met1"], "enc": 0.055},
+            {"label": "via.m2", "cut": "via1",
+             "enclosed_by": ["met2"], "enc": 0.055},
+            {"label": "via2.m2", "cut": "via2",
+             "enclosed_by": ["met2"], "enc": 0.065},
+            {"label": "via2.m3", "cut": "via2",
+             "enclosed_by": ["met3"], "enc": 0.065}
+        ]
+    }
+}

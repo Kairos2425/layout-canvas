@@ -1,0 +1,288 @@
+{
+  "task": "sky130-optimize-specs",
+  "type": "optimize",
+  "release_id": "layout-canvas-bench-v1",
+  "frozen_at": "2026-10-24T02:37:30Z",
+  "status": "pass",
+  "checks": [
+    {
+      "id": "spec.tb_op_schematic.outp_op",
+      "measured_value": 0.554245,
+      "spec": "[0.55, 0.575] V",
+      "status": "pass",
+      "unit": "V",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true
+    },
+    {
+      "id": "hidden.drc_clean",
+      "measured_value": 0,
+      "spec": "== 0 violations",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "hidden.lvs_match",
+      "measured_value": true,
+      "spec": "== true",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "bound.optimize.iterations",
+      "measured_value": 1,
+      "spec": "[-inf, 6.0] count",
+      "status": "pass",
+      "unit": "count",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "bound.optimize.all_passed",
+      "measured_value": true,
+      "spec": "== True",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    },
+    {
+      "id": "bound.ppa.area_um2",
+      "measured_value": 1732.026,
+      "spec": "[-inf, 2500.0] um2",
+      "status": "pass",
+      "unit": "um2",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false
+    }
+  ],
+  "metrics": [
+    {
+      "id": "compile.ok",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "drc.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "drc.total_violations",
+      "value": 0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.devices",
+      "value": 24,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.nets",
+      "value": 21,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.status",
+      "value": "ok",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "lvs.match",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "lvs.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "optimize.all_passed",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "optimize.evals",
+      "value": 6,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "optimize.final_specs",
+      "value": 1.0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "optimize.initial_specs",
+      "value": 1.0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "optimize.iterations",
+      "value": 1,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "optimize.spec_status",
+      "value": "pass",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "optimize.status",
+      "value": "ok",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.area_um2",
+      "value": 1732.026,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.height_um",
+      "value": 22.73,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.hpwl_um",
+      "value": 248.31,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.instance_count",
+      "value": 3,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.net_count",
+      "value": 5,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.port_count",
+      "value": 4,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.width_um",
+      "value": 76.2,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "score.final_area_um2",
+      "value": 1732.026,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "score.iterations",
+      "value": 1,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "score.specs_passed",
+      "value": 1.0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "specs.passed",
+      "value": 1,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "specs.total",
+      "value": 1,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "specs.unavailable",
+      "value": 0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "specs.worst_case",
+      "value": "spec.tb_op_schematic.outp_op (final)",
+      "unit": "",
+      "note": "worst-case spec (nearest bound)"
+    },
+    {
+      "id": "specs.worst_margin_frac",
+      "value": 0.3396,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "verify.passed",
+      "value": true,
+      "unit": "",
+      "note": ""
+    }
+  ],
+  "provenance": {
+    "git_sha": "aa068f74fb113c35842e1e5d8f258b9c7e6bdc78",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "python": "3.13.7",
+    "tools": {
+      "ngspice": {
+        "status": "available",
+        "version": null,
+        "binary": "E:\\Reliability-PINN-Lab\\.tmp\\ngspice47\\Spice64\\bin\\ngspice_con.exe"
+      },
+      "klayout": {
+        "version": "0.30.12",
+        "pya": true
+      }
+    },
+    "input_sha256": {
+      "starter/design.json": "53276a417355f1556aaa8844252884efa93655d30bdb57651ddc24a69effefa7"
+    }
+  }
+}
