@@ -80,18 +80,44 @@ produced it, surfaced verbatim into `scorecard.json`:
    schematic netlist (`Spec.on="nominal"`). `source:"extracted"` benches
    sit one notch higher on the same rung (solver-verified *with
    parasitics*) — still not silicon.
-3. **`stress_corner`** *(this release)* — the same analysis re-run at an
-   accelerated voltage/temperature corner (`Testbench.stress`,
-   HTOL-style proxy). `Spec.on="stress"` bounds the stressed scalar;
-   `on="drift"` bounds `|stress − nominal|`. **Still solver-verified
-   evidence — never an aging model.**
-4. **`aging_model`** — time-evolving degradation (BTI/HCI/TDDB) from a
+3. **`stress_corner`** — the same analysis re-run at an accelerated
+   voltage/temperature corner (`Testbench.stress`, HTOL-style proxy).
+   `Spec.on="stress"` bounds the stressed scalar; `on="drift"` bounds
+   `|stress − nominal|`. **Still solver-verified evidence — never an
+   aging model.**
+4. **`parametric_stress`** *(this release)* — a stress corner that
+   additionally injects device-level BSIM4 parameters
+   (`stress.dvth_nmos`/`dvth_pmos` → `delvto`, `stress.mu0_scale` →
+   `mulu0` on the MOS instance cards, forwarded through the foundry
+   wrapper subcircuits). A transparent NBTI/HCI-style drift *proxy* —
+   **no time evolution, no wearout statistics, not an aging model.** If
+   the PDK's wrappers cannot forward the params the run reports
+   `unavailable` rather than silently running un-stressed.
+5. **`aging_model`** — time-evolving degradation (BTI/HCI/TDDB) from a
    foundry aging deck. Not implemented; no check may claim it.
-5. **`silicon_calibrated`** — models fitted to measured silicon. This
+6. **`silicon_calibrated`** — models fitted to measured silicon. This
    repository never claims it, by construction.
 
 An `unavailable` verdict means the rung's capability was missing — the
 check reports that honestly rather than substituting a weaker rung.
+
+### JEDEC coverage matrix
+
+`layout-canvas reliability <design.json>` (CLI), `reliability_report`
+(MCP) and `layout_canvas.tools.reliability.reliability_report(design)`
+report the release `jesd-aligned-v1` matrix: 14 JEDEC/JEP items — htol
+(JESD22-A108), nbti_aging / hci_aging (JEP122), em_current (JEP122
+Black), latch_up (JESD78), antenna, esd_hbm (JS-001), esd_cdm (JS-002),
+thb_hast (A110/A101), temp_cycle (A104), htsl (A103), endurance (A117),
+fit_rate (JESD85), mismatch_aging (JEP122) — each with
+`id/jedec/evaluated_via/evidence_level/status/reason/details` and
+`status ∈ {pass, fail, unavailable, not_applicable, structural}`.
+Items the tool cannot evaluate (e.g. antenna extraction, humidity
+chamber tests, FIT extrapolation, missing spec declarations or a missing
+simulator) are `unavailable` with the missing capability named — never
+fabricated as passes. `latch_up` passes only at structural grade
+(block-level self-protection heuristic — not physical latch-up
+verification).
 
 ## Task types
 
@@ -104,7 +130,7 @@ check reports that honestly rather than substituting a weaker rung.
 
 All types get the hidden DRC/LVS checks once compilation succeeds.
 
-## The seven tasks
+## The eight tasks
 
 | id | capability surface |
 |---|---|
@@ -115,6 +141,7 @@ All types get the hidden DRC/LVS checks once compilation succeeds.
 | `demo65-descriptor-pdk` | process externalized: `inputs/demo65.pdk.json` drives `gen_*` blocks + verify |
 | `sky130-optimize-specs` | bounded spec-driven tuning: must reach all-specs-pass ≤ 6 rounds |
 | `sky130-ota-stress-corner` | accelerated V/T corner: OTA op re-run at 1.98 V/125 °C, `on:"stress"` + `on:"drift"` specs (HTOL-style proxy, not an aging model) |
+| `sky130-ota-aging-proxy` | parametric device stress: BSIM4 `delvto`/`mulu0` injected on the stress corner (NBTI/HCI proxy) + drift + `i(v_vdd)` supply-current EM budget |
 
 ## `task.toml` schema (schema_version = 1)
 

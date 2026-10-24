@@ -356,8 +356,9 @@ class TestStressCorner:
 
         def fake(design, *, analysis="op", vdd=1.8, temp=None, stimulus=None,
                  probes=None, simulator="auto", executable=None, timeout=120,
-                 workdir=None):
+                 workdir=None, device_stress=None):
             calls.append({"vdd": vdd, "temp": temp,
+                          "device_stress": device_stress,
                           "workdir": Path(workdir).name if workdir else None})
             v = 0.61 if vdd <= 1.8 else 0.75
             return {"status": "passed",
@@ -384,6 +385,9 @@ class TestStressCorner:
         # separate subdirs so deck.cir/waves.dat never clobber each other
         assert calls[0]["workdir"] == "nominal"
         assert calls[1]["workdir"] == "stress"
+        # no device-stress keys declared → both legs run unstressed
+        assert calls[0]["device_stress"] is None
+        assert calls[1]["device_stress"] is None
         assert r["stress"]["status"] == "passed"
         assert r["stress"]["corner"] == {"vdd": 1.98, "temp": 125.0}
         names = {e["name"]: e for e in r["specs"]}
@@ -395,6 +399,33 @@ class TestStressCorner:
         assert {e["name"] for e in r["stress"]["specs"]} == {
             "s_outp", "d_outp"}
         assert r["stress"]["spec_status"] == "pass"
+
+    def test_device_stress_keys_route_to_stress_leg_only(
+            self, monkeypatch):
+        """dvth_*/mu0_scale become device_stress on the stress run; the
+        nominal run and the reported corner stay auditable."""
+        import layout_canvas.tools.sim as sim
+
+        calls = []
+
+        def fake(design, **kw):
+            calls.append(kw)
+            return {"status": "passed", "waves": {"outp": [0.6]},
+                    "sweep": [0.0]}
+
+        monkeypatch.setattr(sim, "simulate_auto", fake)
+        d = self._design([{
+            "name": "tb", "vdd": 1.8,
+            "stress": {"vdd": 1.98, "temp": 125.0,
+                       "dvth_nmos": 0.03, "mu0_scale": 0.85}}])
+        r = run_testbench(d, "tb")
+        assert calls[0]["device_stress"] is None      # nominal: never
+        assert calls[1]["device_stress"] == {          # stress leg only
+            "dvth_nmos": 0.03, "mu0_scale": 0.85}
+        # device keys recorded on the reported corner for audit
+        assert r["stress"]["corner"] == {
+            "vdd": 1.98, "temp": 125.0,
+            "dvth_nmos": 0.03, "mu0_scale": 0.85}
 
     def test_stress_falls_back_per_key(self, monkeypatch):
         import layout_canvas.tools.sim as sim

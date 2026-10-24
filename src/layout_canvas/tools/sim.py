@@ -308,6 +308,45 @@ def _bias_line(name: str, vdd: float) -> str:
 _SUPPLY_TOKENS = ("vdd", "vcc", "vss", "gnd", "vsub", "vbb", "supply")
 
 
+def _supply_current_elements(stimulus: str) -> list[str]:
+    """Voltage-source element names that feed supply nets in a generated
+    stimulus (``V_<port> <net> 0 ...`` plus synthesized ``V_VDD``/``V_VSS``
+    rails). ngspice lowercases element names, so ``V_vdd`` and ``V_VDD``
+    are the same vector ``v_vdd#branch`` — returned deduped, lowercased.
+    The waves key for each is ``i(<elem>)``: the current the source
+    *delivers* (positive = sourcing), i.e. ``-`` ngspice's branch
+    convention — the natural sign for a current-budget (EM) spec."""
+    out: list[str] = []
+    for line in stimulus.splitlines():
+        m = re.match(r"^V(\S+)\s+(\S+)\s+0\b", line)
+        if not m:
+            continue
+        if m.group(2).lower() not in _SUPPLY_TOKENS:
+            continue
+        elem = ("v" + m.group(1)).lower()
+        if elem not in out:
+            out.append(elem)
+    return out
+
+
+def _i_vector(elem: str) -> str:
+    """``let``-vector name carrying ``-i(<elem>)`` for the wrdata row."""
+    return f"lc_i_{re.sub(r'[^A-Za-z0-9_]', '_', elem)}"
+
+
+def _current_capture(stimulus: str) -> tuple[list[str], list[str], list[str]]:
+    """(.control let-lines, wave labels, element names) instrumenting
+    every supply source found by ``_supply_current_elements``.
+    ``wrdata`` cannot take a bare ``-i(v_x)`` expression when mixed with
+    other vectors (the leading ``-`` is parsed as a flag — the column
+    silently drops), so the negated branch current is materialised as a
+    named vector first."""
+    elems = _supply_current_elements(stimulus)
+    lets = [f"let {_i_vector(e)} = -i({e})" for e in elems]
+    labels = [f"i({e})" for e in elems]
+    return lets, labels, elems
+
+
 def _drive_port(design: Design, ports: list[str]) -> str | None:
     """Pick the port that carries the ac/dc stimulus source: the first
     port declared ``direction='input'`` on the design, else the first
@@ -421,11 +460,17 @@ def default_stimulus(
         if drive is not None:
             lines, drive = _apply_drive(lines, drive, vdd, analysis)
     lines.append(f"X1 {' '.join(ports)} {design.name}")
+    lets, _labels, elems = _current_capture("\n".join(lines))
     vectors = " ".join(f"v({p})" for p in ports)
+    if elems:
+        vectors += " " + " ".join(_i_vector(e) for e in elems)
     run = _sweep_run(analysis, tran_step, tran_stop, drive, vdd)
     lines.append(".control")
     lines.extend(default_control_prelude(design.pdk))
     lines.append(run)
+    # Branch currents exist only after the analysis ran — let-lines sit
+    # between the run and wrdata.
+    lines.extend(lets)
     lines.append(f"wrdata {out_file} {vectors}")
     lines.append(".endc")
     return "\n".join(lines)
@@ -443,6 +488,7 @@ def simulate_auto(
     executable: str | None = None,
     timeout: int = 120,
     workdir: str | Path | None = None,
+    device_stress: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """One-click simulation for the canvas: model prelude + auto stimulus +
     backend run + waveform extraction. Returns the SimResult fields plus
@@ -454,6 +500,20 @@ def simulate_auto(
     models' ``tnom`` (the temperature their parameters were extracted at);
     temperature dependence stays the models' own equations. ``None`` keeps
     the simulator default (ngspice: 27 °C).
+
+    ``device_stress`` carries the parametric aging-proxy keys
+    (``dvth_nmos``/``dvth_pmos``/``mu0_scale`` — see
+    ``_inject_device_stress``). When set, the deck's MOS cards gain
+    ``delvto``/``mulu0`` instance params and the model prelude is inlined
+    and patched so PDK wrapper subckts forward them to the BSIM4 device
+    — if any stressed device model has no such wiring path the run
+    reports ``unavailable`` with the unapplied wrappers named, never a
+    silently un-stressed "stress" run.
+
+    ``waves`` also carries ``i(v_<src>)`` for every supply-feeding
+    voltage source in the auto stimulus — the current the source
+    *delivers* (positive = sourcing), so an EM-style budget is a plain
+    ``max`` bound.
     """
     root = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="lc_sim_"))
     root.mkdir(parents=True, exist_ok=True)
@@ -461,7 +521,18 @@ def simulate_auto(
     stimulus = default_stimulus(
         design, vdd=vdd, analysis=analysis,
         tran_stop=tran_stop, tran_step=tran_step, out_file="waves.dat")
-    netlist = _rewrite_mos_cards(compile_netlist(design), design.pdk)
+    netlist = compile_netlist(design)
+    device_report: dict[str, Any] | None = None
+    if device_stress:
+        netlist, injected_models = _inject_device_stress(netlist, device_stress)
+        patched, device_report = _device_stress_prelude(
+            design.pdk, injected_models)
+        device_report["requested"] = {
+            k: float(v) for k, v in device_stress.items()}
+        device_report["injected_models"] = sorted(injected_models)
+        if patched is not None:
+            prelude = patched
+    netlist = _rewrite_mos_cards(netlist, design.pdk)
     deck_parts = ["* layout-canvas auto deck", ""]
     if prelude:
         deck_parts += [prelude, ""]
@@ -481,6 +552,14 @@ def simulate_auto(
     if design.pdk in ("sky130", "ihp_sg13g2") and not prelude:
         return {"status": "unavailable",
                 "errors": [f"no local model deck resolved for pdk {design.pdk!r}"]}
+    if device_report and device_report["unapplied"]:
+        return {
+            "status": "unavailable",
+            "errors": [
+                "device_stress params cannot reach the device models: "
+                "wrapper subckts without a delvto/mulu0 forwarding path: "
+                + ", ".join(device_report["unapplied"])],
+            "device_stress": device_report}
 
     result = run_netlist(
         "\n".join(deck_parts), simulator=simulator,
@@ -489,18 +568,22 @@ def simulate_auto(
         rf"^\s*\.subckt\s+{re.escape(design.name)}\s+(?P<ports>.+?)\s*$",
         netlist, re.MULTILINE)
     ports = m.group("ports").split() if m else [p.name for p in design.ports]
+    i_labels = [f"i({e})" for e in _supply_current_elements(stimulus)]
+    wave_names = ports + i_labels
     waves_raw = parse_wrdata(root / "waves.dat")
-    # v0 is the sweep column; v1..vN map positionally onto `ports`
+    # v0 is the sweep column; v1..vN map positionally onto `wave_names`
     # (ac keeps the imaginary parts under v{i}i keys).
     if analysis == "ac":
-        waves = _ac_waves(ports, waves_raw)
+        waves = _ac_waves(wave_names, waves_raw)
     else:
-        waves = {ports[i - 1]: waves_raw[f"v{i}"]
-                 for i in range(1, len(ports) + 1) if f"v{i}" in waves_raw}
+        waves = {wave_names[i - 1]: waves_raw[f"v{i}"]
+                 for i in range(1, len(wave_names) + 1) if f"v{i}" in waves_raw}
     out = result.to_dict()
     out["ports"] = ports
     out["sweep"] = waves_raw.get("v0", [])
     out["waves"] = waves
+    if device_report is not None:
+        out["device_stress"] = device_report
     if analysis == "ac":
         out["ac_source"] = _drive_port(design, ports)
     return out
@@ -546,6 +629,226 @@ def _leaf_to_wrapper(pdk: str) -> dict[str, str]:
     return {leaf: sub for sub, (leaf, _pol) in leaf_devices_for(pdk).items()}
 
 
+# --- Parametric device stress (NBTI/HCI proxy) ----------------------------
+#
+# ``device_stress`` carries the ``Testbench.stress`` device keys
+# (``dvth_nmos``/``dvth_pmos``/``mu0_scale``). They are *parametric
+# proxies* — injected as BSIM4 instance parameters ``delvto`` (ΔVth0, in
+# the model's own sign convention: positive raises an nmos Vth, a pfet
+# |Vth| increase takes a *negative* value) and ``mulu0`` (low-field
+# mobility multiplier). This is not a foundry aging model: no time
+# evolution, no statistics.
+#
+# Wiring reality (verified on ngspice-47 + bundled sky130 TT models):
+# the PDK's MOS are wrapper ``.subckt``s whose inner M-cards forward only
+# ``l w ad as pd ps nrd nrs sa sb sd nf`` — a ``delvto`` passed on the
+# X-card lands in subckt parameter scope and reaches nothing. The models
+# themselves are *subckt-scoped* (``.model`` lives inside the wrapper
+# body), so retargeting the M-card at ``<wrapper>__model`` fails
+# ("could not find a valid modelname"). The only path that moves the op
+# point: inline the model prelude, add ``delvto``/``mulu0`` to each MOS
+# wrapper's ``.param`` defaults and forward them on the inner M-card —
+# then an injected netlist param rides the X-card into the device.
+
+_M_CARD = re.compile(r"^\s*([mM]\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)(.*)$")
+_NMOS_MODEL = ("nfet", "nmos", "nch")
+_PMOS_MODEL = ("pfet", "pmos", "pch")
+DEVICE_STRESS_KEYS = ("dvth_nmos", "dvth_pmos", "mu0_scale")
+
+
+def _inject_device_stress(
+    netlist: str, device_stress: dict[str, float]
+) -> tuple[str, set[str]]:
+    """Append BSIM4 stress params to MOS M-cards, by polarity.
+
+    ``dvth_nmos``/``dvth_pmos`` → ``delvto=<v>`` on M-cards whose model
+    token names an n- resp. p-channel device (``nfet|nmos|nch`` /
+    ``pfet|pmos|pch`` — covers leaf names ``nfet_01v8``, wrapper names
+    ``sky130_fd_pr__nfet_01v8`` and generic ``nch``/``pch`` models alike).
+    ``mu0_scale`` → ``mulu0=<f>`` on *every* M-card. Returns the patched
+    text plus the set of distinct model tokens that received params —
+    the caller checks which of them are wrapper subckts needing the
+    prelude forward-patch.
+    """
+    dv_n = device_stress.get("dvth_nmos")
+    dv_p = device_stress.get("dvth_pmos")
+    mu = device_stress.get("mu0_scale")
+    injected: set[str] = set()
+    out = []
+    for line in netlist.splitlines():
+        m = _M_CARD.match(line)
+        if m is None:
+            out.append(line)
+            continue
+        tok = m.group(6)
+        low = tok.lower()
+        existing = line.lower()
+        params: list[tuple[str, float]] = []
+        if dv_n is not None and any(k in low for k in _NMOS_MODEL):
+            params.append(("delvto", float(dv_n)))
+        if dv_p is not None and any(k in low for k in _PMOS_MODEL):
+            params.append(("delvto", float(dv_p)))
+        if mu is not None:
+            params.append(("mulu0", float(mu)))
+        # a card that already carries a param keeps its own value — the
+        # stress request never silently overrides deck text
+        add = " ".join(f"{k}={v:g}" for k, v in params if k not in existing)
+        if add:
+            line = line.rstrip() + " " + add
+            injected.add(tok)
+        out.append(line)
+    return "\n".join(out), injected
+
+
+_INCLUDE_RE = re.compile(r'^\s*\.include\s+["\']?([^"\'\s]+)["\']?', re.IGNORECASE)
+
+
+def _expand_includes(
+    text: str, base_dir: Path, _seen: set[Path] | None = None
+) -> str | None:
+    """Inline every ``.include`` recursively (resolved like ngspice:
+    relative to the including file's directory). ``None`` when a target
+    file is missing — fail-closed, a half-expanded prelude is worse than
+    none."""
+    if _seen is None:
+        _seen = set()
+    out: list[str] = []
+    for line in text.splitlines():
+        m = _INCLUDE_RE.match(line)
+        if m is None:
+            out.append(line)
+            continue
+        inc = Path(m.group(1))
+        if not inc.is_absolute():
+            inc = (base_dir / inc).resolve()
+        if inc in _seen or not inc.is_file():
+            return None
+        _seen.add(inc)
+        sub = _expand_includes(
+            inc.read_text(encoding="utf-8-sig", errors="replace"),
+            inc.parent, _seen)
+        if sub is None:
+            return None
+        out.append(sub)
+    return "\n".join(out)
+
+
+def _expanded_prelude(pdk: str) -> str | None:
+    """The model prelude as fully-inlined text (``.include`` resolved).
+    ``None`` when the PDK has no resolvable local model text — the
+    device-stress path then reports its keys unapplied."""
+    from layout_canvas.pdk import get_pdk
+
+    try:
+        desc = get_pdk(pdk)
+    except KeyError:
+        desc = None
+    if desc is not None and desc.model_libs.get("spice_prelude_file"):
+        lib = Path(desc.model_libs["spice_prelude_file"])
+        if not lib.is_absolute():
+            lib = Path(desc.base_dir or ".") / lib
+        if not lib.is_file():
+            return None
+        return _expand_includes(
+            lib.read_text(encoding="utf-8-sig", errors="replace"),
+            lib.parent)
+    prelude = default_model_prelude(pdk)
+    if not prelude:
+        return None
+    return _expand_includes(prelude, Path.cwd())
+
+
+_SUBCKT_RE = re.compile(
+    r"^\s*\.subckt\s+(\S+)\b.*?^\s*\.ends[^\n]*",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL)
+
+
+def _patch_prelude_for_device_stress(
+    prelude_text: str, wanted: set[str]
+) -> tuple[str, set[str]]:
+    """Give each ``wanted`` wrapper subckt ``delvto``/``mulu0`` params:
+    appended to its ``.param`` defaults (``delvto = 0 mulu0 = 1`` — a
+    vanilla instance is unaffected) and forwarded onto every inner
+    M-card (``delvto = {delvto} mulu0 = {mulu0}``). Returns the patched
+    text and the set of subckt names actually patched; a subckt that
+    lacks a patchable ``.param`` line still gets one inserted."""
+    patched: set[str] = set()
+
+    def _fix(m: re.Match) -> str:
+        name = m.group(1)
+        if name not in wanted:
+            return m.group(0)
+        body = m.group(0)
+        mos_lines = [ln for ln in body.splitlines() if _M_CARD.match(ln)]
+        if not mos_lines:
+            return body  # no inner MOS card — cannot forward
+        new_body = body
+        for ln in mos_lines:
+            if "delvto" in ln.lower() or "mulu0" in ln.lower():
+                continue
+            new_body = new_body.replace(
+                ln, ln.rstrip() + " delvto = {delvto} mulu0 = {mulu0}", 1)
+        if new_body == body:
+            patched.add(name)
+            return body
+        pm = re.search(r"^\s*\.param\b[^\n]*", new_body, re.IGNORECASE | re.MULTILINE)
+        if pm is not None and "delvto" not in pm.group(0).lower():
+            new_body = new_body.replace(
+                pm.group(0), pm.group(0).rstrip() + " delvto = 0 mulu0 = 1", 1)
+        elif pm is None:
+            # declare defaults right after the .subckt header (incl.
+            # its '+' pin-list continuations)
+            new_body = re.sub(
+                r"(^\s*\.subckt[^\n]*\n(?:\s*\+[^\n]*\n)*)",
+                lambda h: h.group(1) + ".param delvto = 0 mulu0 = 1\n",
+                new_body, count=1, flags=re.IGNORECASE | re.MULTILINE)
+        patched.add(name)
+        return new_body
+
+    out = _SUBCKT_RE.sub(_fix, prelude_text)
+    return out, patched
+
+
+def _device_stress_prelude(
+    pdk: str, injected_models: set[str]
+) -> tuple[str | None, dict[str, Any]]:
+    """Model-prelude text patched so injected ``delvto``/``mulu0``
+    actually reach a device.
+
+    ``injected_models`` are the M-card model tokens the netlist
+    injection touched. Tokens that are PDK wrapper subckts (or leaf
+    devices mapping to one) *must* be patched — the params ride the
+    X-card ``name=value`` into subckt scope and only a patched wrapper
+    forwards them to the inner BSIM4 card. Tokens resolving to a real
+    ``.model`` take the params directly (ngspice errors at run time if
+    the model does not support them — fail-closed). Returns
+    ``(prelude_text_or_None, report)``; ``report["unapplied"]`` empty
+    means every injected param has a wiring path. ``None`` prelude
+    means "keep the default prelude" (nothing needed patching).
+    """
+    leaf2wrap = _leaf_to_wrapper(pdk)
+    wrappers = set(leaf2wrap.values())
+    needed = {
+        tok if tok in wrappers else leaf2wrap[tok]
+        for tok in injected_models if tok in wrappers or tok in leaf2wrap
+    }
+    report: dict[str, Any] = {
+        "wrappers_needed": sorted(needed),
+        "patched_wrappers": [],
+        "unapplied": [],
+    }
+    if not needed:
+        return None, report
+    expanded = _expanded_prelude(pdk)
+    if expanded is None:
+        report["unapplied"] = sorted(needed)
+        return None, report
+    patched_text, patched = _patch_prelude_for_device_stress(expanded, needed)
+    report["patched_wrappers"] = sorted(patched)
+    report["unapplied"] = sorted(needed - patched)
+    return patched_text, report
+
+
 def _unwrap_extracted_top(text: str) -> str | None:
     """Drop the root circuit's .SUBCKT/.ENDS shell so its contents sit at
     deck top level. Returns None when the root cannot be identified."""
@@ -583,6 +886,7 @@ def simulate_extracted(
     executable: str | None = None,
     timeout: int = 120,
     workdir: str | Path | None = None,
+    device_stress: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Post-layout simulation: compile → GDS → extract → simulate the
     extracted netlist. Fails closed on extraction errors. ``stimulus``
@@ -590,7 +894,12 @@ def simulate_extracted(
     named extracted nets to the wrdata columns. ``temp`` (°C) emits a
     ``.temp`` card — the circuit simulation temperature for every analysis
     in the deck (overrides ``.options temp``, never the models' ``tnom``);
-    ``None`` keeps the simulator default."""
+    ``None`` keeps the simulator default.
+
+    ``device_stress``: same parametric aging-proxy keys as
+    ``simulate_auto`` (``dvth_nmos``/``dvth_pmos``/``mu0_scale`` → BSIM4
+    ``delvto``/``mulu0`` on the extracted MOS cards, plus the wrapper-
+    forwarding prelude patch; unwired wrappers → ``unavailable``)."""
     from layout_canvas.compiler.compile import compile_design
     from layout_canvas.tools.extract import extract_netlist
 
@@ -606,8 +915,14 @@ def simulate_extracted(
                             + "; ".join(ext.errors or [ext.status])]}
 
     leaf2wrap = _leaf_to_wrapper(design.pdk)
+    netlist_text = ext.netlist_text
+    if device_stress:
+        netlist_text, _stress_models = _inject_device_stress(
+            netlist_text, device_stress)
+    else:
+        _stress_models = set()
     lines = []
-    for line in ext.netlist_text.splitlines():
+    for line in netlist_text.splitlines():
         # Extracted MOS cards are named like 'n$3'/'p$7' with the leaf
         # model as the 6th token — rewrite to X-cards on the PDK wrapper
         # subckts (w/l/as/ad/ps/pd params pass through unchanged).
@@ -703,6 +1018,7 @@ def simulate_extracted(
 
     if stimulus:
         stimulus_text = stimulus.rstrip()
+        i_elems: list[str] = []
     else:
         stimulus_lines = [_bias_line(p, vdd) for p in port_names]
         if not any(p.lower() in ("vdd", "vcc") for p in port_names):
@@ -715,14 +1031,40 @@ def simulate_extracted(
             if drive is not None:
                 stimulus_lines, drive = _apply_drive(
                     stimulus_lines, drive, vdd, analysis)
+        # supply-branch currents ride the same wrdata row — i(v_<src>) is
+        # the positive-sourcing current (see _supply_current_elements).
+        i_elems = _supply_current_elements("\n".join(stimulus_lines))
+        for e in i_elems:
+            probe_vecs.append((f"i({e})", _i_vector(e)))
+        probe_names = [label for label, _ in probe_vecs]
         vectors = " ".join(vec for _, vec in probe_vecs)
         run = _sweep_run(analysis, tran_step, tran_stop, drive, vdd)
         stimulus_lines += [".control"]
         stimulus_lines.extend(default_control_prelude(design.pdk))
-        stimulus_lines += [run, f"wrdata waves.dat {vectors}", ".endc"]
+        stimulus_lines += [run]
+        stimulus_lines += [f"let {_i_vector(e)} = -i({e})"
+                           for e in i_elems]
+        stimulus_lines += [f"wrdata waves.dat {vectors}", ".endc"]
         stimulus_text = "\n".join(stimulus_lines)
 
     prelude = default_model_prelude(design.pdk)
+    device_report: dict[str, Any] | None = None
+    if device_stress:
+        patched, device_report = _device_stress_prelude(
+            design.pdk, _stress_models)
+        device_report["requested"] = {
+            k: float(v) for k, v in device_stress.items()}
+        device_report["injected_models"] = sorted(_stress_models)
+        if patched is not None:
+            prelude = patched
+        if device_report["unapplied"]:
+            return {
+                "status": "unavailable",
+                "errors": [
+                    "device_stress params cannot reach the device models: "
+                    "wrapper subckts without a delvto/mulu0 forwarding "
+                    "path: " + ", ".join(device_report["unapplied"])],
+                "device_stress": device_report}
     deck_parts = ["* layout-canvas post-layout deck", ""]
     if prelude:
         deck_parts += [prelude, ""]
@@ -746,6 +1088,8 @@ def simulate_extracted(
         out["unresolved_probes"] = unresolved_probes
     out["sweep"] = waves_raw.get("v0", [])
     out["waves"] = waves
+    if device_report is not None:
+        out["device_stress"] = device_report
     if analysis == "ac":
         # Custom stimulus paths pick their own source; the auto path's
         # choice is reported so the bench is auditable.

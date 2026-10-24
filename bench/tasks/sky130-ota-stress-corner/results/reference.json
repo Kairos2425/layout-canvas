@@ -1,8 +1,8 @@
 {
   "task": "sky130-ota-stress-corner",
   "type": "spec",
-  "release_id": "layout-canvas-bench-v2",
-  "frozen_at": "2026-10-24T11:42:08Z",
+  "release_id": "layout-canvas-bench-v3",
+  "frozen_at": "2026-10-24T12:47:40Z",
   "status": "pass",
   "checks": [
     {
@@ -304,7 +304,7 @@
     }
   ],
   "provenance": {
-    "git_sha": "575a7d34dcd385e1687e24a85a70c96853095e2e",
+    "git_sha": "b71f4de4eed19a0bea1a6a1a5b42a9099f3aa26f",
     "platform": "Windows-10-10.0.19045-SP0",
     "python": "3.13.7",
     "tools": {

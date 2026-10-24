@@ -782,6 +782,35 @@ class LayoutCanvasMCPServer:
                     "required": ["ir_json"],
                 },
             },
+            {
+                "name": "reliability_report",
+                "description": "JEDEC-aligned reliability coverage matrix (jesd-aligned-v1): "
+                               "14 items — htol, nbti_aging, hci_aging, em_current, latch_up, "
+                               "antenna, esd_hbm, esd_cdm, thb_hast, temp_cycle, htsl, "
+                               "endurance, fit_rate, mismatch_aging — each with id/jedec/"
+                               "evaluated_via/evidence_level/status(pass|fail|unavailable|"
+                               "not_applicable|structural)/reason/details. Fail-closed: "
+                               "unavailable items name the missing capability; nothing is "
+                               "fabricated. run_sims=false evaluates only the structural items.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {
+                            "type": "string",
+                            "description": "Active session id (uses the session design).",
+                        },
+                        "ir_json": {
+                            "type": ["string", "object"],
+                            "description": "Block IR design JSON (alternative to session_id).",
+                        },
+                        "run_sims": {
+                            "type": "boolean",
+                            "description": "Run live simulations for sim-backed items "
+                                           "(default true). False = structural-only.",
+                        },
+                    },
+                },
+            },
         ]
 
     def handle_request(self, req: dict[str, Any]) -> dict[str, Any]:
@@ -1085,6 +1114,27 @@ class LayoutCanvasMCPServer:
                     ],
                 })
             return {"runs": runs}
+
+        elif name == "reliability_report":
+            from layout_canvas.tools.reliability import reliability_report
+
+            if args.get("session_id"):
+                design = self._get_session(args["session_id"]).design
+            elif args.get("ir_json") is not None:
+                design = self._parse_design(args["ir_json"])
+            else:
+                raise ValueError(
+                    "reliability_report needs 'session_id' or 'ir_json'")
+            rep = reliability_report(
+                design, run_sims=bool(args.get("run_sims", True)))
+            if args.get("session_id"):
+                self._get_session(args["session_id"]).record_run(
+                    "reliability", {
+                        "coverage": rep.get("coverage"),
+                        "statuses": {it["id"]: it["status"]
+                                     for it in rep.get("items", [])},
+                    })
+            return rep
 
         elif name == "gallery_list":
             from layout_canvas.web import gallery

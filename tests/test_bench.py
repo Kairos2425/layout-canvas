@@ -74,7 +74,7 @@ def test_cli_bench_subcommand(tmp_path, monkeypatch, capsys):
          "--check-baseline", "--out", str(tmp_path)])
     assert main() == 0
     card = json.loads((tmp_path / "scorecard.json").read_text())
-    assert card["release_id"] == "layout-canvas-bench-v2"
+    assert card["release_id"] == "layout-canvas-bench-v3"
     assert card["metric_schema"] == "flat-scalar-v2"
     assert card["coverage"] == {"runnable": 1, "total": 1}
     assert card["provenance"]["git_sha"] != "unknown"
@@ -227,4 +227,54 @@ def test_stress_corner_task_unavailable_without_ngspice(bench):
         for c in spec_checks)
     assert any(c["id"] == "spec.tb_op_stress.outp_drift"
                and c["evidence_level"] == "stress_corner"
+               for c in spec_checks)
+
+
+# --- Reliability rung: parametric device stress (delvto/mulu0) ----------
+
+def test_aging_proxy_task_loads(bench):
+    task = bench.load_task(BENCH / "tasks" / "sky130-ota-aging-proxy")
+    assert task.type == "spec"
+    metrics = {b.metric for b in task.bounds}
+    assert "specs.total" in metrics and "ppa.area_um2" in metrics
+
+
+@pytest.mark.skipif(not _HAS_NGSPICE, reason="ngspice not installed")
+def test_aging_proxy_task_end_to_end(bench):
+    """Real ngspice run: BSIM4 delvto/mulu0 injected on the stress corner
+    → parametric_stress rung; i(v_vdd) rides the EM budget spec."""
+    task = bench.load_task(BENCH / "tasks" / "sky130-ota-aging-proxy")
+    res = bench.run_task(task)
+    assert res["status"] == "pass", res["failure"]
+    ids = {c["id"]: c for c in res["checks"]}
+    aging = ids["spec.tb_aging.outp_aging"]
+    assert aging["status"] == "pass"
+    # measured 2026-10-24 ngspice_con-47: 0.775238 V under
+    # {vdd:1.98, temp:125, dvth_nmos:0.03, mu0_scale:0.85}
+    assert aging["measured_value"] == pytest.approx(0.7752, abs=0.02)
+    assert aging["evidence_level"] == "parametric_stress"
+    drift = ids["spec.tb_aging.outp_aging_drift"]
+    assert drift["status"] == "pass"
+    assert drift["measured_value"] == pytest.approx(0.1654, abs=0.02)
+    assert drift["evidence_level"] == "parametric_stress"
+    em = ids["spec.tb_aging.i_vdd_budget"]
+    assert em["status"] == "pass"
+    # i(v_vdd) = supply current delivered on the stressed corner:
+    # ~241 µA (positive = sourcing)
+    assert em["measured_value"] == pytest.approx(2.41e-4, rel=0.05)
+    assert em["evidence_level"] == "parametric_stress"
+
+
+@pytest.mark.skipif(_HAS_NGSPICE, reason="ngspice present — task would evaluate")
+def test_aging_proxy_task_unavailable_without_ngspice(bench):
+    """No simulator → parametric-stress specs fail closed too."""
+    task = bench.load_task(BENCH / "tasks" / "sky130-ota-aging-proxy")
+    res = bench.run_task(task)
+    assert res["status"] == "unavailable"
+    spec_checks = [c for c in res["checks"] if c["id"].startswith("spec.")]
+    assert spec_checks and all(
+        c["status"] == "unavailable" and c["capability"]
+        for c in spec_checks)
+    assert any(c["id"] == "spec.tb_aging.outp_aging"
+               and c["evidence_level"] == "parametric_stress"
                for c in spec_checks)

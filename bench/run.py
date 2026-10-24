@@ -331,7 +331,9 @@ def _check(cid: str, measured: Any, spec: str, status: str,
         # Reliability evidence ladder rung (see bench/README.md):
         # "deterministic" (structural truth) | "solver_verified" (a real
         # simulator produced the number) | "stress_corner" (accelerated
-        # V/T run — still solver evidence, never an aging model). None on
+        # V/T run) | "parametric_stress" (corner run that additionally
+        # injects BSIM4 delvto/mulu0 device params — a transparent aging
+        # proxy, still solver evidence, never an aging model). None on
         # checks that produced no evidence rung (load/run errors).
         "evidence_level": evidence_level,
     }
@@ -473,6 +475,15 @@ def _spec_checks(design, task: Task,
         return [_check("specs.run", None, "all testbenches run",
                        ERROR, message=str(exc))]
 
+    # Which corners carry device-level stress params (dvth_*/mu0_scale)?
+    # Specs routed onto those runs earn the "parametric_stress" rung —
+    # solver evidence + explicit device-parameter injection, still not an
+    # aging model.
+    parametric = {
+        t.name for t in getattr(design, "testbenches", [])
+        if t.stress and any(k in t.stress
+                            for k in ("dvth_nmos", "dvth_pmos", "mu0_scale"))
+    }
     worst_note = ""
     for run in runs:
         tb = run.get("testbench", "?")
@@ -489,11 +500,13 @@ def _spec_checks(design, task: Task,
             elif status == UNAVAILABLE:
                 n_unavail += 1
             # Evidence rung: stress/drift entries come from the
-            # accelerated-corner run — a solver-verified stress proxy,
-            # never an aging-model claim.
-            level = ("stress_corner"
-                     if entry.get("on") in ("stress", "drift")
-                     else "solver_verified")
+            # accelerated-corner run — "parametric_stress" when the corner
+            # also injects BSIM4 device params, else "stress_corner" —
+            # solver-verified stress proxies, never aging-model claims.
+            level = ("solver_verified"
+                     if entry.get("on") not in ("stress", "drift")
+                     else "parametric_stress" if tb in parametric
+                     else "stress_corner")
             msg = entry.get("reason", "")
             if entry.get("on") == "drift" and \
                     entry.get("nominal_value") is not None:

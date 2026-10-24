@@ -1,8 +1,8 @@
 {
   "task": "sky130-imported-cell-lvs",
   "type": "import",
-  "release_id": "layout-canvas-bench-v1",
-  "frozen_at": "2026-10-24T02:37:30Z",
+  "release_id": "layout-canvas-bench-v3",
+  "frozen_at": "2026-10-24T12:47:40Z",
   "status": "pass",
   "checks": [
     {
@@ -15,7 +15,8 @@
       "deterministic": true,
       "tol": null,
       "tol_rel": 0.0,
-      "capability": false
+      "capability": false,
+      "evidence_level": "deterministic"
     },
     {
       "id": "hidden.lvs_match",
@@ -27,7 +28,8 @@
       "deterministic": true,
       "tol": null,
       "tol_rel": 0.0,
-      "capability": false
+      "capability": false,
+      "evidence_level": "deterministic"
     },
     {
       "id": "bound.import.ports",
@@ -39,7 +41,8 @@
       "deterministic": true,
       "tol": null,
       "tol_rel": 0.0,
-      "capability": false
+      "capability": false,
+      "evidence_level": "deterministic"
     },
     {
       "id": "bound.extract.devices",
@@ -51,7 +54,8 @@
       "deterministic": true,
       "tol": null,
       "tol_rel": 0.0,
-      "capability": false
+      "capability": false,
+      "evidence_level": "deterministic"
     },
     {
       "id": "bound.ppa.area_um2",
@@ -63,7 +67,8 @@
       "deterministic": true,
       "tol": null,
       "tol_rel": 0.0,
-      "capability": false
+      "capability": false,
+      "evidence_level": "deterministic"
     }
   ],
   "metrics": [
@@ -183,7 +188,7 @@
     }
   ],
   "provenance": {
-    "git_sha": "aa068f74fb113c35842e1e5d8f258b9c7e6bdc78",
+    "git_sha": "b71f4de4eed19a0bea1a6a1a5b42a9099f3aa26f",
     "platform": "Windows-10-10.0.19045-SP0",
     "python": "3.13.7",
     "tools": {

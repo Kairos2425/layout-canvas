@@ -72,7 +72,19 @@ envelope shape before hand-writing calls.
    not an aging model): the bench then runs nominal + stress, and
    `spec.on:"stress"` scores the stressed run while `on:"drift"` scores
    |stress − nominal| — both report `unavailable` when no corner is
-   declared.
+   declared. The stress corner also accepts device-level proxy keys
+   `dvth_nmos` / `dvth_pmos` / `mu0_scale` — injected as BSIM4
+   `delvto`/`mulu0` on the MOS instance cards (a transparent NBTI/HCI
+   *proxy*: no time evolution, no wearout statistics, never an aging
+   model; a pfet |Vth| increase takes a *negative* `dvth_pmos`). If the
+   PDK's wrapper subckts cannot forward the params, the stress run
+   reports `unavailable` — never a silently un-stressed corner. A spec
+   on `signal:"i(v_<supply-src>)"` (e.g. `i(v_vdd)`, positive =
+   sourcing) evaluates the EM supply-current budget on the same run.
+   `reliability_report` then folds all of this into the 14-item
+   JESD/JEP coverage matrix (`jesd-aligned-v1`) — unavailable means
+   not verified, and `latch_up`/`esd_*` verdicts are structural
+   heuristics, not physical proof.
    `optimize` with `objective:"specs"` coordinate-descends bounded numeric
    params toward all-specs-pass (needs a live simulator).
 8. Deliver: `export_virtuoso` (SKILL `.il` + Spectre `.scs`), `save_project`,

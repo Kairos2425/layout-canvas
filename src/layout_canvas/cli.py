@@ -67,6 +67,17 @@ def main() -> int:
     tb.add_argument("input", help="Block IR JSON file")
     tb.add_argument("--name", help="Run a single named testbench (default: all)")
 
+    # reliability command
+    rel = sub.add_parser(
+        "reliability",
+        help="JEDEC-aligned reliability coverage matrix (jesd-aligned-v1)")
+    rel.add_argument("input", help="Block IR JSON file")
+    rel.add_argument("--json", action="store_true",
+                     help="print the full report as JSON")
+    rel.add_argument("--no-sim", action="store_true",
+                     help="structural/static items only — sim-backed "
+                          "items report unavailable instead of running")
+
     # virtuoso-accept command
     vacc = sub.add_parser(
         "virtuoso-accept",
@@ -250,6 +261,37 @@ def main() -> int:
                     line += f" — {spec['reason']}"
                 print(line)
         return 0 if all(r.get("spec_status") == "pass" for r in runs) else 1
+
+    if args.cmd == "reliability":
+        import json
+
+        with open(args.input) as f:
+            design = Design.from_json(f.read())
+        import layout_canvas.blocks.generic  # noqa: F401
+        import layout_canvas.blocks.sky130  # noqa: F401
+        try:
+            import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
+        except Exception:
+            pass
+
+        from layout_canvas.tools.reliability import reliability_report
+
+        rep = reliability_report(design, run_sims=not args.no_sim)
+        if args.json:
+            print(json.dumps(rep, indent=1))
+        else:
+            cov = rep["coverage"]
+            print(f"[{rep['release']}] {rep['design']} — "
+                  f"{cov['evaluated']}/{cov['total']} items evaluated")
+            for it in rep["items"]:
+                line = (f"  {it['id']:<15} {it['status']:<14} "
+                        f"{it['jedec']:<24} via {it['evidence_level']}")
+                if it.get("reason"):
+                    line += f" — {it['reason']}"
+                print(line)
+        # exit 1 when any evaluated item fails — unavailable is a finding,
+        # not a command failure
+        return 1 if any(i["status"] == "fail" for i in rep["items"]) else 0
 
     if args.cmd == "bench":
         return _bench(args)

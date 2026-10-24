@@ -299,19 +299,29 @@ def run_testbench(
     A testbench with a non-empty ``stress`` table runs the same
     analysis/probes twice: nominal (``tb.vdd``/``tb.temp``) and the
     accelerated stress corner (``stress["vdd"]``/``stress["temp"]``, each
-    falling back to the nominal value). The stress run lands under
+    falling back to the nominal value). The device-proxy keys
+    ``dvth_nmos``/``dvth_pmos``/``mu0_scale`` additionally inject BSIM4
+    ``delvto``/``mulu0`` onto the stress leg's MOS cards (a parametric
+    aging *proxy*, not a foundry aging model); if the PDK's wrappers
+    cannot forward them the stress run reports ``unavailable`` and every
+    ``stress``/``drift`` spec follows it. The stress run lands under
     ``result["stress"]`` with the same waves/status/spec_status shape plus
     the applied ``corner``; its ``specs`` list covers only the
     ``on="stress"``/``"drift"`` entries. The top-level ``specs`` list
     carries every spec evaluated on its routed run and ``spec_status``
     rolls up both corners. No simulator → every entry ``unavailable``.
     """
-    from layout_canvas.tools.sim import simulate_auto, simulate_extracted
+    from layout_canvas.tools.sim import (
+        DEVICE_STRESS_KEYS,
+        simulate_auto,
+        simulate_extracted,
+    )
 
     tb = _testbench(design, name)
     exe = executable or os.environ.get("LAYOUT_CANVAS_NGSPICE")
 
-    def _run(vdd: float, temp: float | None, wdir: Any) -> dict[str, Any]:
+    def _run(vdd: float, temp: float | None, wdir: Any,
+             device_stress: dict[str, float] | None = None) -> dict[str, Any]:
         if tb.source == "extracted":
             return simulate_extracted(
                 design,
@@ -322,6 +332,7 @@ def run_testbench(
                 probes=tb.probes or None,
                 executable=exe,
                 workdir=wdir,
+                device_stress=device_stress,
             )
         return simulate_auto(
             design,
@@ -330,6 +341,7 @@ def run_testbench(
             temp=temp,
             executable=exe,
             workdir=wdir,
+            device_stress=device_stress,
         )
 
     stressed = bool(tb.stress)
@@ -348,7 +360,16 @@ def run_testbench(
         }
         if corner["temp"] is not None:
             corner["temp"] = float(corner["temp"])
-        stress_res = _run(corner["vdd"], corner["temp"], str_dir)
+        # The device-level proxy keys (dvth_*/mu0_scale) ride the stress
+        # leg only — a nominal run is never device-stressed, so drift =
+        # |stressed − nominal| stays meaningful. They are recorded on the
+        # reported corner for auditability.
+        device_stress = {
+            k: float(tb.stress[k]) for k in DEVICE_STRESS_KEYS
+            if k in tb.stress}
+        corner.update(device_stress)
+        stress_res = _run(corner["vdd"], corner["temp"], str_dir,
+                          device_stress=device_stress or None)
     specs = evaluate_specs(result, tb.specs, analysis=tb.analysis,
                            stress=stress_res)
     for key in ("log_path", "deck_path"):

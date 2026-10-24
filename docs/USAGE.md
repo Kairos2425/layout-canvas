@@ -181,8 +181,9 @@ Additional testbench/spec fields for temperature and stress corners:
 | Field | On | Meaning |
 |---|---|---|
 | `temp` | testbench | nominal simulation temperature in °C, emitted as a `.temp` card (takes precedence over `.options temp`, never rewrites model `tnom`); `null` = simulator default (ngspice 27 °C) |
-| `stress` | testbench | accelerated stress corner `{"vdd": V, "temp": °C}` — the bench runs the same analysis twice: nominal and with these overrides (each key falls back to the nominal value). Only `vdd`/`temp` are legal keys; anything else is a validation error naming the allowed set. HTOL-style operating-point proxy, **not** an aging model |
+| `stress` | testbench | accelerated stress corner `{"vdd": V, "temp": °C}` — the bench runs the same analysis twice: nominal and with these overrides (each key falls back to the nominal value). Legal keys: `vdd`, `temp`, plus the *parametric device-stress proxies* `dvth_nmos`, `dvth_pmos` (ΔVth0 → BSIM4 `delvto` on nmos/pmos cards — a pfet |Vth| increase takes a negative value) and `mu0_scale` (mobility multiplier → `mulu0` on every MOS card); anything else is a validation error naming the allowed set. The device keys reach the inner BSIM4 through a patched copy of the model prelude (wrapper subckts get `delvto`/`mulu0` params forwarded to their M-cards); a PDK whose wrappers can't forward them reports the stress run `unavailable`, never a silently un-stressed corner. HTOL/NBTI/HCI-style stress *proxy*, **not** a foundry aging model — no time dependence, no wearout statistics |
 | `on` | spec | `"nominal"` (default) scores the nominal run; `"stress"` scores the same signal/measure on the stress run; `"drift"` scores `|stress − nominal|` |
+| `signal` | spec | node name (or `xd<i>.<net>` internal probe) — or a **supply branch current** `i(v_<src>)` for auto-bias runs: every `V_<supply>` source's delivered current (positive = sourcing) is captured automatically, so an EM budget is `{"signal": "i(v_vdd)", "measure": "final", "max": <A>}` |
 
 ```json
 {"name": "tb_op_stress", "source": "schematic", "analysis": "op",
@@ -234,6 +235,21 @@ specs: a coordinate descent over every instance's bounded numeric params
 area, reverted when not better). It needs testbenches on the design and
 a live simulator; without them it reports `no-testbenches`/`unavailable`,
 never a fabricated pass.
+
+### Reliability matrix
+
+`layout-canvas reliability design.json [--json] [--no-sim]` prints the
+`jesd-aligned-v1` JEDEC coverage matrix: 14 items (htol, nbti_aging,
+hci_aging, em_current, latch_up, antenna, esd_hbm, esd_cdm, thb_hast,
+temp_cycle, htsl, endurance, fit_rate, mismatch_aging), each with an
+evaluated-via path, an evidence rung and an honest
+`pass|fail|unavailable|not_applicable|structural` verdict. Declarations
+activate items: a `stress` corner covers HTOL, `dvth_*`/`mu0_scale` keys
+cover the parametric NBTI/HCI proxy, an `i(v_*)` spec covers the EM
+current budget, an `on:"drift"` spec covers mismatch. Everything else is
+`unavailable` with the missing capability named — never a fabricated
+pass. `--no-sim` evaluates only the structural items. The same matrix is
+exposed over MCP as `reliability_report`.
 
 ### Gallery
 
@@ -392,7 +408,7 @@ Register the stdio server in your MCP client config:
 }
 ```
 
-35 tools, grouped:
+36 tools, grouped:
 
 | Intent | Tools |
 |---|---|
@@ -402,6 +418,7 @@ Register the stdio server in your MCP client config:
 | Build | `insert_block_into_layout`, `compile_session`, `compile_ir`, `generate_netlist`, `optimize`, `inspect_connectivity`, `inspect_ppa`, `render_preview_svg` |
 | Gallery | `gallery_list`, `gallery_stats`, `gallery_get`, `gallery_publish`, `gallery_fork` |
 | Verify | `run_drc`, `extract_netlist`, `run_lvs`, `verify_design`, `run_testbench` |
+| Reliability | `reliability_report` — the 14-item JEDEC/JEP coverage matrix (`jesd-aligned-v1`); `run_sims:false` evaluates the structural items only |
 | Simulate | `run_simulation` — `source="schematic"` or `"extracted"` (PEX), `probes`, `stimulus`, `analysis`, `vdd`, `tran_stop`, `tran_step` |
 | Export | `export_virtuoso` (SKILL + Spectre), `export_abstract` |
 
@@ -437,8 +454,9 @@ it on a network. See `docs/DEPLOYMENT.md`.
 `bench/` is a **frozen evaluation set** for the compiler (methodology in
 `bench/README.md`, modeled on the upstream analog-design-bench):
 `benchmark.toml` pins `release_id` + `state="frozen"` and the task slots;
-seven task directories cover verify / spec / optimize / import surfaces
-plus an accelerated stress-corner (`stress`/`drift` spec routing) rung,
+eight task directories cover verify / spec / optimize / import surfaces
+plus accelerated stress-corner (`stress`/`drift`) and parametric
+device-stress (`delvto`/`mulu0` + supply-current EM budget) rungs,
 across sky130, ihp_sg13g2 and an external descriptor PDK. Every run
 emits a `flat-scalar-v2` scorecard under `bench/runs/` with per-check
 `{id, measured_value, spec, status, unit, evidence_level}`, coverage and

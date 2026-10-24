@@ -7,10 +7,10 @@
 # `tasks/*/results/reference.json` in the same change (see bench/README.md,
 # "Release & freeze protocol").
 
-release_id = "layout-canvas-bench-v2"
+release_id = "layout-canvas-bench-v3"
 state = "frozen"          # frozen | development — dev manifests print a warning
 metric_schema = "flat-scalar-v2"
-frozen_with = "v2 = v1 task set + slot 7 sky130-ota-stress-corner (reliability ladder: stress_corner rung); the six v1 references carry their own freeze provenance forward unchanged, the new task was frozen against ngspice_con-47"
+frozen_with = "v3 = v2 task set + slot 8 sky130-ota-aging-proxy (reliability ladder: parametric_stress rung — BSIM4 delvto/mulu0 device injection + i(v) EM budget); all eight references frozen against ngspice_con-47 in this change"
 
 # Task slots: the eval set is exactly this list, in this order.
 # A task dir that exists but is not listed here does not score.
@@ -41,3 +41,7 @@ surface = "bounded optimization: objective=specs -> specs_passed + iterations + 
 [[tasks]]
 id = "sky130-ota-stress-corner"
 surface = "reliability ladder rung: accelerated V/T stress corner (HTOL-style proxy) — stress + drift spec routing on the OTA op point"
+
+[[tasks]]
+id = "sky130-ota-aging-proxy"
+surface = "reliability ladder rung: parametric device stress (BSIM4 delvto/mulu0 injection — NBTI/HCI proxy) + drift + i(v_vdd) supply-current EM budget on the OTA op point"

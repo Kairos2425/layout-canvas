@@ -125,9 +125,17 @@ class Testbench(_Strict):
     # default (ngspice: 27 °C). Emitted as a `.temp` card, which takes
     # precedence over `.options temp` but never rewrites model `tnom`.
     temp: float | None = None
-    # Accelerated stress corner: {"vdd": V, "temp": °C} overrides applied
-    # on a second run of the same analysis/probes (an HTOL-style operating
-    # point proxy — not an aging model). Only "vdd" and "temp" are legal.
+    # Accelerated stress corner applied on a second run of the same
+    # analysis/probes. "vdd"/"temp" are the HTOL-style operating-point
+    # overrides (still not an aging model); "dvth_nmos"/"dvth_pmos"/
+    # "mu0_scale" are *parametric device-stress proxies*: they are injected
+    # onto MOS instance cards as BSIM4 ``delvto``/``mulu0`` so the stress
+    # run sees an explicit Vth/mobility shift. That is a transparent proxy
+    # for NBTI/HCI-style drift — it is NOT a foundry reliability/aging
+    # model (no time dependence, no wearout statistics). For a pfet the
+    # sign follows the model's vth0 convention — a |Vth| *increase* (the
+    # NBTI direction) is ``dvth_pmos`` negative. Only these five keys are
+    # legal.
     stress: dict[str, float] | None = None
     stimulus: str | None = None
     probes: list[str] = Field(default_factory=list)
@@ -148,7 +156,8 @@ class Testbench(_Strict):
         if len(set(names)) != len(names):
             raise ValueError(f"testbench {self.name}: duplicate spec names")
         if self.stress is not None:
-            allowed = ("temp", "vdd")
+            allowed = ("temp", "vdd", "dvth_nmos", "dvth_pmos",
+                       "mu0_scale")
             unknown = sorted(set(self.stress) - set(allowed))
             if unknown:
                 raise ValueError(
