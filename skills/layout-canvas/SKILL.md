@@ -31,6 +31,10 @@ Optional environment (only needed for the features they unlock):
 
 Call `probe_environment` first when you are unsure what is installed.
 
+`assets/mcp_walkthrough.py` is a runnable reference client that drives
+the loop below end to end over stdio — read it for the exact JSON-RPC
+envelope shape before hand-writing calls.
+
 ## The loop (8 steps)
 
 1. `list_blocks` — read the palette: block names, params with min/max, ports.
@@ -110,6 +114,61 @@ Rules the engine enforces (do not fight them):
   hand-editing IR to fake the connection. Params come from a small alias
   table (`nf`/`w`/`l`); everything else defaults and is listed under
   `meta.params_defaulted`.
+
+## Before you run a tool
+
+Write down — in one sentence — what question the call answers:
+
+```text
+I will call <tool> to learn <fact>, because the task asks about <same fact>.
+```
+
+If you cannot fill it in honestly, do not call it. A `verify_design` that
+was run "because it's there" proves nothing about the spec the user
+actually asked for, and each run costs real tool time. Choose the tool
+family from the task, not from what happens to be available:
+
+| Task asks about | Right tool | Avoid |
+|---|---|---|
+| connectivity mistakes before editing | `inspect_connectivity` | compiling and inferring from DRC noise |
+| physical validity | `verify_design` (DRC+LVS) | judging from `render_preview_svg` pixels |
+| electrical spec | `run_testbench` / `run_simulation` | quoting op points from a bench whose `analysis` doesn't produce that signal |
+| parameter tuning | `optimize` with `objective:"specs"` | hand-editing params and claiming convergence |
+| reuse of an existing layout | `import_gds` then normal flow | redrawing the block by hand |
+
+## Verification is not the goal
+
+A clean `verify_design` means the layout is *physically legal*, not that
+it is a good analog layout. Matching, symmetry, common-centroid, dummy
+integrity, guard-ring continuity and shielding are **not yet
+machine-checked** in this release — treat them as review items you must
+reason about and state, not as things `passed: true` covers. A design
+that passes DRC/LVS but scatters matched devices or leaves the guard
+ring open would be signed off wrongly if you equate `passed` with
+"good". Say which quality axes your evidence covers and which it does
+not.
+
+## Reported-but-wrong traps
+
+Cases where the pipeline prints a plausible-looking number or verdict
+that is not evidence of what it seems:
+
+- **An op point can be a resistor-divider artifact.** If a supply never
+  reached a block's interior (unlabeled supply net, wrong pin mapping),
+  the DC value can still look sane. When a bias looks "reasonable but
+  unexplained", probe an interior node (`probes:["tail"]`, read
+  `x1.vdd`) instead of trusting the output pin.
+- **`lvs.match: true` says topology matches** — not that it matches
+  *well*. It will not flag a mirror drawn with asymmetric fingers.
+- **A shrinking PPA is not an improvement** if it severs a net or
+  collides cells — always re-verify after `optimize`/placement edits;
+  the score axes are (feasible, specs, margin, -area) in that order.
+- **Do not widen a spec band to make it pass.** If a bound is
+  unreachable, report the gap; editing `specs[].min/max` to fit the
+  measured value is fabrication, not optimization.
+- **`unavailable`/`refused` is a verdict**, not a formatting issue to
+  route around — a design that cannot be simulated or matched has not
+  been verified, full stop.
 
 ## Reading results honestly
 

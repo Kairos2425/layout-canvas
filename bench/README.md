@@ -117,6 +117,25 @@ sim_rel = 0.05; sim_abs = 0.0
 A malformed `task.toml` is a `TaskError` naming the file and the field —
 never a silent zero.
 
+## Solver-visible surface (exposure contract)
+
+A solver — human or agent — may receive **only**:
+
+- `tasks/<id>/instruction.md` (the spec surface),
+- `tasks/<id>/starter/` and `tasks/<id>/inputs/` (public fixtures).
+
+Everything else is evaluator material and must not reach the solver:
+`solution/`, `results/reference.json`, `task.toml`'s `[bounds]` table,
+the hidden-check list, and `bench/run.py` internals. This is the same
+contract razavi-bench uses ("do not expose golden_solution or the
+rubric"): a solver that saw the bounds table could tune to the number
+instead of solving the task.
+
+When a real agent solves these tasks, `skills/layout-canvas/SKILL.md`
+is part of the treatment — give it to the solver exactly as shipped;
+there is intentionally no per-task routing table. The agent decides
+which tool is relevant, the evaluator decides whether the result counts.
+
 ## Adding a task
 
 1. `mkdir bench/tasks/<id>` with `task.toml`, `instruction.md`,
