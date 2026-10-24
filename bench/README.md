@@ -50,10 +50,10 @@ Each run writes `bench/runs/<UTC ts>/scorecard.json` (`metric_schema:
 5. **`flat-scalar-v2` metric schema.**
    Every task result is `checks[]` + `metrics[]` where checks carry
    `{id, measured_value, spec, status, unit, message, deterministic,
-   tol, tol_rel, capability}`; the scorecard adds `coverage`,
-   `evidence_complete` and `failure`. Deterministic checks compare
-   exactly against baseline; sim-derived checks inside their recorded
-   tolerance.
+   tol, tol_rel, capability, evidence_level}`; the scorecard adds
+   `coverage`, `evidence_complete` and `failure`. Deterministic checks
+   compare exactly against baseline; sim-derived checks inside their
+   recorded tolerance.
 
 6. **Provenance is part of the score.**
    Every scorecard records ngspice/KLayout versions, git sha, the
@@ -66,6 +66,33 @@ Each run writes `bench/runs/<UTC ts>/scorecard.json` (`metric_schema:
    *exactly*, sim values must stay within the task's declared
    `tolerances`. A regression exits non-zero listing every diff.
 
+## Reliability evaluation ladder
+
+Every check carries `capability`/`deterministic` as before; checks that
+touch measured or simulated evidence additionally carry an
+`evidence_level` field naming the rung of the evidence ladder that
+produced it, surfaced verbatim into `scorecard.json`:
+
+1. **`deterministic`** — structural truth from in-process engines:
+   DRC violations, LVS match, extracted device/net counts, PPA bounds.
+   Exact-equality baseline gates.
+2. **`solver_verified`** — a real simulator produced the number on the
+   schematic netlist (`Spec.on="nominal"`). `source:"extracted"` benches
+   sit one notch higher on the same rung (solver-verified *with
+   parasitics*) — still not silicon.
+3. **`stress_corner`** *(this release)* — the same analysis re-run at an
+   accelerated voltage/temperature corner (`Testbench.stress`,
+   HTOL-style proxy). `Spec.on="stress"` bounds the stressed scalar;
+   `on="drift"` bounds `|stress − nominal|`. **Still solver-verified
+   evidence — never an aging model.**
+4. **`aging_model`** — time-evolving degradation (BTI/HCI/TDDB) from a
+   foundry aging deck. Not implemented; no check may claim it.
+5. **`silicon_calibrated`** — models fitted to measured silicon. This
+   repository never claims it, by construction.
+
+An `unavailable` verdict means the rung's capability was missing — the
+check reports that honestly rather than substituting a weaker rung.
+
 ## Task types
 
 | `type` | Runner semantics |
@@ -77,7 +104,7 @@ Each run writes `bench/runs/<UTC ts>/scorecard.json` (`metric_schema:
 
 All types get the hidden DRC/LVS checks once compilation succeeds.
 
-## The six tasks
+## The seven tasks
 
 | id | capability surface |
 |---|---|
@@ -87,6 +114,7 @@ All types get the hidden DRC/LVS checks once compilation succeeds.
 | `sky130-imported-cell-lvs` | external asset reuse: fixture GDS import → parent verify |
 | `demo65-descriptor-pdk` | process externalized: `inputs/demo65.pdk.json` drives `gen_*` blocks + verify |
 | `sky130-optimize-specs` | bounded spec-driven tuning: must reach all-specs-pass ≤ 6 rounds |
+| `sky130-ota-stress-corner` | accelerated V/T corner: OTA op re-run at 1.98 V/125 °C, `on:"stress"` + `on:"drift"` specs (HTOL-style proxy, not an aging model) |
 
 ## `task.toml` schema (schema_version = 1)
 

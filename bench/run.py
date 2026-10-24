@@ -312,7 +312,8 @@ def _input_sha256(task: Task) -> dict[str, str]:
 def _check(cid: str, measured: Any, spec: str, status: str,
            unit: str = "", message: str = "",
            deterministic: bool = False, tol: float | None = None,
-           tol_rel: float = 0.0, capability: bool = False) -> dict[str, Any]:
+           tol_rel: float = 0.0, capability: bool = False,
+           evidence_level: str | None = None) -> dict[str, Any]:
     return {
         "id": cid,
         "measured_value": measured,
@@ -327,6 +328,12 @@ def _check(cid: str, measured: Any, spec: str, status: str,
         # engine) to produce a verdict — its unavailability means the
         # task could not be judged, never a pass.
         "capability": capability,
+        # Reliability evidence ladder rung (see bench/README.md):
+        # "deterministic" (structural truth) | "solver_verified" (a real
+        # simulator produced the number) | "stress_corner" (accelerated
+        # V/T run — still solver evidence, never an aging model). None on
+        # checks that produced no evidence rung (load/run errors).
+        "evidence_level": evidence_level,
     }
 
 
@@ -342,15 +349,20 @@ def _bound_check(b: Bound, value: Any) -> dict[str, Any]:
                 f" {b.max if b.max is not None else '+inf'}]")
     if b.unit:
         spec_txt += f" {b.unit}"
+    # The evidence rung follows the metric's nature: an exact-equality
+    # gate is deterministic evidence; a tolerance-gated bound on a
+    # sim-derived metric is solver-verified.
+    level = "deterministic" if b.deterministic else "solver_verified"
     if value is None:
         return _check(cid, None, spec_txt, UNAVAILABLE, b.unit,
                       f"metric {b.metric!r} was not produced",
-                      deterministic=b.deterministic, capability=True)
+                      deterministic=b.deterministic, capability=True,
+                      evidence_level=level)
     if b.equals is not None:
         ok = value == b.equals
         return _check(cid, value, spec_txt, PASS if ok else FAIL,
                       b.unit, "" if ok else f"{value!r} != {b.equals!r}",
-                      deterministic=b.deterministic)
+                      deterministic=b.deterministic, evidence_level=level)
     lo_ok = b.min is None or (isinstance(value, (int, float))
                               and value >= b.min)
     hi_ok = b.max is None or (isinstance(value, (int, float))
@@ -361,7 +373,7 @@ def _bound_check(b: Bound, value: Any) -> dict[str, Any]:
         which = "< min" if not lo_ok else "> max"
         msg = f"{value!r} {which} bound"
     return _check(cid, value, spec_txt, PASS if ok else FAIL, b.unit,
-                  msg, deterministic=b.deterministic)
+                  msg, deterministic=b.deterministic, evidence_level=level)
 
 
 def _hidden_checks(metrics: dict[str, Any],
@@ -377,22 +389,24 @@ def _hidden_checks(metrics: dict[str, Any],
         out.append(_check("hidden.drc_clean", None, "== 0 violations",
                           UNAVAILABLE,
                           message=f"drc engine {drc_status or 'unavailable'}",
-                          deterministic=True, capability=True))
+                          deterministic=True, capability=True,
+                          evidence_level="deterministic"))
     else:
         out.append(_check("hidden.drc_clean", tv, "== 0 violations",
                           PASS if tv == 0 else FAIL,
-                          deterministic=True))
+                          deterministic=True, evidence_level="deterministic"))
     match = metrics.get("lvs.match")
     lvs_status = metrics.get("lvs.status")
     if match is None:
         out.append(_check("hidden.lvs_match", None, "== true",
                           UNAVAILABLE,
                           message=f"lvs engine {lvs_status or 'unavailable'}",
-                          deterministic=True, capability=True))
+                          deterministic=True, capability=True,
+                          evidence_level="deterministic"))
     else:
         out.append(_check("hidden.lvs_match", match, "== true",
                           PASS if match is True else FAIL,
-                          deterministic=True))
+                          deterministic=True, evidence_level="deterministic"))
     return out
 
 
@@ -474,11 +488,23 @@ def _spec_checks(design, task: Task,
                 n_pass += 1
             elif status == UNAVAILABLE:
                 n_unavail += 1
+            # Evidence rung: stress/drift entries come from the
+            # accelerated-corner run — a solver-verified stress proxy,
+            # never an aging-model claim.
+            level = ("stress_corner"
+                     if entry.get("on") in ("stress", "drift")
+                     else "solver_verified")
+            msg = entry.get("reason", "")
+            if entry.get("on") == "drift" and \
+                    entry.get("nominal_value") is not None:
+                msg = (f"nominal={entry['nominal_value']!r} "
+                       f"stress={entry['stress_value']!r}"
+                       + (f"; {msg}" if msg else ""))
             checks.append(_check(
                 cid, entry.get("value"), spec_txt, status,
-                entry.get("unit", ""), entry.get("reason", ""),
+                entry.get("unit", ""), msg,
                 tol=task.sim_tol_abs or None, tol_rel=task.sim_tol_rel,
-                capability=True))
+                capability=True, evidence_level=level))
             # worst-case annotation: which spec is closest to its bound
             val, meas = entry.get("value"), entry.get("measure")
             if isinstance(val, (int, float)):

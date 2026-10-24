@@ -266,6 +266,208 @@ class TestRunTestbench:
 _NGSPICE = os.environ.get("LAYOUT_CANVAS_NGSPICE") or shutil.which("ngspice")
 
 
+class TestStressCorner:
+    """Accelerated stress corner: IR validation, drift math, spec routing."""
+
+    def _design(self, tbs) -> Design:
+        payload = {
+            "name": "tb_stress",
+            "pdk": "sky130",
+            "instances": [{"id": "dp", "block": "sky130.diff_pair",
+                           "params": {}}],
+            "testbenches": tbs,
+        }
+        return Design.model_validate(payload)
+
+    def test_stress_key_whitelist(self):
+        with pytest.raises(Exception, match="allowed"):
+            self._design([{"name": "tb", "stress": {"humidity": 50.0}}])
+        with pytest.raises(Exception, match="empty"):
+            self._design([{"name": "tb", "stress": {}}])
+        ok = self._design([{"name": "tb", "stress": {"vdd": 2.0}}])
+        assert ok.testbenches[0].stress == {"vdd": 2.0}
+
+    def test_spec_on_literal_and_defaults(self):
+        from layout_canvas.ir.model import Spec
+
+        with pytest.raises(Exception, match="nominal"):
+            Spec.model_validate({"name": "s", "signal": "x",
+                                 "min": 0, "on": "corner"})
+        ok = Spec.model_validate({"name": "s", "signal": "x", "min": 0})
+        assert ok.on == "nominal"
+        d = self._design([{"name": "tb"}])
+        assert d.testbenches[0].temp is None
+        assert d.testbenches[0].stress is None
+
+    def test_drift_measure_math(self):
+        from layout_canvas.ir.model import Spec
+
+        nom = {"status": "passed", "waves": {"outp": [0.61]},
+               "sweep": [0.0]}
+        st = {"status": "passed", "waves": {"outp": [0.75]},
+              "sweep": [0.0]}
+        spec = Spec.model_validate({"name": "d", "signal": "outp",
+                                    "measure": "final", "on": "drift",
+                                    "max": 0.2, "unit": "V"})
+        e = evaluate_specs(nom, [spec], stress=st)[0]
+        assert e["status"] == "pass"
+        assert e["value"] == pytest.approx(0.14)
+        assert e["nominal_value"] == 0.61 and e["stress_value"] == 0.75
+        # symmetric: |Δ| does not depend on which dict is "the" run
+        e2 = evaluate_specs(st, [spec], stress=nom)[0]
+        assert e2["value"] == pytest.approx(0.14)
+        tight = Spec.model_validate({"name": "d", "signal": "outp",
+                                     "measure": "final", "on": "drift",
+                                     "max": 0.1})
+        e3 = evaluate_specs(nom, [tight], stress=st)[0]
+        assert e3["status"] == "fail" and "max" in e3["reason"]
+
+    def test_drift_and_stress_unavailable_without_corner(self):
+        from layout_canvas.ir.model import Spec
+
+        res = {"status": "passed", "waves": {"outp": [0.6]}}
+        specs = [
+            Spec.model_validate({"name": "s", "signal": "outp",
+                                 "min": 0, "on": "stress"}),
+            Spec.model_validate({"name": "d", "signal": "outp",
+                                 "max": 1, "on": "drift"}),
+        ]
+        out = evaluate_specs(res, specs)
+        assert [e["status"] for e in out] == ["unavailable", "unavailable"]
+        assert "Testbench.stress" in out[0]["reason"]
+        assert "drift" in out[1]["reason"]
+
+    def test_drift_unavailable_when_a_run_failed(self):
+        from layout_canvas.ir.model import Spec
+
+        nom = {"status": "passed", "waves": {"outp": [0.6]}}
+        st = {"status": "failed", "errors": ["analysis failed"]}
+        spec = Spec.model_validate({"name": "d", "signal": "outp",
+                                    "on": "drift", "max": 1})
+        e = evaluate_specs(nom, [spec], stress=st)[0]
+        assert e["status"] == "unavailable"
+        assert "stress" in e["reason"]
+
+    def test_run_testbench_double_run_and_routing(self, monkeypatch,
+                                                  tmp_path):
+        import layout_canvas.tools.sim as sim
+
+        calls = []
+
+        def fake(design, *, analysis="op", vdd=1.8, temp=None, stimulus=None,
+                 probes=None, simulator="auto", executable=None, timeout=120,
+                 workdir=None):
+            calls.append({"vdd": vdd, "temp": temp,
+                          "workdir": Path(workdir).name if workdir else None})
+            v = 0.61 if vdd <= 1.8 else 0.75
+            return {"status": "passed",
+                    "waves": {"outp": [v], "outn": [0.6]},
+                    "sweep": [0.0], "ports": [],
+                    "log_path": None, "deck_path": None}
+
+        monkeypatch.setattr(sim, "simulate_auto", fake)
+        d = self._design([{
+            "name": "tb", "source": "schematic", "analysis": "op",
+            "vdd": 1.8, "stress": {"vdd": 1.98, "temp": 125.0},
+            "specs": [
+                {"name": "n_outp", "signal": "outp", "min": 0.5,
+                 "on": "nominal"},
+                {"name": "s_outp", "signal": "outp", "min": 0.4,
+                 "max": 0.9, "on": "stress"},
+                {"name": "d_outp", "signal": "outp", "max": 0.2,
+                 "on": "drift"},
+            ]}])
+        r = run_testbench(d, "tb", workdir=tmp_path)
+        assert len(calls) == 2
+        assert calls[0]["vdd"] == 1.8 and calls[0]["temp"] is None
+        assert calls[1]["vdd"] == 1.98 and calls[1]["temp"] == 125.0
+        # separate subdirs so deck.cir/waves.dat never clobber each other
+        assert calls[0]["workdir"] == "nominal"
+        assert calls[1]["workdir"] == "stress"
+        assert r["stress"]["status"] == "passed"
+        assert r["stress"]["corner"] == {"vdd": 1.98, "temp": 125.0}
+        names = {e["name"]: e for e in r["specs"]}
+        assert names["n_outp"]["value"] == 0.61   # nominal run
+        assert names["s_outp"]["value"] == 0.75   # stress run
+        assert names["d_outp"]["value"] == pytest.approx(0.14)
+        assert r["spec_status"] == "pass"
+        # the stress sub-table carries only the corner-routed specs
+        assert {e["name"] for e in r["stress"]["specs"]} == {
+            "s_outp", "d_outp"}
+        assert r["stress"]["spec_status"] == "pass"
+
+    def test_stress_falls_back_per_key(self, monkeypatch):
+        import layout_canvas.tools.sim as sim
+
+        calls = []
+
+        def fake(design, *, analysis="op", vdd=1.8, temp=None, **kw):
+            calls.append((vdd, temp))
+            return {"status": "passed", "waves": {"outp": [0.6]},
+                    "sweep": [0.0]}
+
+        monkeypatch.setattr(sim, "simulate_auto", fake)
+        d = self._design([{"name": "tb", "vdd": 1.7, "temp": 40.0,
+                           "stress": {"vdd": 2.0}}])
+        run_testbench(d, "tb")
+        # stress.vdd overrides; temp falls back to the nominal tb.temp
+        assert calls == [(1.7, 40.0), (2.0, 40.0)]
+
+    def test_no_stress_means_single_run(self, monkeypatch):
+        import layout_canvas.tools.sim as sim
+
+        calls = []
+
+        def fake(design, **kw):
+            calls.append(kw)
+            return {"status": "passed", "waves": {"outp": [0.6]},
+                    "sweep": [0.0]}
+
+        monkeypatch.setattr(sim, "simulate_auto", fake)
+        d = self._design([{"name": "tb", "specs": [
+            {"name": "s", "signal": "outp", "min": 0, "on": "stress"}]}])
+        r = run_testbench(d, "tb")
+        assert len(calls) == 1
+        assert "stress" not in r
+        assert r["specs"][0]["status"] == "unavailable"
+        assert r["spec_status"] == "unavailable"
+
+
+@pytest.mark.skipif(_NGSPICE is None, reason="ngspice not installed")
+def test_ota_stress_corner_real_run(tmp_path):
+    """Real double run: nominal vs 1.98 V / 125 °C on the OTA op point.
+
+    Measured on ngspice_con-47 against the bundled sky130 TT models:
+    nominal outp_op 0.6098 V, stressed outp_op 0.4658 V, drift 0.144 V.
+    """
+    starter = (ROOT / "bench" / "tasks" / "sky130-ota-stress-corner"
+               / "starter" / "design.json")
+    d = Design.from_json(starter.read_text(encoding="utf-8"))
+    r = run_testbench(d, "tb_op_stress", executable=_NGSPICE,
+                      workdir=tmp_path)
+    assert r["status"] == "passed", r.get("errors")
+    assert r["stress"]["status"] == "passed", r["stress"].get("errors")
+    specs = {s["name"]: s for s in r["specs"]}
+    assert specs["outp_stress"]["status"] == "pass"
+    assert specs["outp_stress"]["value"] == pytest.approx(0.4658, abs=0.02)
+    assert specs["outp_drift"]["status"] == "pass"
+    assert specs["outp_drift"]["nominal_value"] == pytest.approx(
+        0.6098, abs=0.02)
+    assert specs["outp_drift"]["stress_value"] == pytest.approx(
+        0.4658, abs=0.02)
+    assert specs["outp_drift"]["value"] == pytest.approx(0.144, abs=0.02)
+    # the stress deck really carried a .temp card; nominal did not
+    stress_deck = Path(r["stress"]["deck_path"]).read_text(
+        encoding="utf-8", errors="replace")
+    nom_deck = Path(r["deck_path"]).read_text(
+        encoding="utf-8", errors="replace")
+    assert ".temp 125" in stress_deck
+    assert ".temp" not in nom_deck
+    # split workdirs — both decks kept on disk
+    assert (tmp_path / "nominal" / "deck.cir").is_file()
+    assert (tmp_path / "stress" / "deck.cir").is_file()
+
+
 class TestAcAnalysis:
     """ac analysis: stimulus shape, complex wrdata parsing, spec measures."""
 

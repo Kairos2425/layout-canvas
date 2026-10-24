@@ -436,6 +436,7 @@ def simulate_auto(
     *,
     analysis: str = "op",
     vdd: float = 1.8,
+    temp: float | None = None,
     tran_stop: str = "5u",
     tran_step: str = "10n",
     simulator: str = "auto",
@@ -446,6 +447,13 @@ def simulate_auto(
     """One-click simulation for the canvas: model prelude + auto stimulus +
     backend run + waveform extraction. Returns the SimResult fields plus
     ``ports`` (bias vector order) and ``waves`` (parsed wrdata columns).
+
+    ``temp`` (°C) emits a ``.temp`` card — the circuit simulation
+    temperature, which ngspice applies to every analysis in the deck and
+    which takes precedence over ``.options temp``. It does not rewrite the
+    models' ``tnom`` (the temperature their parameters were extracted at);
+    temperature dependence stays the models' own equations. ``None`` keeps
+    the simulator default (ngspice: 27 °C).
     """
     root = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="lc_sim_"))
     root.mkdir(parents=True, exist_ok=True)
@@ -457,7 +465,10 @@ def simulate_auto(
     deck_parts = ["* layout-canvas auto deck", ""]
     if prelude:
         deck_parts += [prelude, ""]
-    deck_parts += [netlist.rstrip(), "", stimulus.rstrip(), "", ".end"]
+    deck_parts += [netlist.rstrip(), "", stimulus.rstrip(), ""]
+    if temp is not None:
+        deck_parts += [f".temp {float(temp):g}", ""]
+    deck_parts += [".end"]
 
     unresolved = sorted(
         inst.block for inst in design.instances
@@ -563,6 +574,7 @@ def simulate_extracted(
     *,
     analysis: str = "op",
     vdd: float = 1.8,
+    temp: float | None = None,
     tran_stop: str = "5u",
     tran_step: str = "10n",
     stimulus: str | None = None,
@@ -575,7 +587,10 @@ def simulate_extracted(
     """Post-layout simulation: compile → GDS → extract → simulate the
     extracted netlist. Fails closed on extraction errors. ``stimulus``
     supplies a caller testbench (sources + .control); ``probes`` adds
-    named extracted nets to the wrdata columns."""
+    named extracted nets to the wrdata columns. ``temp`` (°C) emits a
+    ``.temp`` card — the circuit simulation temperature for every analysis
+    in the deck (overrides ``.options temp``, never the models' ``tnom``);
+    ``None`` keeps the simulator default."""
     from layout_canvas.compiler.compile import compile_design
     from layout_canvas.tools.extract import extract_netlist
 
@@ -711,7 +726,10 @@ def simulate_extracted(
     deck_parts = ["* layout-canvas post-layout deck", ""]
     if prelude:
         deck_parts += [prelude, ""]
-    deck_parts += [flat.rstrip(), "", stimulus_text, "", ".end"]
+    deck_parts += [flat.rstrip(), "", stimulus_text, ""]
+    if temp is not None:
+        deck_parts += [f".temp {float(temp):g}", ""]
+    deck_parts += [".end"]
 
     result = run_netlist(
         "\n".join(deck_parts), simulator=simulator,

@@ -67,7 +67,12 @@ envelope shape before hand-writing calls.
    an input port and measures `db` (low-frequency gain) / `bw_3db` specs;
    `analysis:"tran"` enables `settling` (±`spec.tol` band, default 2 %),
    `slew` (max |dv/dt|) and `overshoot` (%) — all transient-only, reported
-   `unavailable` on op/ac/dc benches.
+   `unavailable` on op/ac/dc benches. A testbench may declare a `stress`
+   corner (`{"vdd":…,"temp":…}` — accelerated V/T, an HTOL-style proxy,
+   not an aging model): the bench then runs nominal + stress, and
+   `spec.on:"stress"` scores the stressed run while `on:"drift"` scores
+   |stress − nominal| — both report `unavailable` when no corner is
+   declared.
    `optimize` with `objective:"specs"` coordinate-descends bounded numeric
    params toward all-specs-pass (needs a live simulator).
 8. Deliver: `export_virtuoso` (SKILL `.il` + Spectre `.scs`), `save_project`,

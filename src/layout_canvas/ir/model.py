@@ -95,6 +95,13 @@ class Spec(_Strict):
     # Fractional band for the transient measures (settling); None = 0.02
     # (±2 % of the final value).
     tol: float | None = None
+    # Which run the spec is checked on. "nominal" (default) reduces the
+    # signal on the nominal run. "stress" reduces the same signal/measure
+    # on the testbench's declared stress corner (Testbench.stress). "drift"
+    # reduces it on both runs and checks |stress - nominal|. A "stress" or
+    # "drift" spec on a testbench with no declared corner evaluates
+    # ``unavailable`` — never a nominal-only stand-in verdict.
+    on: Literal["nominal", "stress", "drift"] = "nominal"
 
     @model_validator(mode="after")
     def _check_bounds(self) -> Spec:
@@ -114,6 +121,14 @@ class Testbench(_Strict):
     source: Literal["schematic", "extracted"] = "schematic"
     analysis: Literal["op", "tran", "ac", "dc"] = "op"
     vdd: float = 1.8
+    # Nominal simulation temperature in °C; None = the simulator's own
+    # default (ngspice: 27 °C). Emitted as a `.temp` card, which takes
+    # precedence over `.options temp` but never rewrites model `tnom`.
+    temp: float | None = None
+    # Accelerated stress corner: {"vdd": V, "temp": °C} overrides applied
+    # on a second run of the same analysis/probes (an HTOL-style operating
+    # point proxy — not an aging model). Only "vdd" and "temp" are legal.
+    stress: dict[str, float] | None = None
     stimulus: str | None = None
     probes: list[str] = Field(default_factory=list)
     specs: list[Spec] = Field(default_factory=list)
@@ -132,6 +147,17 @@ class Testbench(_Strict):
         names = [s.name for s in self.specs]
         if len(set(names)) != len(names):
             raise ValueError(f"testbench {self.name}: duplicate spec names")
+        if self.stress is not None:
+            allowed = ("temp", "vdd")
+            unknown = sorted(set(self.stress) - set(allowed))
+            if unknown:
+                raise ValueError(
+                    f"testbench {self.name}: unknown stress key(s) "
+                    f"{unknown}; allowed: {sorted(allowed)}")
+            if not self.stress:
+                raise ValueError(
+                    f"testbench {self.name}: stress table is empty; "
+                    f"allowed keys: {sorted(allowed)}")
         return self
 
 

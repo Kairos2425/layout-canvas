@@ -1,0 +1,325 @@
+{
+  "task": "sky130-ota-stress-corner",
+  "type": "spec",
+  "release_id": "layout-canvas-bench-v2",
+  "frozen_at": "2026-10-24T11:42:08Z",
+  "status": "pass",
+  "checks": [
+    {
+      "id": "spec.tb_op_schematic.outp_op",
+      "measured_value": 0.609836,
+      "spec": "[0.4598, 0.7598] V",
+      "status": "pass",
+      "unit": "V",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "spec.tb_op_schematic.outn_op",
+      "measured_value": 0.609836,
+      "spec": "[0.4598, 0.7598] V",
+      "status": "pass",
+      "unit": "V",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "spec.tb_op_pex.outp_op",
+      "measured_value": 0.720587,
+      "spec": "[0.5706, 0.8706] V",
+      "status": "pass",
+      "unit": "V",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "spec.tb_op_pex.tail_op",
+      "measured_value": 0.0601556,
+      "spec": "[-0.0898, 0.2102] V",
+      "status": "pass",
+      "unit": "V",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "spec.tb_ac.gain_db",
+      "measured_value": 14.0256,
+      "spec": "[11.03, +inf] dB",
+      "status": "pass",
+      "unit": "dB",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "spec.tb_ac.bw_3db",
+      "measured_value": 501187000.0,
+      "spec": "[400000000.0, +inf] Hz",
+      "status": "pass",
+      "unit": "Hz",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "spec.tb_ac.outn_db",
+      "measured_value": 0.731406,
+      "spec": "[-2.27, +inf] dB",
+      "status": "pass",
+      "unit": "dB",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "spec.tb_op_stress.outp_stress",
+      "measured_value": 0.465776,
+      "spec": "[0.4, 0.9] V",
+      "status": "pass",
+      "unit": "V",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "stress_corner"
+    },
+    {
+      "id": "spec.tb_op_stress.outp_drift",
+      "measured_value": 0.14406,
+      "spec": "[-inf, 0.15] V",
+      "status": "pass",
+      "unit": "V",
+      "message": "nominal=0.609836 stress=0.465776",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "stress_corner"
+    },
+    {
+      "id": "hidden.drc_clean",
+      "measured_value": 0,
+      "spec": "== 0 violations",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "hidden.lvs_match",
+      "measured_value": true,
+      "spec": "== true",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "bound.specs.total",
+      "measured_value": 9,
+      "spec": "== 9 count",
+      "status": "pass",
+      "unit": "count",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "bound.ppa.area_um2",
+      "measured_value": 1732.026,
+      "spec": "[-inf, 2000.0] um2",
+      "status": "pass",
+      "unit": "um2",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    }
+  ],
+  "metrics": [
+    {
+      "id": "compile.ok",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "drc.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "drc.total_violations",
+      "value": 0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.devices",
+      "value": 24,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.nets",
+      "value": 21,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "extract.status",
+      "value": "ok",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "lvs.match",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "lvs.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.area_um2",
+      "value": 1732.026,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.height_um",
+      "value": 22.73,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.hpwl_um",
+      "value": 249.51,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.instance_count",
+      "value": 3,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.net_count",
+      "value": 5,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.port_count",
+      "value": 4,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "ppa.width_um",
+      "value": 76.2,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "specs.passed",
+      "value": 9,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "specs.total",
+      "value": 9,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "specs.unavailable",
+      "value": 0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "specs.worst_case",
+      "value": "spec.tb_op_stress.outp_drift (final)",
+      "unit": "",
+      "note": "worst-case spec (nearest bound)"
+    },
+    {
+      "id": "specs.worst_margin_frac",
+      "value": 0.0396,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "verify.passed",
+      "value": true,
+      "unit": "",
+      "note": ""
+    }
+  ],
+  "provenance": {
+    "git_sha": "575a7d34dcd385e1687e24a85a70c96853095e2e",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "python": "3.13.7",
+    "tools": {
+      "ngspice": {
+        "status": "available",
+        "version": null,
+        "binary": "E:\\Reliability-PINN-Lab\\.tmp\\ngspice47\\Spice64\\bin\\ngspice_con.exe"
+      },
+      "klayout": {
+        "version": "0.30.12",
+        "pya": true
+      }
+    },
+    "input_sha256": {
+      "starter/design.json": "81d974a707a69e1567fdb96faf3385093ec4849f0b786660c7ea016607fc4cc4"
+    }
+  }
+}

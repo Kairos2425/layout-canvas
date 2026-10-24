@@ -176,6 +176,32 @@ Validation is strict: schematic benches
 reject `stimulus`/`probes` (the schematic path has no custom-bench
 parameter), testbench and spec names must be unique.
 
+Additional testbench/spec fields for temperature and stress corners:
+
+| Field | On | Meaning |
+|---|---|---|
+| `temp` | testbench | nominal simulation temperature in °C, emitted as a `.temp` card (takes precedence over `.options temp`, never rewrites model `tnom`); `null` = simulator default (ngspice 27 °C) |
+| `stress` | testbench | accelerated stress corner `{"vdd": V, "temp": °C}` — the bench runs the same analysis twice: nominal and with these overrides (each key falls back to the nominal value). Only `vdd`/`temp` are legal keys; anything else is a validation error naming the allowed set. HTOL-style operating-point proxy, **not** an aging model |
+| `on` | spec | `"nominal"` (default) scores the nominal run; `"stress"` scores the same signal/measure on the stress run; `"drift"` scores `|stress − nominal|` |
+
+```json
+{"name": "tb_op_stress", "source": "schematic", "analysis": "op",
+ "vdd": 1.8, "stress": {"vdd": 1.98, "temp": 125.0},
+ "specs": [
+   {"name": "outp_stress", "signal": "outp", "measure": "final",
+    "on": "stress", "min": 0.4, "max": 0.9, "unit": "V"},
+   {"name": "outp_drift", "signal": "outp", "measure": "final",
+    "on": "drift", "max": 0.15, "unit": "V"}]}
+```
+
+A drift entry carries `nominal_value`/`stress_value` beside `value`
+(the |Δ|). A `stress`/`drift` spec on a testbench with no declared
+`stress` reports `unavailable` with the reason — the spec model stays
+usable standalone. A stressed run's result lands under `result["stress"]`
+with the same waves/status/spec_status shape (plus the applied
+`corner`); its `specs` list covers only the `stress`/`drift` entries,
+while the top-level `specs` rolls up every spec on its routed run.
+
 **Auto-bias supplies:** the generated stimulus drives top-level `vdd`/`vss`
 nodes and emits `.global` for every supply-named net used inside the
 design subckt — SPICE subckt node names are local, so without `.global`
@@ -411,11 +437,12 @@ it on a network. See `docs/DEPLOYMENT.md`.
 `bench/` is a **frozen evaluation set** for the compiler (methodology in
 `bench/README.md`, modeled on the upstream analog-design-bench):
 `benchmark.toml` pins `release_id` + `state="frozen"` and the task slots;
-six task directories cover verify / spec / optimize / import surfaces
+seven task directories cover verify / spec / optimize / import surfaces
+plus an accelerated stress-corner (`stress`/`drift` spec routing) rung,
 across sky130, ihp_sg13g2 and an external descriptor PDK. Every run
 emits a `flat-scalar-v2` scorecard under `bench/runs/` with per-check
-`{id, measured_value, spec, status, unit}`, coverage and provenance
-(tool versions, git sha, input sha256).
+`{id, measured_value, spec, status, unit, evidence_level}`, coverage and
+provenance (tool versions, git sha, input sha256).
 
 Key semantics:
 

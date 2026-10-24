@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "release_id": "layout-canvas-bench-v2",
+  "purpose": "Pinned toolchain identities for the frozen baseline (modeled on circuit-bench-toolchains images.lock.json). Records versions and digests \u2014 never machine-specific paths. A rerun on a different toolchain is not comparable; diff this file before trusting a drift.",
+  "tools": {
+    "ngspice": {
+      "version": "47",
+      "note": "ngspice_con --version banner"
+    },
+    "klayout_pya": {
+      "version": "0.30.12"
+    },
+    "layout_canvas": {
+      "git_sha": "575a7d3"
+    },
+    "python": {
+      "version": "3.13.7"
+    }
+  },
+  "components": {
+    "sky130_models": {
+      "path": "examples/models/sky130/sky130_tt.lib",
+      "sha256": "a288cd7c61cbdd7fe6c23c6522ad5a10cbc1acc024c01ead90580fdd7ba3fbf1"
+    }
+  }
+}

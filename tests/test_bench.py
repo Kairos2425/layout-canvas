@@ -74,7 +74,7 @@ def test_cli_bench_subcommand(tmp_path, monkeypatch, capsys):
          "--check-baseline", "--out", str(tmp_path)])
     assert main() == 0
     card = json.loads((tmp_path / "scorecard.json").read_text())
-    assert card["release_id"] == "layout-canvas-bench-v1"
+    assert card["release_id"] == "layout-canvas-bench-v2"
     assert card["metric_schema"] == "flat-scalar-v2"
     assert card["coverage"] == {"runnable": 1, "total": 1}
     assert card["provenance"]["git_sha"] != "unknown"
@@ -181,3 +181,50 @@ def test_spec_task_unavailable_without_ngspice(bench, tmp_path):
     card = bench._scorecard([task], [res], bench.load_manifest(BENCH))
     assert card["coverage"] == {"runnable": 0, "total": 1}
     assert card["evidence_complete"] is False
+
+
+# --- Reliability rung: accelerated stress corner -------------------------
+
+def test_stress_corner_task_loads(bench):
+    task = bench.load_task(BENCH / "tasks" / "sky130-ota-stress-corner")
+    assert task.type == "spec"
+    metrics = {b.metric for b in task.bounds}
+    assert "specs.total" in metrics and "ppa.area_um2" in metrics
+
+
+@pytest.mark.skipif(not _HAS_NGSPICE, reason="ngspice not installed")
+def test_stress_corner_task_end_to_end(bench):
+    """Real ngspice double run: stress + drift specs, evidence rungs."""
+    task = bench.load_task(BENCH / "tasks" / "sky130-ota-stress-corner")
+    res = bench.run_task(task)
+    assert res["status"] == "pass", res["failure"]
+    ids = {c["id"]: c for c in res["checks"]}
+    stress = ids["spec.tb_op_stress.outp_stress"]
+    drift = ids["spec.tb_op_stress.outp_drift"]
+    assert stress["status"] == "pass"
+    assert stress["measured_value"] == pytest.approx(0.4658, abs=0.02)
+    assert stress["evidence_level"] == "stress_corner"
+    assert drift["status"] == "pass"
+    # measured 2026-10-24, ngspice_con-47: |0.465776 - 0.609836| = 0.144
+    assert drift["measured_value"] == pytest.approx(0.144, abs=0.01)
+    assert drift["evidence_level"] == "stress_corner"
+    assert "nominal=" in drift["message"] and "stress=" in drift["message"]
+    assert (ids["spec.tb_op_schematic.outp_op"]["evidence_level"]
+            == "solver_verified")
+    assert ids["hidden.drc_clean"]["evidence_level"] == "deterministic"
+
+
+@pytest.mark.skipif(_HAS_NGSPICE, reason="ngspice present — task would evaluate")
+def test_stress_corner_task_unavailable_without_ngspice(bench):
+    """No simulator → the stress run never fabricates: every spec.*
+    check reports capability 'unavailable', the task 'unavailable'."""
+    task = bench.load_task(BENCH / "tasks" / "sky130-ota-stress-corner")
+    res = bench.run_task(task)
+    assert res["status"] == "unavailable"
+    spec_checks = [c for c in res["checks"] if c["id"].startswith("spec.")]
+    assert spec_checks and all(
+        c["status"] == "unavailable" and c["capability"]
+        for c in spec_checks)
+    assert any(c["id"] == "spec.tb_op_stress.outp_drift"
+               and c["evidence_level"] == "stress_corner"
+               for c in spec_checks)

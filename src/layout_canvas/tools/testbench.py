@@ -3,9 +3,13 @@
 A ``Testbench`` on a Design is a declarative sim recipe (schematic or
 extracted source, op/tran, vdd, optional stimulus/probes) plus ``Spec``
 records — each spec measures one waveform key and reports a real
-pass/fail/unavailable verdict with a reason. Fail-closed throughout: a
-missing simulator or a missing signal reports ``unavailable``, never a
-fabricated pass.
+pass/fail/unavailable verdict with a reason. A testbench may declare a
+``stress`` corner (accelerated vdd/temp — an HTOL-style proxy, not an
+aging model); it then runs nominal + stress, and a spec's ``on`` field
+routes it to the nominal run, the stress run, or the |stress − nominal|
+drift between them. Fail-closed throughout: a missing simulator, a
+missing signal or a missing declared corner reports ``unavailable``,
+never a fabricated pass.
 """
 
 from __future__ import annotations
@@ -124,20 +128,91 @@ def _fmt(value: float | None, unit: str) -> str:
     return f"{value:g} {unit}".rstrip()
 
 
+def _measure_one(
+    result: dict[str, Any],
+    spec: Spec,
+    *,
+    analysis: str | None = None,
+) -> tuple[float | None, str | None]:
+    """Reduce ``spec.signal`` in one sim-result dict to a scalar.
+
+    Returns ``(value, None)`` on success or ``(None, reason)`` — the
+    reason only explains why no scalar exists; it never asserts a verdict.
+    ``analysis`` is the testbench's analysis kind: transient-only measures
+    (``settling``/``slew``/``overshoot``) on anything else fail with a
+    plain reason instead of a bare axis error.
+    """
+    status = str(result.get("status", ""))
+    if status not in ("ok", "passed"):
+        errors = result.get("errors") or []
+        return None, (
+            f"simulation {status or 'unknown'}"
+            + (": " + "; ".join(str(e) for e in errors) if errors else "")
+        )
+    if (spec.measure in _TRANSIENT_MEASURES
+            and analysis is not None and analysis != "tran"):
+        return None, (
+            f"measure {spec.measure!r} is transient-only; testbench "
+            f"analysis is {analysis!r}")
+    samples = (result.get("waves") or {}).get(spec.signal)
+    if not samples:
+        available = ", ".join(sorted(result.get("waves") or {})) or "none"
+        return None, (
+            f"signal {spec.signal!r} not in waveforms; available: {available}")
+    try:
+        # 6 significant digits, not 6 decimals — transient measures
+        # produce nanosecond / V-per-second magnitudes that a fixed
+        # round(…, 6) would silently collapse to 0.
+        measured = measure_signal(
+            list(samples), spec.measure,
+            sweep=result.get("sweep"), tol=spec.tol)
+        return float(f"{measured:.6g}"), None
+    except ValueError as exc:
+        return None, str(exc)
+
+
+def _score_value(entry: dict[str, Any], spec: Spec, value: float) -> None:
+    """Apply the spec's min/max bounds to a reduced scalar."""
+    entry["value"] = value
+    if spec.min is not None and value < spec.min:
+        entry["status"] = "fail"
+        entry["reason"] = f"{_fmt(value, spec.unit)} < min {_fmt(spec.min, spec.unit)}"
+    elif spec.max is not None and value > spec.max:
+        entry["status"] = "fail"
+        entry["reason"] = f"{_fmt(value, spec.unit)} > max {_fmt(spec.max, spec.unit)}"
+    else:
+        entry["status"] = "pass"
+
+
+_NO_CORNER_REASON = (
+    "needs a declared stress corner (Testbench.stress) — "
+    "the testbench declared none")
+
+
 def evaluate_specs(
     result: dict[str, Any],
     specs: list[Spec],
     *,
     analysis: str | None = None,
+    stress: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Score each spec against a sim-result dict (``simulate_auto`` shape).
 
-    ``analysis`` is the testbench's analysis kind — transient-only
-    measures (``settling``/``slew``/``overshoot``) on anything else report
-    ``unavailable`` with a plain reason instead of a bare axis error.
+    ``stress`` is the optional second sim-result dict from the same
+    testbench run at its declared stress corner (same analysis/probes,
+    stress vdd/temp). Spec routing by ``spec.on``:
+
+    - ``"nominal"`` (default) reduces the signal on ``result``;
+    - ``"stress"`` reduces the same signal/measure on ``stress``;
+    - ``"drift"`` reduces it on both runs and bounds the magnitude
+      ``|stress − nominal|`` in ``value``, with the two scalars exposed as
+      ``nominal_value``/``stress_value``.
+
+    ``stress=None`` means no corner was declared or run — ``stress`` and
+    ``drift`` specs report ``unavailable`` with the reason, never a
+    nominal-only stand-in. A spec on a run whose simulation itself was
+    not ``ok``/``passed`` reports ``unavailable`` too — fail-closed.
     """
-    status = str(result.get("status", ""))
-    waves = result.get("waves") or {}
     out = []
     for spec in specs:
         entry = {
@@ -147,54 +222,47 @@ def evaluate_specs(
             "unit": spec.unit,
             "min": spec.min,
             "max": spec.max,
+            "on": spec.on,
             "value": None,
             "status": "unavailable",
             "reason": "",
         }
-        if status not in ("ok", "passed"):
-            errors = result.get("errors") or []
-            entry["reason"] = (
-                f"simulation {status or 'unknown'}"
-                + (": " + "; ".join(str(e) for e in errors) if errors else "")
-            )
-            out.append(entry)
-            continue
-        if (spec.measure in _TRANSIENT_MEASURES
-                and analysis is not None and analysis != "tran"):
-            entry["reason"] = (
-                f"measure {spec.measure!r} is transient-only; testbench "
-                f"analysis is {analysis!r}")
-            out.append(entry)
-            continue
-        samples = waves.get(spec.signal)
-        if not samples:
-            available = ", ".join(sorted(waves)) or "none"
-            entry["reason"] = (
-                f"signal {spec.signal!r} not in waveforms; available: {available}"
-            )
-            out.append(entry)
-            continue
-        try:
-            # 6 significant digits, not 6 decimals — transient measures
-            # produce nanosecond / V-per-second magnitudes that a fixed
-            # round(…, 6) would silently collapse to 0.
-            measured = measure_signal(
-                list(samples), spec.measure,
-                sweep=result.get("sweep"), tol=spec.tol)
-            value = float(f"{measured:.6g}")
-        except ValueError as exc:
-            entry["reason"] = str(exc)
-            out.append(entry)
-            continue
-        entry["value"] = value
-        if spec.min is not None and value < spec.min:
-            entry["status"] = "fail"
-            entry["reason"] = f"{_fmt(value, spec.unit)} < min {_fmt(spec.min, spec.unit)}"
-        elif spec.max is not None and value > spec.max:
-            entry["status"] = "fail"
-            entry["reason"] = f"{_fmt(value, spec.unit)} > max {_fmt(spec.max, spec.unit)}"
+        if spec.on == "stress":
+            if stress is None:
+                entry["reason"] = f"spec on='stress' {_NO_CORNER_REASON}"
+                out.append(entry)
+                continue
+            value, reason = _measure_one(stress, spec, analysis=analysis)
+            if reason is not None:
+                entry["reason"] = f"stress run: {reason}"
+                out.append(entry)
+                continue
+            _score_value(entry, spec, value)
+        elif spec.on == "drift":
+            if stress is None:
+                entry["reason"] = (
+                    f"spec on='drift' bounds |stress − nominal| and "
+                    f"{_NO_CORNER_REASON}")
+                out.append(entry)
+                continue
+            n_val, n_reason = _measure_one(result, spec, analysis=analysis)
+            s_val, s_reason = _measure_one(stress, spec, analysis=analysis)
+            if n_reason is not None or s_reason is not None:
+                entry["reason"] = "; ".join(
+                    f"{label}: {r}" for label, r in
+                    (("nominal", n_reason), ("stress", s_reason)) if r)
+                out.append(entry)
+                continue
+            entry["nominal_value"] = n_val
+            entry["stress_value"] = s_val
+            _score_value(entry, spec, float(f"{abs(s_val - n_val):.6g}"))
         else:
-            entry["status"] = "pass"
+            value, reason = _measure_one(result, spec, analysis=analysis)
+            if reason is not None:
+                entry["reason"] = reason
+                out.append(entry)
+                continue
+            _score_value(entry, spec, value)
         out.append(entry)
     return out
 
@@ -226,36 +294,79 @@ def run_testbench(
     executable: str | None = None,
     workdir: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Run one named testbench and evaluate its specs."""
+    """Run one named testbench and evaluate its specs.
+
+    A testbench with a non-empty ``stress`` table runs the same
+    analysis/probes twice: nominal (``tb.vdd``/``tb.temp``) and the
+    accelerated stress corner (``stress["vdd"]``/``stress["temp"]``, each
+    falling back to the nominal value). The stress run lands under
+    ``result["stress"]`` with the same waves/status/spec_status shape plus
+    the applied ``corner``; its ``specs`` list covers only the
+    ``on="stress"``/``"drift"`` entries. The top-level ``specs`` list
+    carries every spec evaluated on its routed run and ``spec_status``
+    rolls up both corners. No simulator → every entry ``unavailable``.
+    """
     from layout_canvas.tools.sim import simulate_auto, simulate_extracted
 
     tb = _testbench(design, name)
     exe = executable or os.environ.get("LAYOUT_CANVAS_NGSPICE")
-    if tb.source == "extracted":
-        result = simulate_extracted(
+
+    def _run(vdd: float, temp: float | None, wdir: Any) -> dict[str, Any]:
+        if tb.source == "extracted":
+            return simulate_extracted(
+                design,
+                analysis=tb.analysis,
+                vdd=vdd,
+                temp=temp,
+                stimulus=tb.stimulus,
+                probes=tb.probes or None,
+                executable=exe,
+                workdir=wdir,
+            )
+        return simulate_auto(
             design,
             analysis=tb.analysis,
-            vdd=tb.vdd,
-            stimulus=tb.stimulus,
-            probes=tb.probes or None,
+            vdd=vdd,
+            temp=temp,
             executable=exe,
-            workdir=workdir,
+            workdir=wdir,
         )
-    else:
-        result = simulate_auto(
-            design,
-            analysis=tb.analysis,
-            vdd=tb.vdd,
-            executable=exe,
-            workdir=workdir,
-        )
+
+    stressed = bool(tb.stress)
+    # Two runs sharing one workdir would clobber each other's
+    # deck.cir/waves.dat — split them into named subdirectories.
+    nom_dir = Path(workdir) / "nominal" if stressed and workdir else workdir
+    str_dir = Path(workdir) / "stress" if stressed and workdir else None
+    result = _run(tb.vdd, tb.temp, nom_dir)
+    stress_res: dict[str, Any] | None = None
+    corner: dict[str, float | None] | None = None
+    if stressed:
+        assert tb.stress is not None
+        corner = {
+            "vdd": float(tb.stress.get("vdd", tb.vdd)),
+            "temp": tb.stress.get("temp", tb.temp),
+        }
+        if corner["temp"] is not None:
+            corner["temp"] = float(corner["temp"])
+        stress_res = _run(corner["vdd"], corner["temp"], str_dir)
+    specs = evaluate_specs(result, tb.specs, analysis=tb.analysis,
+                           stress=stress_res)
     for key in ("log_path", "deck_path"):
         if result.get(key):
             result[key] = str(result[key])
-    specs = evaluate_specs(result, tb.specs, analysis=tb.analysis)
     result["testbench"] = tb.name
     result["specs"] = specs
     result["spec_status"] = _spec_status(specs)
+    if stress_res is not None:
+        for key in ("log_path", "deck_path"):
+            if stress_res.get(key):
+                stress_res[key] = str(stress_res[key])
+        corner_specs = [e for e in specs if e["on"] in ("stress", "drift")]
+        stress_res["corner"] = corner
+        stress_res["testbench"] = tb.name
+        stress_res["specs"] = corner_specs
+        stress_res["spec_status"] = _spec_status(corner_specs)
+        result["stress"] = stress_res
     return result
 
 

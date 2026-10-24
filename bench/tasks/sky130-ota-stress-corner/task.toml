@@ -1,0 +1,19 @@
+schema_version = 1
+id = "sky130-ota-stress-corner"
+type = "spec"
+title = "OTA accelerated stress corner: nominal + 1.98 V/125 degC runs with stress and drift specs"
+deliverable = "starter/design.json"
+pdk = "sky130"
+
+# Baseline-compare tolerance for sim-derived values (deterministic checks
+# always compare exactly).
+[tolerances]
+sim_rel = 0.05          # ±5% of the frozen value
+sim_abs = 0.0
+
+[bounds]
+# 2 op_schematic + 2 op_pex + 3 ac + 2 stress-corner spec entries;
+# partial credit is a fail reported on the individual spec.* checks
+# (not re-bounded here).
+"specs.total" = { equals = 9, deterministic = true, unit = "count" }
+"ppa.area_um2" = { max = 2000.0, unit = "um2", deterministic = true }
