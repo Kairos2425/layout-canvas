@@ -112,8 +112,8 @@ thb_hast (A110/A101), temp_cycle (A104), htsl (A103), endurance (A117),
 fit_rate (JESD85), mismatch_aging (JEP122) — each with
 `id/jedec/evaluated_via/evidence_level/status/reason/details` and
 `status ∈ {pass, fail, unavailable, not_applicable, structural}`.
-Items the tool cannot evaluate (e.g. antenna extraction, humidity
-chamber tests, FIT extrapolation, missing spec declarations or a missing
+Items the tool cannot evaluate (e.g. humidity chamber tests,
+FIT extrapolation, missing spec declarations or a missing
 simulator) are `unavailable` with the missing capability named — never
 fabricated as passes. `latch_up` passes only at structural grade
 (block-level self-protection heuristic — not physical latch-up

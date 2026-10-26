@@ -404,17 +404,47 @@ def _endurance(design: Design) -> dict[str, Any]:
                  "spec — evaluate externally", details)
 
 
+def _antenna(design: Design) -> dict[str, Any]:
+    """PDK antenna rules — per-net gate-area ratio on the compiled
+    layout (KLayout connectivity, PDK EGAR form, see tools/antenna.py).
+    Deterministic: evaluated regardless of ``run_sims``."""
+    from layout_canvas.compiler.compile import compile_design
+    from layout_canvas.tools.antenna import antenna_check
+
+    via = ("per-layer antenna ratio (KLayout antenna_check, "
+           "connectivity up to etched layer)")
+    title = "Process antenna (plasma damage)"
+    jedec = "PDK antenna rules (JESD-like)"
+    try:
+        comp = compile_design(design)
+    except Exception as exc:
+        return _item("antenna", title, jedec, via, "deterministic",
+                     "unavailable", f"layout compile failed: {exc}")
+    import tempfile
+    from pathlib import Path
+
+    gds = Path(tempfile.mkdtemp(prefix="lc_ant_")) / f"{design.name}.gds"
+    try:
+        comp.write_gds(str(gds))
+        res = antenna_check(str(gds), tech=design.pdk)
+    except Exception as exc:
+        return _item("antenna", title, jedec, via, "deterministic",
+                     "unavailable", f"antenna evaluation failed: {exc}")
+    status = res["status"]
+    # A cross-check disagreement is an internal error — surface it as
+    # unavailable with the reason, never as a pass/fail.
+    if status == "error":
+        status = "unavailable"
+    return _item("antenna", title, res.get("rule_source") or jedec, via,
+                 "deterministic", status, res.get("reason") or "",
+                 res)
+
+
 # ---------------------------------------------------------------------------
 # Statically-unavailable items (honest domain boundary)
 # ---------------------------------------------------------------------------
 
 _STATIC_UNAVAILABLE = [
-    ("antenna", "Process antenna (plasma damage)",
-     "PDK antenna rules (JESD-like)", "per-net antenna-ratio extraction",
-     "deterministic",
-     "unavailable — needs per-net metal/gate area extraction (antenna "
-     "ratio per connected gate); the layout compiler does not extract "
-     "antenna areas yet"),
     ("thb_hast", "Temperature-humidity bias / HAST",
      "JESD22-A110 / JESD22-A101", "package-level chamber test",
      "out_of_domain",
@@ -484,6 +514,7 @@ def reliability_report(
                   "corner to activate the HCI parametric proxy"),
         _em_current(design, tb_run, run_sims),
         _latch_up(design),
+        _antenna(design),
         _esd(design, "esd_hbm", "ESD — human body model", "JS-001"),
         _esd(design, "esd_cdm", "ESD — charged device model", "JS-002"),
         *[_item(i, t, j, via, lvl, "unavailable", r)

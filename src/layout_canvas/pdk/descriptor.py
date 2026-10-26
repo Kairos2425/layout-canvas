@@ -64,8 +64,13 @@ class PDK:
     #              "enclosure": [(label, Layer, [Layer, ...], value_um)]}
     #   oa_layers = {Layer: oa_layer_name} — GDS (layer,datatype) → OA layer
     #   name for the Virtuoso SKILL export; purpose is always "drawing".
+    #   antenna = {"source": str, "layers": {role_name:
+    #              {"type": "vertical"|"horizontal",
+    #               "thickness": float (vertical only),
+    #               "max_ratio": float, "k": float|null}}}
     extract: dict[str, Any] | None = None
     drc: dict[str, Any] | None = None
+    antenna: dict[str, Any] | None = None
     oa_layers: dict[Layer, str] | None = None
     # Provenance: the directory/model files a ``*.pdk.json`` resolves
     # ``model_libs`` relative paths against, and the file it was read from
@@ -143,6 +148,7 @@ class PDK:
                                  pin_purpose=pin_purpose)
         drc = _parse_drc(d.get("drc"), name=name,
                          layers=layers, extract=extract)
+        antenna = _parse_antenna(d.get("antenna"), name=name)
         oa_layers = _parse_oa_layers(d.get("oa_layers"), name=name)
         return cls(
             name=name,
@@ -152,6 +158,7 @@ class PDK:
             model_libs=model_libs,
             extract=extract,
             drc=drc,
+            antenna=antenna,
             oa_layers=oa_layers,
             base_dir=str(base_dir) if base_dir is not None else None,
             source=str(source) if source is not None else None,
@@ -172,6 +179,7 @@ class PDK:
             "model_libs": dict(self.model_libs),
             "extract": None,
             "drc": None,
+            "antenna": None,
             "oa_layers": None,
         }
         if self.extract is not None:
@@ -209,6 +217,14 @@ class PDK:
                     k: [pair[0], pair[1]]
                     for k, pair in self.drc["layers"].items()
                 }
+        if self.antenna is not None:
+            out["antenna"] = {
+                "source": self.antenna["source"],
+                "layers": {
+                    lname: {k: v for k, v in spec.items()}
+                    for lname, spec in self.antenna["layers"].items()
+                },
+            }
         if self.oa_layers is not None:
             out["oa_layers"] = {
                 f"{pair[0]}/{pair[1]}": oa_name
@@ -276,6 +292,19 @@ def _full_descriptor_dict(name: str) -> dict[str, Any]:
                      "enclosed_by": [_nm(o) for o in outers], "enc": value}
                     for label, cut, outers, value in (enclosure or [])
                 ],
+            }
+
+    if out.get("antenna") is None:
+        from layout_canvas.tools.antenna import _BUILTIN_ANTENNA
+
+        ant = _BUILTIN_ANTENNA.get(name)
+        if ant is not None:
+            out["antenna"] = {
+                "source": ant["source"],
+                "layers": {
+                    lname: {k: v for k, v in spec.items()}
+                    for lname, spec in ant["layers"].items()
+                },
             }
     return out
 
@@ -454,6 +483,75 @@ def _parse_drc(
             value,
         ))
     return {"rules": rules, "enclosure": enclosure, "layers": drc_layers}
+
+
+_ANTENNA_TYPES = ("vertical", "horizontal")
+
+
+def _parse_antenna(raw: Any, *, name: str) -> dict[str, Any] | None:
+    """Parse the optional ``antenna`` section into
+    ``{"source": str, "layers": {role_name: {type, thickness,
+    max_ratio, k}}}``.
+
+    Layer keys are recipe/role names (e.g. ``"met1"``), resolved at use
+    time against the extraction recipe — unknown ones are simply never
+    checked. Malformed values raise with the field named.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(f"pdk {name!r}: 'antenna' must be an object")
+    layers_raw = raw.get("layers")
+    if not isinstance(layers_raw, dict) or not layers_raw:
+        raise ValueError(
+            f"pdk {name!r}: 'antenna.layers' must be a non-empty object")
+    source = str(raw.get("source") or "").strip() \
+        or f"{name} descriptor antenna table"
+    layers: dict[str, dict[str, Any]] = {}
+    for lname, spec in layers_raw.items():
+        where = f"{name}.antenna.layers[{lname!r}]"
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"pdk descriptor {where}: entry must be an object, "
+                f"got {spec!r}")
+        typ = spec.get("type")
+        if typ not in _ANTENNA_TYPES:
+            raise ValueError(
+                f"pdk descriptor {where}: 'type' must be one of "
+                f"{_ANTENNA_TYPES}, got {typ!r}")
+        try:
+            max_ratio = float(spec["max_ratio"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(
+                f"pdk descriptor {where}: 'max_ratio' must be a "
+                f"number, got {spec.get('max_ratio')!r}") from None
+        if max_ratio <= 0:
+            raise ValueError(
+                f"pdk descriptor {where}: 'max_ratio' must be > 0")
+        thickness = None
+        if typ == "vertical":
+            try:
+                thickness = float(spec["thickness"])
+            except (KeyError, TypeError, ValueError):
+                raise ValueError(
+                    f"pdk descriptor {where}: vertical layers need a "
+                    f"numeric 'thickness' (FLT), got "
+                    f"{spec.get('thickness')!r}") from None
+            if thickness <= 0:
+                raise ValueError(
+                    f"pdk descriptor {where}: 'thickness' must be > 0")
+        k = spec.get("k")
+        if k is not None:
+            try:
+                k = float(k)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"pdk descriptor {where}: 'k' must be a number or "
+                    f"null, got {k!r}") from None
+        layers[str(lname)] = {
+            "type": typ, "thickness": thickness,
+            "max_ratio": max_ratio, "k": k}
+    return {"source": source, "layers": layers}
 
 
 def _parse_oa_layers(raw: Any, *, name: str) -> dict[Layer, str] | None:

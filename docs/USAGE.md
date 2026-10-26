@@ -246,7 +246,14 @@ evaluated-via path, an evidence rung and an honest
 `pass|fail|unavailable|not_applicable|structural` verdict. Declarations
 activate items: a `stress` corner covers HTOL, `dvth_*`/`mu0_scale` keys
 cover the parametric NBTI/HCI proxy, an `i(v_*)` spec covers the EM
-current budget, an `on:"drift"` spec covers mismatch. Everything else is
+current budget, an `on:"drift"` spec covers mismatch, and `antenna` is a
+deterministic per-layer check on the compiled layout: for each
+rule layer the connectivity is truncated at that layer's etch
+step and the SkyWater sky130 Table-Ig ratio
+EGAR = EA/A_gate − K·A_diode is evaluated per net (diode
+bonus not applied — conservative; nets touching a substrate
+tap are exempt per rule .ar.1; a PDK without an antenna table
+reports `unavailable`). Everything else is
 `unavailable` with the missing capability named — never a fabricated
 pass. `--no-sim` evaluates only the structural items. The same matrix is
 exposed over MCP as `reliability_report`.

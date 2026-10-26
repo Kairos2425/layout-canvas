@@ -170,8 +170,10 @@ def test_run_sims_false_marks_sim_items_unavailable():
     # structural items still evaluate without a simulator
     assert by["latch_up"]["status"] == "structural"
     assert by["endurance"]["status"] == "not_applicable"
+    # antenna is deterministic — evaluated even with run_sims=False
+    assert by["antenna"]["status"] == "pass"
+    assert by["antenna"]["evidence_level"] == "deterministic"
     # static domain-boundary items stay unavailable either way
-    assert by["antenna"]["status"] == "unavailable"
     assert by["fit_rate"]["status"] == "unavailable"
 
 
