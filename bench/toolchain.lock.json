@@ -20,7 +20,7 @@
   "components": {
     "sky130_models": {
       "path": "examples/models/sky130/sky130_tt.lib",
-      "sha256": "a288cd7c61cbdd7fe6c23c6522ad5a10cbc1acc024c01ead90580fdd7ba3fbf1"
+      "sha256": "789f3592ba671c1329d3f83772246b0c87bf890b8579877b41ae02b63fb0956b"
     }
   }
 }

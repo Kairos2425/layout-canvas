@@ -117,7 +117,11 @@ FIT extrapolation, missing spec declarations or a missing
 simulator) are `unavailable` with the missing capability named — never
 fabricated as passes. `latch_up` passes only at structural grade
 (block-level self-protection heuristic — not physical latch-up
-verification).
+verification). `esd_hbm`/`esd_cdm` are structural too: a per-port
+connectivity scan checks that each external port shares its net with
+the `pad` pin of a rail-connected `sky130.esd_dual_diode` clamp
+(structural evidence only — no HBM/CDM strike simulation); an
+unprotected port is `fail`, no clamp at all is `unavailable`.
 
 ## Task types
 

@@ -350,37 +350,100 @@ def _latch_up(design: Design) -> dict[str, Any]:
                  f"self-protection allowlist: {names}", details)
 
 
+_SUPPLY_POS = re.compile(r"(?i)^(a|d)?vdd$|^vdd_|^vcc$|^vcc_")
+_SUPPLY_NEG = re.compile(r"(?i)^(a|d)?vss$|^vss_|^gnd$|^gnd_|^vsub$|^vbb$")
+
+
 def _esd(design: Design, item_id: str, title: str, jedec: str) -> dict[str, Any]:
-    """JS-001/JS-002 — palette scan for ESD clamp cells; the honest
-    verdict lists the ports left unprotected."""
-    blocks = base.all_blocks()
-    palette_cells = sorted(
-        n for n, b in blocks.items()
-        if any(t in n.lower() for t in _ESD_TOKENS)
-        or any(any(t in str(tag).lower() for t in _ESD_TOKENS)
-               for tag in (b.spec.tags or [])))
-    instanced = [i.id for i in design.instances
-                 if any(t in i.block.lower() for t in _ESD_TOKENS)]
-    ports = [p.name for p in design.ports]
-    via = "structural palette scan for ESD clamp cells"
-    details = {"esd_cells_in_palette": palette_cells,
-               "esd_instances": instanced,
-               "unprotected_ports": [p for p in ports]}
-    if not ports:
+    """JS-001/JS-002 — connectivity scan: every external port must share
+    its net with the ``pad`` pin of an esd-tagged instance whose rail
+    pins land on supply nets. Clamp presence + rail ties are structural
+    evidence only — compact diode models are not calibrated for ESD
+    strike currents and no rail clamp is modelled."""
+    esd_insts: list[Any] = []
+    for inst in design.instances:
+        try:
+            blk = base.get(inst.block)
+        except KeyError:
+            continue
+        if "esd" in {t.lower() for t in (blk.spec.tags or [])}:
+            esd_insts.append(inst)
+    net_of = {pin: n.name for n in design.nets for pin in n.pins}
+    supply_ports = {p.pin for p in design.ports if p.direction == "supply"}
+
+    def _net_kind(name: str | None, pin: str) -> str | None:
+        if name is not None and _SUPPLY_POS.match(name):
+            return "pos"
+        if name is not None and _SUPPLY_NEG.match(name):
+            return "neg"
+        # a net feeding a supply-direction port counts by usage too
+        for n in design.nets:
+            if n.name == name and any(p in supply_ports for p in n.pins):
+                return "supply"
+        return None
+
+    def _clamp_for_net(net_name: str | None) -> str | None:
+        """esd instance id whose pad sits on ``net_name`` and whose
+        vdd/vss pins land on positive/negative supply nets."""
+        if net_name is None:
+            return None
+        net_pins = {p for n in design.nets if n.name == net_name
+                    for p in n.pins}
+        for inst in esd_insts:
+            if f"{inst.id}.pad" not in net_pins:
+                continue
+            vdd_net = net_of.get(f"{inst.id}.vdd")
+            vss_net = net_of.get(f"{inst.id}.vss")
+            if vdd_net == vss_net:
+                continue
+            if _net_kind(vdd_net, f"{inst.id}.vdd") in ("pos", "supply") \
+                    and _net_kind(vss_net, f"{inst.id}.vss") in (
+                        "neg", "supply"):
+                return inst.id
+        return None
+
+    per_port: list[dict[str, Any]] = []
+    for p in design.ports:
+        net_name = net_of.get(p.pin)
+        # ports may pin to an instance pin carrying no net entry: the
+        # implicit net is the port name itself (net list omission)
+        probe_nets = [net_name] if net_name else [p.name]
+        clamp = next((c for c in
+                      (_clamp_for_net(n) for n in probe_nets) if c), None)
+        per_port.append({"port": p.name, "clamp_instance": clamp})
+    unprotected = [e["port"] for e in per_port
+                   if e["clamp_instance"] is None]
+    via = ("per-port ESD clamp connectivity scan (esd-tagged pad pin on "
+           "the port net, rail pins on supply nets); structural grade — "
+           "no HBM/CDM strike simulation")
+    details = {
+        "esd_instances": [i.id for i in esd_insts],
+        "per_port": per_port,
+        "unprotected_ports": unprotected,
+    }
+    if not design.ports:
         return _item(item_id, title, jedec, via, "structural",
                      "not_applicable",
                      "design exposes no ports — nothing to protect",
                      details)
-    if instanced:
+    if not esd_insts:
         return _item(item_id, title, jedec, via, "structural",
-                     "structural",
-                     "design instances ESD-clamp block(s); clamp presence "
-                     "is structural evidence only — no HBM/CDM strike "
-                     "simulation", details)
-    return _item(item_id, title, jedec, via, "structural", "unavailable",
-                 f"palette has no ESD clamp cell — {len(ports)} external "
-                 f"port(s) unprotected: {', '.join(ports) or 'none'}",
-                 details)
+                     "unavailable",
+                     "no ESD clamp instanced (palette provides "
+                     "sky130.esd_dual_diode) — ports "
+                     f"{', '.join(unprotected)} unprotected; block-level "
+                     "designs without a pad ring are expected here",
+                     details)
+    if unprotected:
+        return _item(item_id, title, jedec, via, "structural", "fail",
+                     f"{len(unprotected)} external port(s) lack a "
+                     f"rail-connected ESD clamp: {', '.join(unprotected)}",
+                     details)
+    return _item(item_id, title, jedec, via, "structural", "structural",
+                 "every external port shares its net with a "
+                 "rail-connected ESD clamp; structural evidence only — "
+                 "compact diode models are not calibrated for ESD strike "
+                 "currents and no rail clamp is modelled", details)
 
 
 def _endurance(design: Design) -> dict[str, Any]:

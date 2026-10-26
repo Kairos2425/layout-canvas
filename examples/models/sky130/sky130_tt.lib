@@ -1,10 +1,24 @@
-* SkyWater SKY130 TT-corner MOS bundle for ngspice — assembled from
+* SkyWater SKY130 TT-corner MOS bundle for ngspice -- assembled from
 * google/skywater-pdk-libs-sky130_fd_pr (Apache-2.0). Files are upstream
 * verbatim; this file only wires the include order:
 *   invariant (statistical slope/diff params) + lod (stress diffs)
 *   -> per-device corner (bin diffs) -> pm3 (binned BSIM4 model cards).
 * Devices: X<name> d g s b sky130_fd_pr__nfet_01v8 / sky130_fd_pr__pfet_01v8
+* Diodes:  D<name> a c sky130_fd_pr__diode_pw2nd_05v5 /
+*          sky130_fd_pr__diode_pd2nw_05v5 -- level-3 .model D cards, verbatim
+*          from cells/diode_{pw2nd,pd2nw}_05v5 @ upstream commit
+*          f62031a1be9aefe902d6d54cddd6f59b57627436 (sha256
+*          81df8f4fc4d915d5a79becad25ee79a0abf8db6a3453fa2d54ffe92918c2045c /
+*          59f69c44b2fd6173ce6c2643988e65d6663b646e98cebdf827ff8de4838558c7).
+* tt_nonfet.spice is the upstream TT-corner non-FET parameter card
+* (models/corners/tt/nonfet.spice @ same commit, sha256
+* 63fdbb8e8fee2a45bf91dd5a56748a00874b741e66beec8649b024859d4dd755) --
+* it supplies the sky130_fd_pr__nfet_01v8__{a,p}junction_mult params the
+* pw2nd diode model references; the pd2nw mults ship in the pfet corner.
 .include "sky130_fd_pr__parameters__invariant.spice"
 .include "sky130_fd_pr__parameters__lod.spice"
 .include "sky130_fd_pr__nfet_01v8__tt.corner.spice"
 .include "sky130_fd_pr__pfet_01v8__tt.corner.spice"
+.include "tt_nonfet.spice"
+.include "sky130_fd_pr__diode_pw2nd_05v5.model.spice"
+.include "sky130_fd_pr__diode_pd2nw_05v5.model.spice"

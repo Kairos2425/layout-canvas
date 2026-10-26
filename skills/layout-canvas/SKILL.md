@@ -84,7 +84,10 @@ envelope shape before hand-writing calls.
    `reliability_report` then folds all of this into the 14-item
    JESD/JEP coverage matrix (`jesd-aligned-v1`) — unavailable means
    not verified, and `latch_up`/`esd_*` verdicts are structural
-   heuristics, not physical proof.
+   heuristics, not physical proof. `esd_hbm`/`esd_cdm` go `structural`
+   when every external port's net carries the `pad` pin of a
+   rail-connected `sky130.esd_dual_diode` instance, `fail` naming any
+   unprotected port, and stay `unavailable` with no clamp instanced.
    `optimize` with `objective:"specs"` coordinate-descends bounded numeric
    params toward all-specs-pass (needs a live simulator).
 8. Deliver: `export_virtuoso` (SKILL `.il` + Spectre `.scs`), `save_project`,

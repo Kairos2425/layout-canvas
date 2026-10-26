@@ -934,6 +934,12 @@ def simulate_extracted(
             lines.append(
                 f"X_{safe} {m.group(2)} {m.group(3)} {m.group(4)} "
                 f"{m.group(5)} {leaf2wrap[m.group(6)]}{m.group(7)}")
+        elif line.startswith("D"):
+            # Extracted diode cards carry KLayout's A/P parameter names
+            # (junction area/perimeter); ngspice wants area/pj —
+            # translate, values unchanged (units already SI).
+            line = re.sub(r"\bA=", "area=", line)
+            lines.append(re.sub(r"\bP=", "pj=", line))
         else:
             lines.append(line)
     flat = _unwrap_extracted_top("\n".join(lines))

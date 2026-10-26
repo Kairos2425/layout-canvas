@@ -48,10 +48,12 @@ _RECIPES: dict[str, dict[str, Any]] = {
         "met2": (69, 20), "via2": (69, 44), "met3": (70, 20),
         "via3": (70, 44), "met4": (71, 20), "via4": (71, 44), "met5": (72, 20),
         "nsdm": (93, 44), "psdm": (94, 20), "capm": (89, 44),
+        "diode_marker": (81, 23),  # areaid.diode
         "text_datatypes": (16,),
     },
     "ihp_sg13g2": {
         "well_n": (31, 0), "diff": (1, 0), "tap": None, "capm": None,
+        "diode_marker": None,
         "poly": (5, 0), "licon": (6, 0), "li1": (8, 0),
         "mcon": (19, 0), "met1": (10, 0), "via1": (29, 0),
         "met2": (30, 0), "via2": (49, 0), "met3": (50, 0),
@@ -67,6 +69,10 @@ LEAF_DEVICES: dict[str, dict[str, tuple[str, str]]] = {
     "sky130": {
         "sky130_fd_pr__nfet_01v8": ("nfet_01v8", "nmos"),
         "sky130_fd_pr__pfet_01v8": ("pfet_01v8", "pmos"),
+        "sky130_fd_pr__diode_pw2nd_05v5": (
+            "sky130_fd_pr__diode_pw2nd_05v5", "diode"),
+        "sky130_fd_pr__diode_pd2nw_05v5": (
+            "sky130_fd_pr__diode_pd2nw_05v5", "diode"),
     },
     "ihp_sg13g2": {
         "sg13_lv_nmos": ("sg13_lv_nmos_dev", "nmos"),
@@ -116,6 +122,16 @@ def lvs_device_wrappers(tech: str) -> str:
     """
     out = []
     for subckt, (model, pol) in leaf_devices_for(tech).items():
+        if pol == "diode":
+            # Diode leaf: a bare D-card onto an abstract .model — mirrors
+            # how the extractors emit diode classes (name = model name).
+            out.append(
+                f".subckt {subckt} a c\n"
+                f"D1 a c {model} area=1e-12 pj=4e-6\n"
+                f".model {model} diode\n"
+                f".ends {subckt}"
+            )
+            continue
         out.append(
             f".subckt {subckt} d g s b w=1u l=1u nf=1 mult=1\n"
             f"m1 d g s b {model} w='w*nf*mult' l=l\n"
@@ -193,7 +209,7 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
         k: (l2n.make_layer(L(k), k) if L(k) is not None else None)
         for k in ("licon", "li1", "mcon", "met1", "via1", "met2", "via2",
                   "met3", "via3", "met4", "via4", "met5", "nsdm", "psdm",
-                  "capm")
+                  "capm", "diode_marker")
     }
     # text layers for pin names (every layer carrying texts with the PDK's
     # label datatype)
@@ -384,6 +400,39 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
             {"P1": layers["met2"], "P2": layers["met3"], "C": rcap,
              "tA": layers["met2"], "tB": layers["met3"]},
         )
+    # ESD/I/O diodes are opt-in via the diode marker layer (sky130
+    # areaid.diode 81/23): each marker-covered diffusion junction becomes
+    # one D device. Blocks drawing no marker extract byte-identically to
+    # before — the two extractors never run.
+    #
+    # pw2nd: N+ diff in p-substrate. Anode is the substrate itself (the
+    # rpsub global layer), cathode the marked n+ diffusion; the cathode
+    # region is a subset of rnsd and is explicitly connected to the
+    # contact stack so its terminal lands on the pad net.
+    # pd2nw: P+ diff inside n-well. Anode is the marked p+ diffusion,
+    # cathode the well (already a connectivity participant through the
+    # n-tap). Marker diff regions are never MOS devices — with no poly
+    # overlap they simply carry no gate.
+    rmark = layers.get("diode_marker")
+    if rmark is not None and rmark.count() > 0:
+        diode_models = [cls for cls, pol in leaf.values()
+                        if pol == "diode"]
+        m_n = next((m for m in diode_models if "pw2nd" in m), None)
+        m_p = next((m for m in diode_models if "pd2nw" in m), None)
+        if m_n is not None:
+            rdn = rmark & rnsd
+            l2n.connect(rdn, layers["licon"])
+            l2n.extract_devices(
+                db.DeviceExtractorDiode(m_n),
+                {"P": rpsub, "N": rdn},
+            )
+        if m_p is not None:
+            rdp = rmark & rpsd
+            l2n.connect(rdp, layers["licon"])
+            l2n.extract_devices(
+                db.DeviceExtractorDiode(m_p),
+                {"P": rdp, "N": rnwell},
+            )
     l2n.extract_netlist()
     nl = l2n.netlist()
     errors = [e.description for e in l2n.each_error()]

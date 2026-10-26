@@ -73,7 +73,8 @@ of the resolved position. Overlaps are not auto-resolved —
 `verify_design` reports the resulting violations.
 
 Block names are `<pdk>.<block>`. Sky130: `diff_pair`, `current_mirror`,
-`ota_5t`, `strongarm`, `cap_array`, `guard_ring`. IHP SG13G2: `diff_pair`,
+`ota_5t`, `strongarm`, `cap_array`, `guard_ring`, `esd_dual_diode`.
+IHP SG13G2: `diff_pair`,
 `current_mirror`, `ota_5t`, `guard_ring`. Any external `*.pdk.json` with an
 `extract` section also gets `gen_diff_pair`, `gen_current_mirror` and
 `gen_guard_ring` (the `gen_` prefix keeps them clear of native blocks) —
@@ -253,7 +254,14 @@ step and the SkyWater sky130 Table-Ig ratio
 EGAR = EA/A_gate − K·A_diode is evaluated per net (diode
 bonus not applied — conservative; nets touching a substrate
 tap are exempt per rule .ar.1; a PDK without an antenna table
-reports `unavailable`). Everything else is
+reports `unavailable`), and `esd_hbm`/`esd_cdm`
+evaluate per-port clamp connectivity: each external port must share its
+net with the `pad` pin of an esd-tagged instance (palette provides
+`sky130.esd_dual_diode` — a pw2nd+pd2nw pair under the areaid.diode
+marker) whose `vdd`/`vss` pins land on supply nets; all ports covered is
+`structural` (no HBM/CDM strike simulation — the compact diode models
+are not calibrated for ESD currents), a missing clamp on any port is
+`fail`, and no clamp at all stays `unavailable`. Everything else is
 `unavailable` with the missing capability named — never a fabricated
 pass. `--no-sim` evaluates only the structural items. The same matrix is
 exposed over MCP as `reliability_report`.

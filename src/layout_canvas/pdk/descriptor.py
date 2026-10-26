@@ -36,7 +36,7 @@ EXTRACTION_ROLES: tuple[str, ...] = (
     "well_n", "diff", "tap", "poly", "licon", "li1", "mcon",
     "met1", "met2", "met3", "met4", "met5",
     "via1", "via2", "via3", "via4",
-    "nsdm", "psdm", "capm",
+    "nsdm", "psdm", "capm", "diode_marker",
 )
 
 # Roles the MOS derivation cannot work without — a descriptor naming an
@@ -45,7 +45,7 @@ _REQUIRED_EXTRACT_ROLES = ("well_n", "diff", "poly")
 
 _DRC_CHECK_KINDS = ("width", "space")
 
-_LEAF_POLARITIES = ("nmos", "pmos")
+_LEAF_POLARITIES = ("nmos", "pmos", "diode")
 
 
 @dataclass(frozen=True)
