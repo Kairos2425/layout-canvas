@@ -43,6 +43,13 @@ _AVOID: dict[str, dict[str, list[str]]] = {
 
 _STUB_LAYER = {"sky130": "li1", "ihp_sg13g2": "metal1"}
 
+# sky130 min-space rules bounding the channel allocator: risers run on met3
+# (space 0.30, so riser centres must keep w + 0.30 apart — the old w + 0.2
+# budget left a 0.20 edge gap, sub-rule for met3) and the sideways jogs /
+# pin-row trunks run on met1 (space 0.14) where foreign straps share the row.
+_RISER_SPACE = 0.30   # met3.s — vertical riser edge-to-edge minimum
+_M1_SPACE = 0.14      # met1.s — jog/trunk edge-to-edge vs foreign met1
+
 
 def _closest_pt_on_polygon(poly: Any, px: int, py: int) -> tuple[int, int]:
     """Closest point of a klayout polygon (dbu) to (px, py)."""
@@ -337,11 +344,39 @@ def _intersects_obstacle(
 
 def _riser_x_free(x: float, y0: float, y1: float, w: float,
                   used_v: list[tuple[float, float, float]]) -> bool:
-    """True if a met2 riser at x over [y0,y1] clears every used riser."""
+    """True if a met3 riser at x over [y0,y1] clears every used riser."""
     for ux, uy0, uy1 in used_v:
-        if abs(x - ux) < w + 0.2 and y0 < uy1 + 0.1 and y1 > uy0 - 0.1:
+        if abs(x - ux) < w + _RISER_SPACE \
+                and y0 < uy1 + 0.1 and y1 > uy0 - 0.1:
             return False
     return True
+
+
+def _foreign_met1(top: gf.Component,
+                  pin_pts: list[tuple[float, float]]) -> Any:
+    """Top-space met1 that does not belong to this net, as a Region.
+
+    ``top.get_polygons`` already returns flattened top-cell coordinates,
+    so instance-internal straps/rails and any metal routed earlier are
+    both covered.  Metal touching a pin pad is this net's own landing
+    metal (merging with it is legal); every other met1 shape is foreign
+    and must keep the met1 min-space rule.  Returns an empty Region when
+    there is no met1 at all.
+    """
+    import klayout.db as db
+
+    m1 = db.Region()
+    for poly in top.get_polygons(by="tuple").get(layers.MET1, []):
+        m1.insert(poly)
+    if m1.is_empty():
+        return m1
+    # half the pin pad (access pads are drawn +-0.24 around the port);
+    # a box strictly inside it marks only metal electrically on this net.
+    pads = db.Region()
+    for px, py in pin_pts:
+        cx, cy = int(round(px * 1000)), int(round(py * 1000))
+        pads.insert(db.Box(cx - 200, cy - 200, cx + 200, cy + 200))
+    return m1.not_interacting(pads)
 
 
 def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
@@ -356,6 +391,28 @@ def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
     obstacles = _get_obstacles(inst_refs)
     if used_v is None:
         used_v = []
+
+    # Met1 not belonging to this net (other pins' straps, cell-internal
+    # rails, metal routed for earlier nets): a sideways jog or pin-row
+    # trunk that grazes it is a spacing violation — or a short.  The old
+    # code assumed "the met1 at the pin's y is this net's own strap" —
+    # false once a jog slides under a neighbouring strap (observed: an
+    # esd clamp left of the core pushed the vdd riser jog 0.13 from the
+    # cell's pad strap, under the 0.14 met1 rule).
+    foreign_m1 = _foreign_met1(top, valid_coords)
+
+    def _m1_span_clear(xa: float, xb: float, y: float, w: float) -> bool:
+        """True if a met1 run [xa..xb] at y keeps min-space off foreign met1."""
+        if foreign_m1.is_empty():
+            return True
+        import klayout.db as db
+        grow = int(round((w / 2 + _M1_SPACE) * 1000))
+        probe = db.Region(db.Box(
+            int(round(min(xa, xb) * 1000)) - grow,
+            int(round(y * 1000)) - grow,
+            int(round(max(xa, xb) * 1000)) + grow,
+            int(round(y * 1000)) + grow))
+        return probe.interacting(foreign_m1).is_empty()
 
     # Vertical runs that cross cell interiors go on MET3, not MET2:
     # cells use met2 internally, so a top-level met2 riser through a
@@ -376,19 +433,53 @@ def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
         if _riser_x_free(x, lo, hi, w, used_v):
             used_v.append((x, lo, hi))
             return x
-        for dx in (w + 0.4, -(w + 0.4), 2 * (w + 0.4), -2 * (w + 0.4),
-                   3 * (w + 0.4), -3 * (w + 0.4)):
-            xj = snap(x + dx)
-            # The jog runs at the pin's own y — the met1 there is this
-            # net's own strap/ring rail, so instance-bbox obstacles do
-            # not apply (a pin inside a cell bbox would always "hit").
-            if _riser_x_free(xj, lo, hi, w, used_v):
-                rect(top, layers.MET1, min(x, xj) - w / 2, y_a - w / 2,
-                     max(x, xj) + w / 2, y_a + w / 2)
-                used_v.append((xj, lo, hi))
-                return xj
+        for step in (1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6):
+            xj = snap(x + step * (w + 0.4))
+            # The jog runs at the pin's own y — the met1 there is usually
+            # this net's own strap/ring rail, so instance-bbox obstacles
+            # do not apply (a pin inside a cell bbox would always "hit").
+            # Foreign met1 on the row still bounds the jog though.
+            if not _riser_x_free(xj, lo, hi, w, used_v):
+                continue
+            if not _m1_span_clear(x, xj, y_a, w):
+                continue
+            rect(top, layers.MET1, min(x, xj) - w / 2, y_a - w / 2,
+                 max(x, xj) + w / 2, y_a + w / 2)
+            used_v.append((xj, lo, hi))
+            return xj
         used_v.append((x, lo, hi))
         return x
+
+    def _detour(x1: float, y1: float, x2: float, y2: float,
+                wire_w: float) -> None:
+        """Channel detour (Z-shape): route via intermediate channel Y.
+        Every net owns a distinct channel so trunks cannot merge."""
+        max_top = max([o[3] for o in obstacles], default=max(y1, y2))
+        detour_y = max_top + 2.0 + channel_index * (wire_w + 0.4)
+
+        # Escape riser up from pin 1; reserve the drop channel first
+        # so the trunk spans escape-x to drop-x even when shifted.
+        x1r = _riser(x1, y1, detour_y, wire_w)
+        x2r = _riser(x2, y2, detour_y, wire_w)
+
+        # 1. Vertical escape from (x1r, y1) to detour_y on MET3
+        _stack(x1r, y1)
+        _stack(x1r, detour_y)
+        vy0, vy1 = min(y1, detour_y), max(y1, detour_y)
+        rect(top, layers.MET3, x1r - wire_w / 2, vy0 - wire_w / 2,
+             x1r + wire_w / 2, vy1 + wire_w / 2)
+
+        # 2. Horizontal channel trunk on MET1
+        hx0, hx1 = min(x1r, x2r), max(x1r, x2r)
+        rect(top, layers.MET1, hx0 - wire_w / 2, detour_y - wire_w / 2,
+             hx1 + wire_w / 2, detour_y + wire_w / 2)
+
+        # 3. Vertical drop from detour_y to (x2r, y2) on MET3
+        _stack(x2r, detour_y)
+        _stack(x2r, y2)
+        vy0, vy1 = min(detour_y, y2), max(detour_y, y2)
+        rect(top, layers.MET3, x2r - wire_w / 2, vy0 - wire_w / 2,
+             x2r + wire_w / 2, vy1 + wire_w / 2)
 
     # Route consecutively between pin pairs
     for i in range(len(valid_coords) - 1):
@@ -398,15 +489,25 @@ def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
         wire_w = snap(getattr(net, "width", 0.48) or 0.48)
 
         # Standard L-route: horizontal on MET1, vertical on MET3
-        # Check if direct L-turn hits obstacle
+        # Check if direct L-turn hits obstacle or grazes foreign met1 —
+        # instance bboxes don't see thin metal from other nets on the row.
         direct_h_blocked = _intersects_obstacle(x1, y1, x2, y1, obstacles)
         direct_v_blocked = _intersects_obstacle(x2, y1, x2, y2, obstacles)
+        if not (direct_h_blocked or direct_v_blocked) \
+                and not _m1_span_clear(x1, x2, y1, wire_w):
+            direct_h_blocked = True
 
         if not (direct_h_blocked or direct_v_blocked):
             # Clean direct L-route — reserve the riser channel first so
             # the met1 trunk reaches it even when the riser jogged aside.
             lo, hi = min(y1, y2), max(y1, y2)
             x2r = _riser(x2, lo, hi, wire_w)
+            # The riser may have jogged past x2, extending the trunk span
+            # over metal the pre-check did not cover — detour then.  The
+            # reserved riser stays as a (harmless) same-net stub.
+            if not _m1_span_clear(x1, x2r, y1, wire_w):
+                _detour(x1, y1, x2, y2, wire_w)
+                continue
             hx0, hx1 = min(x1, x2r), max(x1, x2r)
             if hx1 > hx0:
                 rect(top, layers.MET1, hx0 - wire_w / 2, y1 - wire_w / 2,
@@ -417,34 +518,7 @@ def _route_single_net(top: gf.Component, net: Any, inst_refs: dict[str, Any],
                 rect(top, layers.MET3, x2r - wire_w / 2, lo - wire_w / 2,
                      x2r + wire_w / 2, hi + wire_w / 2)
         else:
-            # Channel detour (Z-shape): route via intermediate channel Y.
-            # Every net owns a distinct channel so trunks cannot merge.
-            max_top = max([o[3] for o in obstacles], default=max(y1, y2))
-            detour_y = max_top + 2.0 + channel_index * (wire_w + 0.4)
-
-            # Escape riser up from pin 1; reserve the drop channel first
-            # so the trunk spans escape-x to drop-x even when shifted.
-            x1r = _riser(x1, y1, detour_y, wire_w)
-            x2r = _riser(x2, y2, detour_y, wire_w)
-
-            # 1. Vertical escape from (x1r, y1) to detour_y on MET3
-            _stack(x1r, y1)
-            _stack(x1r, detour_y)
-            vy0, vy1 = min(y1, detour_y), max(y1, detour_y)
-            rect(top, layers.MET3, x1r - wire_w / 2, vy0 - wire_w / 2,
-                 x1r + wire_w / 2, vy1 + wire_w / 2)
-
-            # 2. Horizontal channel trunk on MET1
-            hx0, hx1 = min(x1r, x2r), max(x1r, x2r)
-            rect(top, layers.MET1, hx0 - wire_w / 2, detour_y - wire_w / 2,
-                 hx1 + wire_w / 2, detour_y + wire_w / 2)
-
-            # 3. Vertical drop from detour_y to (x2r, y2) on MET3
-            _stack(x2r, detour_y)
-            _stack(x2r, y2)
-            vy0, vy1 = min(detour_y, y2), max(detour_y, y2)
-            rect(top, layers.MET3, x2r - wire_w / 2, vy0 - wire_w / 2,
-                 x2r + wire_w / 2, vy1 + wire_w / 2)
+            _detour(x1, y1, x2, y2, wire_w)
 
 
 def route_differential_pair(

@@ -24,6 +24,8 @@ Optional external tools — probed, never required, env-var overrides:
 | `LAYOUT_CANVAS_VIRTUOSO_HOST` | SSH target (`user@host` or ssh-config alias) | remote Virtuoso acceptance |
 | `LAYOUT_CANVAS_VIRTUOSO_DIR` | remote working directory | remote Virtuoso acceptance |
 | `LAYOUT_CANVAS_SPECTRE_MODELS` | remote PDK model deck path | spectre leg of remote acceptance |
+| `LAYOUT_CANVAS_IVERILOG` | iverilog binary or command prefix | Verilog stub lint (`verilog --lint`) |
+| `LAYOUT_CANVAS_WSL_DISTRO` | WSL distro name | picks the distro for `wsl -d <distro> iverilog` (default: first non-docker-desktop distro) |
 
 Check what is live: `python -c "import json; from layout_canvas.tools.backends import probe_environment; print(json.dumps(probe_environment(), indent=1))"`
 or MCP tool `probe_environment`.
@@ -100,7 +102,22 @@ layout-canvas bench                                  # frozen benchmark suite
 layout-canvas bench --task sky130-diffamp-verify     # one task
 layout-canvas bench --check-baseline                 # regression gate vs frozen refs
 layout-canvas bench --freeze                         # re-freeze baselines (see bench/README.md)
+layout-canvas verilog design.json                    # blackbox Verilog stub → stdout
+layout-canvas verilog design.json --lint             # iverilog compile + vvp lint
 ```
+
+`verilog` emits a **blackbox module** from `design.ports` — `input`→`input`,
+`output`→`output`, every other direction (`inout`/`supply`/…) → `inout`, all
+`wire`, no internal logic (the analog-correct passive contract). `--lint`
+writes the stub plus a generated testbench that instantiates it once with
+named `.port()` hookups left unconnected, then runs `iverilog -o` + `vvp`.
+Runner selection: `LAYOUT_CANVAS_IVERILOG` (or `--executable`) first — an
+explicit override is authoritative, an unresolvable one reports
+`unavailable`; then `iverilog` on PATH; then `wsl -d <distro> iverilog`
+(`LAYOUT_CANVAS_WSL_DISTRO` or the first non-docker-desktop distro, work
+files stay on the Windows side as `/mnt/<drive>/…`). Exit 1 on fail, 0 on
+pass — `unavailable` prints its reason and exits 0 (same convention as
+`reliability`).
 
 External PDKs: drop a `*.pdk.json` descriptor into a private dir, set
 `LAYOUT_CANVAS_PDK_DIR` to it, and the PDK joins the registry without code
@@ -423,7 +440,7 @@ Register the stdio server in your MCP client config:
 }
 ```
 
-36 tools, grouped:
+38 tools, grouped:
 
 | Intent | Tools |
 |---|---|
@@ -436,6 +453,7 @@ Register the stdio server in your MCP client config:
 | Reliability | `reliability_report` — the 14-item JEDEC/JEP coverage matrix (`jesd-aligned-v1`); `run_sims:false` evaluates the structural items only |
 | Simulate | `run_simulation` — `source="schematic"` or `"extracted"` (PEX), `probes`, `stimulus`, `analysis`, `vdd`, `tran_stop`, `tran_step` |
 | Export | `export_virtuoso` (SKILL + Spectre), `export_abstract` |
+| Verilog | `verilog_stub` (blackbox module from `design.ports`), `verilog_lint` (iverilog `-o` + `vvp`; `unavailable` names what was tried) |
 
 Typical agent loop: `open_design` → `insert_block_into_layout` /
 `transact` → `verify_design` → `run_simulation(source="extracted")` →

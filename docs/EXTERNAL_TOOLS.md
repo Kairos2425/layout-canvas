@@ -35,6 +35,25 @@ to force it. Blocks lacking transistor-level emitters → `refused` (named).
 | Magic | DRC/extract | free/open | probe only — runner not wired |
 | Calibre | sign-off DRC/LVS | Siemens license | probe only — reserved |
 
+## Verilog lint (Icarus Verilog)
+
+`layout-canvas verilog <design.json> [--lint]` / MCP `verilog_stub` +
+`verilog_lint` / `tools/verilog.py` emit a passive blackbox module from
+`design.ports` and compile-check it with `iverilog -o` + `vvp`. Runner
+selection:
+
+1. `LAYOUT_CANVAS_IVERILOG` — a binary path **or** a full command prefix
+   (e.g. `wsl -d Ubuntu-24.04 iverilog`). An explicit override is
+   authoritative: unresolvable → `unavailable`, never silently bypassed.
+2. `iverilog` on `PATH`.
+3. `wsl -d <distro> iverilog` when `wsl` exists — distro from
+   `LAYOUT_CANVAS_WSL_DISTRO`, else the first `wsl -l -q` entry that is not
+   `docker-desktop*`. Work files stay on the Windows side; paths are passed
+   as `/mnt/<drive>/…` (explicit translation, not `wslpath`).
+
+`vvp` comes from the same route (WSL distro, sibling binary, or PATH).
+Nothing executing → `unavailable` naming every tried route.
+
 ## Cadence Virtuoso / Spectre (remote acceptance)
 
 Virtuoso runs on a licensed Linux EDA host, never locally. The

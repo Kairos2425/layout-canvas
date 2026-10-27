@@ -67,6 +67,21 @@ def main() -> int:
     tb.add_argument("input", help="Block IR JSON file")
     tb.add_argument("--name", help="Run a single named testbench (default: all)")
 
+    # verilog command
+    vlg = sub.add_parser(
+        "verilog",
+        help="Emit a blackbox Verilog stub for a design; --lint compiles "
+             "it with iverilog + vvp (fail-closed: a missing tool reports "
+             "unavailable and exits 0, like reliability)")
+    vlg.add_argument("input", help="Block IR JSON file")
+    vlg.add_argument("--lint", action="store_true",
+                     help="run the iverilog lint instead of printing the stub")
+    vlg.add_argument("--module", default=None,
+                     help="override the module name (default: design name)")
+    vlg.add_argument("--executable", default=None,
+                     help="iverilog binary/command override (default: "
+                          "LAYOUT_CANVAS_IVERILOG, then PATH, then wsl)")
+
     # reliability command
     rel = sub.add_parser(
         "reliability",
@@ -261,6 +276,25 @@ def main() -> int:
                     line += f" — {spec['reason']}"
                 print(line)
         return 0 if all(r.get("spec_status") == "pass" for r in runs) else 1
+
+    if args.cmd == "verilog":
+        from layout_canvas.tools.verilog import verilog_check, verilog_stub
+
+        with open(args.input) as f:
+            design = Design.from_json(f.read())
+        if not args.lint:
+            print(verilog_stub(design, module_name=args.module), end="")
+            return 0
+        res = verilog_check(design, executable=args.executable)
+        if res["status"] == "fail":
+            print(f"verilog lint: fail — {res['reason']}", file=sys.stderr)
+            if res.get("output"):
+                print(res["output"], file=sys.stderr)
+            return 1
+        # pass and unavailable both exit 0 — unavailable prints its reason
+        # (same convention as reliability: not verified, not a failure)
+        print(f"verilog lint: {res['status']} — {res['reason']}")
+        return 0
 
     if args.cmd == "reliability":
         import json

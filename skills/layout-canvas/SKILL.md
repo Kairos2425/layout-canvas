@@ -28,6 +28,7 @@ Optional environment (only needed for the features they unlock):
 | `LAYOUT_CANVAS_GALLERY` | gallery directory (default `~/.layout_canvas/gallery`) |
 | `LAYOUT_CANVAS_PDK_DIR`, `LAYOUT_CANVAS_PDKS` | external `*.pdk.json` PDK descriptors (import_gds + DRC/LVS + model prelude + `gen_*` block generators) |
 | `LAYOUT_CANVAS_VIRTUOSO_HOST`, `LAYOUT_CANVAS_VIRTUOSO_DIR`, `LAYOUT_CANVAS_SPECTRE_MODELS` | remote Virtuoso/spectre acceptance host over SSH (`layout-canvas virtuoso-accept`, docs/VIRTUOSO_ACCEPTANCE.md) |
+| `LAYOUT_CANVAS_IVERILOG`, `LAYOUT_CANVAS_WSL_DISTRO` | Icarus Verilog lint of blackbox stubs (`verilog_stub`/`verilog_lint`) — binary/command override, then PATH, then `wsl -d <distro>` |
 
 Call `probe_environment` first when you are unsure what is installed.
 
@@ -92,7 +93,11 @@ envelope shape before hand-writing calls.
    params toward all-specs-pass (needs a live simulator).
 8. Deliver: `export_virtuoso` (SKILL `.il` + Spectre `.scs`), `save_project`,
    or `gallery_publish` (defaults to `ai_generated: true` — keep it that way
-   when the design was produced by you). For real Cadence acceptance, run
+   when the design was produced by you). `verilog_stub`/`verilog_lint` emit
+   the analog blackbox contract (a passive port-list module — input→`input`,
+   output→`output`, all else→`inout`, all `wire`, no logic) and lint it with
+   Icarus `iverilog -o` + `vvp`; `unavailable` names what was tried. For real
+   Cadence acceptance, run
    `layout-canvas virtuoso-accept <design>.json [--host …] [--dry-run]` —
    the static leg is Cadence-free, the remote leg replays the `.il` and
    spectres the `.scs` on an SSH EDA host; `verified` only when the OA

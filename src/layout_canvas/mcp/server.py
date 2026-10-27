@@ -811,6 +811,49 @@ class LayoutCanvasMCPServer:
                     },
                 },
             },
+            {
+                "name": "verilog_stub",
+                "description": "Emit a passive blackbox Verilog module for a design "
+                               "(session_id or ir_json): ports map input->input, "
+                               "output->output, everything else (inout/supply/…)->inout, "
+                               "all 'wire', no internal logic — the analog-correct "
+                               "blackbox contract for digital/testbench binding.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "ir_json": {"type": ["string", "object"],
+                                    "description": "Block IR design JSON "
+                                                   "(alternative to session_id)."},
+                        "module_name": {"type": "string",
+                                        "description": "Override module name "
+                                                       "(default: design name)."},
+                    },
+                },
+            },
+            {
+                "name": "verilog_lint",
+                "description": "Compile-lint a design's Verilog blackbox stub with "
+                               "Icarus Verilog: writes the stub + a generated testbench "
+                               "instantiating it once (ports left unconnected), then "
+                               "runs 'iverilog -o' and 'vvp'. Fail-closed: status is "
+                               "pass|fail|unavailable with a reason; unavailable names "
+                               "what was tried (LAYOUT_CANVAS_IVERILOG, PATH, then "
+                               "'wsl -d <LAYOUT_CANVAS_WSL_DISTRO|first non-docker "
+                               "distro> iverilog').",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "ir_json": {"type": ["string", "object"],
+                                    "description": "Block IR design JSON "
+                                                   "(alternative to session_id)."},
+                        "executable": {"type": "string",
+                                       "description": "Optional iverilog binary or "
+                                                      "command-prefix override."},
+                    },
+                },
+            },
         ]
 
     def handle_request(self, req: dict[str, Any]) -> dict[str, Any]:
@@ -1396,6 +1439,27 @@ class LayoutCanvasMCPServer:
                 engine=args.get("engine", "auto"),
             )
             return result.to_dict()
+
+        elif name in ("verilog_stub", "verilog_lint"):
+            from layout_canvas.tools import verilog as _vlg
+
+            if args.get("session_id"):
+                design = self._get_session(args["session_id"]).design
+            elif args.get("ir_json") is not None:
+                design = self._parse_design(args["ir_json"])
+            else:
+                raise ValueError(f"{name} needs 'session_id' or 'ir_json'")
+            if name == "verilog_stub":
+                module = args.get("module_name") or design.name
+                return {"design": design.name, "module": module,
+                        "verilog": _vlg.verilog_stub(
+                            design, module_name=args.get("module_name"))}
+            res = _vlg.verilog_check(
+                design, executable=args.get("executable"))
+            if args.get("session_id"):
+                self._get_session(args["session_id"]).record_run(
+                    "verilog_lint", {"status": res["status"]})
+            return res
 
         elif name in ("get_active_layout_info", "insert_block_into_layout"):
             resp = self.bridge_client.send_request(name, args)

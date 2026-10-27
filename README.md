@@ -31,14 +31,14 @@ Block IR (JSON) ── compile ──▶ gdsfactory ──▶ GDS
 | **Export** | Virtuoso SKILL (shapes/instances, tech-lib attach, mirror/mag transforms) + Spectre netlist, GDS/OASIS, SPICE — plus `virtuoso-accept`: static SKILL/.scs checks anywhere, real Virtuoso/spectre acceptance over SSH on an EDA host (`docs/VIRTUOSO_ACCEPTANCE.md`; 30-min bring-up: `docs/CADENCE_INTEGRATION.md`) |
 | **Import** | `import-netlist`: upstream SPICE/Spectre subckt netlists → Block IR draft (blocks matched by name + port signature; unmapped instances named, never guessed) — the upstream-pipeline on-ramp |
 | **Benchmark** | `layout-canvas bench` — frozen eval set in `bench/` (verify/spec/optimize/import tasks across sky130, ihp_sg13g2, descriptor PDKs; hidden DRC/LVS checks, `flat-scalar-v2` scorecards, `--check-baseline` regression gate) — `bench/README.md` |
-| **Interfaces** | CLI · local web canvas · MCP stdio server (36 tools) |
+| **Interfaces** | CLI · local web canvas · MCP stdio server (38 tools) |
 
 ## Install
 
 ```bash
 pip install layout-canvas  # PyPI — or: pip install git+https://github.com/Kairos2425/layout-canvas
 pip install klayout        # in-process DRC/LVS/extraction engine
-pytest                     # 301 tests; tool-dependent tests auto-skip
+pytest                     # 308 tests; tool-dependent tests auto-skip
 ```
 
 Optional tools (probed adapters — absent tools report `unavailable`, never fake results):

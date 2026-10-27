@@ -10,6 +10,10 @@
     "klayout_pya": {
       "version": "0.30.12"
     },
+    "iverilog": {
+      "version": "12.0",
+      "note": "Icarus Verilog stable; detected via `wsl -d <distro> iverilog` (no native Windows binary). Used by verilog_stub/verilog_lint only — not part of the baseline gate."
+    },
     "layout_canvas": {
       "git_sha": "575a7d3"
     },

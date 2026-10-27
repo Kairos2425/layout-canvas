@@ -44,9 +44,11 @@ def _ota() -> Design:
     return Design.from_json(OTA_JSON.read_text(encoding="utf-8"))
 
 
-def _ota_with_clamps(*, drop_port: str | None = None) -> Design:
+def _ota_with_clamps(*, drop_port: str | None = None,
+                     at_x: dict[str, float] | None = None) -> Design:
     """ota_lab + one esd_dual_diode per external port, wired pad->port
-    net, vdd/vss onto the supply nets."""
+    net, vdd/vss onto the supply nets. ``at_x`` overrides the absolute
+    x placement for the named ports' clamps."""
     data = _ota().model_dump()
     insts = data["instances"]
     nets = {n["name"]: n for n in data["nets"]}
@@ -59,8 +61,9 @@ def _ota_with_clamps(*, drop_port: str | None = None) -> Design:
             "id": iid,
             "block": "sky130.esd_dual_diode",
             "params": {},
-            "placement": {"x": 60.0 + 50.0 * i, "y": -20.0,
-                          "rotation": 0, "mirror": False},
+            "placement": {"x": (at_x or {}).get(port["name"],
+                                               60.0 + 50.0 * i),
+                          "y": -20.0, "rotation": 0, "mirror": False},
         })
         pin = port["pin"]
         if pin in pins_in_net:
@@ -136,6 +139,25 @@ def test_ota_variant_verify_and_esd_structural():
         assert it["status"] == "structural", it
         assert it["evidence_level"] == "structural"
         assert all(e["clamp_instance"] for e in it["details"]["per_port"])
+
+
+def test_ota_clamp_left_of_core_verify():
+    """Regression: clamp at x<0 grazed foreign met1/met3 channel metal.
+
+    With ESD_INP left of the OTA core, its vdd pin lands next to the
+    mirrored tail mirror's riser column; the riser-channel allocator
+    jogged sideways on met1 at the pin row and the jog slid to 0.13 um
+    under the clamp's own pad strap (met1.s = 0.14), while neighbouring
+    met3 risers were booked at a 0.20 edge gap (met3.s = 0.30).  The
+    router must keep foreign-metal spacing on jogs/trunks and the met3
+    riser spacing; a left-of-core clamp must stay DRC-clean *and* LVS-
+    matching.
+    """
+    design = _ota_with_clamps(at_x={"inp": -80.0})
+    result = verify_design(design)
+    assert result["passed"], result
+    assert result["drc"]["total_violations"] == 0
+    assert result["lvs"]["match"] is True
 
 
 def test_ota_variant_one_unprotected_port_fails():
