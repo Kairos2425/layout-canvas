@@ -105,6 +105,9 @@ layout-canvas bench --check-baseline                 # regression gate vs frozen
 layout-canvas bench --freeze                         # re-freeze baselines (see bench/README.md)
 layout-canvas verilog design.json                    # blackbox Verilog stub → stdout
 layout-canvas verilog design.json --lint             # iverilog compile + vvp lint
+layout-canvas candidates design.json --variants v.json          # K variants → PPA/verify/specs side-by-side
+layout-canvas candidates design.json --variants v.json --no-sim # same, skip schematic sims
+layout-canvas candidates design.json --variants v.json --json   # full report as JSON
 ```
 
 `verify` prints one section per stage — `extract`, `drc`, `lvs` and
@@ -182,8 +185,10 @@ when every executed stage is green.
 
 POST endpoints: `/api/preview`, `/api/connectivity`, `/api/netlist`,
 `/api/simulate`, `/api/testbench`, `/api/drc`, `/api/verify`, `/api/virtuoso`,
-`/api/ppa`, `/api/abstract`, `/api/import_gds`, plus `/api/session/*` and
-`/api/gallery/*`. Body: `{"ir_json": {...design...}, ...action fields}`.
+`/api/ppa`, `/api/abstract`, `/api/import_gds`, `/api/candidates` (K-variant
+sweep; per-candidate previews render lazily via `/api/candidate_preview`),
+plus `/api/session/*` and `/api/gallery/*`. Body:
+`{"ir_json": {...design...}, ...action fields}`.
 
 ### Testbenches & specs
 
@@ -283,6 +288,45 @@ specs: a coordinate descent over every instance's bounded numeric params
 area, reverted when not better). It needs testbenches on the design and
 a live simulator; without them it reports `no-testbenches`/`unavailable`,
 never a fabricated pass.
+
+### Candidates: K variants side-by-side
+
+`eval_candidates` / `layout-canvas candidates` / MCP `candidates_eval` /
+web Compare tab evaluate **K design variants in one report**: each variant
+`{name, edits:[transact ops]}` is applied to a *fresh copy* of the design
+through the same `DesignSession.transact` validation (a rejected edit
+list lands that candidate in `failed` with the real diagnostics — it
+never aborts the run), then compiled → PPA → `verify_design`
+(extract/DRC/LVS/quality) → schematic testbenches (`source="extracted"`
+PEX benches are skipped — too expensive for a sweep; run them on the
+chosen candidate).
+
+Variants file (`--variants`):
+
+```json
+[
+  {"name": "w080", "edits": [{"op": "set_params", "instance": "TAIL",
+                              "params": {"width": 1.6}}]},
+  {"name": "w100", "edits": []},
+  {"name": "w120", "edits": [{"op": "set_params", "instance": "TAIL",
+                              "params": {"width": 2.4}}]}
+]
+```
+
+Per candidate the report carries `status`
+(`passed` | `failed` — edit rejected, compile error or a real
+DRC/LVS/quality failure | `unavailable` — a needed engine or the
+simulator missing), a human-readable `diff_summary`
+(`instance.param: old → new` lines), `area_um2`/bbox/hpwl, the verify
+rollup (drc violations, lvs match, quality status) and spec counts —
+`specs.passed`/`total` + `spec_status` over the schematic benches, or
+honestly `unavailable` (`run_sims=False` or no simulator — never
+fabricated). Run-level `status`: `fail` only when *every* candidate
+failed, `unavailable` only when *every* candidate could not be evaluated,
+else `ok`. `ranking` is a **mechanical sort** (verify passed → specs
+passed → smaller area) — a deterministic ordering of measured numbers,
+not a quality judgment. CLI prints a compact table + ranking; exit 1
+only when the run failed.
 
 ### Reliability matrix
 
@@ -474,7 +518,7 @@ Register the stdio server in your MCP client config:
 }
 ```
 
-38 tools, grouped:
+39 tools, grouped:
 
 | Intent | Tools |
 |---|---|
@@ -483,7 +527,7 @@ Register the stdio server in your MCP client config:
 | Session | `open_design`, `close_design`, `transact`, `snapshot`, `undo`, `load_project`, `save_project`, `get_active_layout_info` |
 | Build | `insert_block_into_layout`, `compile_session`, `compile_ir`, `generate_netlist`, `optimize`, `inspect_connectivity`, `inspect_ppa`, `render_preview_svg` |
 | Gallery | `gallery_list`, `gallery_stats`, `gallery_get`, `gallery_publish`, `gallery_fork` |
-| Verify | `run_drc`, `extract_netlist`, `run_lvs`, `verify_design`, `run_testbench` |
+| Verify | `run_drc`, `extract_netlist`, `run_lvs`, `verify_design`, `run_testbench`, `candidates_eval` (K variants → one comparison report) |
 | Reliability | `reliability_report` — the 14-item JEDEC/JEP coverage matrix (`jesd-aligned-v1`); `run_sims:false` evaluates the structural items only |
 | Simulate | `run_simulation` — `source="schematic"` or `"extracted"` (PEX), `probes`, `stimulus`, `analysis`, `vdd`, `tran_stop`, `tran_step` |
 | Export | `export_virtuoso` (SKILL + Spectre), `export_abstract` |

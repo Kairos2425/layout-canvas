@@ -156,6 +156,7 @@ PAGE = """<!doctype html>
     <div class="tab" data-t="output" onclick="tab('output')">Output</div>
     <div class="tab" data-t="sim" onclick="tab('sim')">Sim</div>
     <div class="tab" data-t="bench" onclick="tab('bench');renderBench()">Bench</div>
+    <div class="tab" data-t="compare" onclick="tab('compare');renderCompare()">Compare</div>
     <div class="tab" data-t="gallery" onclick="tab('gallery');listGallery()">Gallery</div>
   </div>
   <div id="pane"></div>
@@ -192,6 +193,7 @@ function renderPane() {
   if (curTab === 'inspector') return renderInspector();
   if (curTab === 'sim') return;  // sim pane keeps its own DOM
   if (curTab === 'bench') return;  // bench pane keeps its own DOM
+  if (curTab === 'compare') return;  // compare pane keeps its own DOM
   if (curTab === 'gallery') return;  // gallery renders itself
   // output
   pane.innerHTML = '<pre id="out">—</pre>';
@@ -742,7 +744,7 @@ function renderBench() {
     '<div class="card"><b>' + t.name + '</b>' +
     '<div class="m">' + t.source + ' · ' + t.analysis + ' · vdd=' + t.vdd +
     ' · ' + (t.specs || []).length + ' specs</div>' +
-    '<button class="btn" onclick="runBench(\'' + t.name + '\')">Run</button></div>'
+    '<button class="btn" onclick="runBench(\\'' + t.name + '\\')">Run</button></div>'
   ).join('');
   if (tbs.length)
     html += '<button class="btn primary" onclick="runBench(null)">Run all</button>';
@@ -782,6 +784,120 @@ function renderBench() {
     }
   }
   pane.innerHTML = html;
+}
+
+// ---------- compare (multi-candidate sweep) ----------
+// K {name, edits} variants applied to fresh copies of the current design —
+// each verified (and optionally simulated) server-side, compared in one
+// report. Previews render lazily per candidate via /api/candidate_preview.
+const VARIANT_EXAMPLE = JSON.stringify([
+  {name: 'w080', edits: [{op: 'set_params', instance: 'dp',
+    params: {width: 1.6}}]},
+  {name: 'baseline', edits: []},
+  {name: 'w120', edits: [{op: 'set_params', instance: 'dp',
+    params: {width: 2.4}}]}
+], null, 2);
+let cmpVariantsText = VARIANT_EXAMPLE;
+let cmpSims = true;
+let lastCompare = null;  // last /api/candidates report
+
+function renderCompare() {
+  if (curTab !== 'compare') return;
+  pane.innerHTML =
+    '<h3 style="font-size:11px;text-transform:uppercase;color:var(--mut)">' +
+    'Compare candidates</h3>' +
+    '<div class="card"><b>Variants</b>' +
+    '<div class="m">[{name, edits:[transact ops]}] — each applied to a ' +
+    'fresh copy of the current design, verified (and optionally simulated)' +
+    '</div>' +
+    '<textarea id="variantsBox" style="width:100%;height:110px;border:1px ' +
+    'solid var(--line);border-radius:6px;font:10.5px ui-monospace;' +
+    'padding:6px;background:#fbfbfc">' + cmpVariantsText + '</textarea>' +
+    '<label style="font-size:11px;color:var(--mut)">' +
+    '<input type="checkbox" id="cmpSims"' + (cmpSims ? ' checked' : '') +
+    '> run schematic testbenches</label> ' +
+    '<button class="btn primary" style="margin-top:6px" ' +
+    'onclick="runCompare()">Run candidates</button></div>' +
+    '<div id="cmpResults">' +
+    (lastCompare ? cmpHtml(lastCompare) : '') + '</div>';
+  if (lastCompare) loadCmpPreviews(lastCompare);
+}
+
+async function runCompare() {
+  const box = document.getElementById('variantsBox');
+  if (box) cmpVariantsText = box.value;
+  const simBox = document.getElementById('cmpSims');
+  cmpSims = simBox ? simBox.checked : true;
+  let variants;
+  try { variants = JSON.parse(cmpVariantsText); }
+  catch (e) { showErr({error: 'variants JSON: ' + e.message}); return; }
+  document.getElementById('cmpResults').innerHTML =
+    '<div class="m">running — edits, verify and sims per candidate…</div>';
+  const res = await api('candidates',
+    {ir_json: ir(), variants: variants, run_sims: cmpSims});
+  if (res.status !== 'ok') {
+    document.getElementById('cmpResults').innerHTML =
+      '<span class="err">' + (res.error || 'failed') + '</span>';
+    return;
+  }
+  lastCompare = res.data;
+  document.getElementById('cmpResults').innerHTML = cmpHtml(lastCompare);
+  loadCmpPreviews(lastCompare);
+}
+
+function cmpHtml(rep) {
+  let html = '<div style="margin:2px 0 8px">' +
+    _chip('status: ' + rep.status,
+          rep.status === 'ok' ? '#2e9e5b' : '#d64545') +
+    ' <span style="color:var(--mut);font-size:11px">ranking ' +
+    '(mechanical: verify → specs → area): ' +
+    (rep.ranking || []).map(r => r.name).join(' > ') + '</span></div>';
+  for (const c of rep.candidates || []) {
+    const sc = c.status === 'passed' ? '#2e9e5b' :
+      c.status === 'failed' ? '#d64545' : '#9aa3b0';
+    const v = c.verify || {};
+    const sp = c.specs || {};
+    const lvsTxt = v.lvs_match === true ? 'match' :
+      (v.lvs_match === false ? 'MISMATCH' : (v.lvs_status || '—'));
+    const specTxt = (sp.passed !== null && sp.passed !== undefined) ?
+      sp.passed + '/' + sp.total + ' ' + sp.status : (sp.status || '—');
+    html += '<div class="card"><b>' + c.name + '</b> ' +
+      _chip(c.status, sc) +
+      '<div class="m">' + (c.diff_summary || []).join(' · ') + '</div>' +
+      '<div id="cmpPreview_' + c.name + '"></div>' +
+      '<table class="op"><tr><th></th><td></td><th>area</th><td>' +
+      (c.area_um2 === null || c.area_um2 === undefined ? '—' :
+        c.area_um2 + ' µm²') + '</td>' +
+      '<th>drc</th><td>' +
+      (v.drc_violations === null || v.drc_violations === undefined ? '—' :
+        v.drc_violations) + '</td>' +
+      '<th>lvs</th><td>' + lvsTxt + '</td>' +
+      '<th>specs</th><td>' + specTxt + '</td></tr></table>' +
+      (c.reason ? '<div class="err" style="font-size:11px;margin-top:4px">' +
+        c.reason + '</div>' : '') +
+      '</div>';
+  }
+  if ((rep.notes || []).length)
+    html += '<div style="font-size:10.5px;color:var(--mut)">' +
+      rep.notes.join('<br>') + '</div>';
+  return html;
+}
+
+async function loadCmpPreviews(rep) {
+  for (const c of rep.candidates || []) {
+    const slot = document.getElementById('cmpPreview_' + c.name);
+    if (!slot) continue;
+    if (!c.edits_valid) {
+      slot.innerHTML = '<div class="m">no layout — edits rejected</div>';
+      continue;
+    }
+    const res = await api('candidate_preview', {name: c.name});
+    if (res.status === 'ok' && res.data && res.data.svg)
+      slot.innerHTML = res.data.svg;
+    else
+      slot.innerHTML = '<div class="m">' +
+        (res.error || 'no preview') + '</div>';
+  }
 }
 
 // ---------- gallery ----------

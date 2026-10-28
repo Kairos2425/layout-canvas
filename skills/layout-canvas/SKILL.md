@@ -96,6 +96,15 @@ envelope shape before hand-writing calls.
    unprotected port, and stay `unavailable` with no clamp instanced.
    `optimize` with `objective:"specs"` coordinate-descends bounded numeric
    params toward all-specs-pass (needs a live simulator).
+   `candidates_eval` compares K hand-picked variants instead of letting
+   the optimizer choose: `[{name, edits:[transact ops]}]` — each applied
+   to a fresh copy through the same transact validation, then compiled,
+   PPA-measured, verified and (unless `run_sims:false`) simulated on the
+   schematic testbenches (PEX benches skipped as too expensive). A
+   rejected edit list fails that one candidate with the diagnostics; the
+   others still evaluate. Per-candidate `status` is
+   passed|failed|unavailable; `ranking` is a mechanical sort (verify →
+   specs passed → area), not a quality judgment.
 8. Deliver: `export_virtuoso` (SKILL `.il` + Spectre `.scs`), `save_project`,
    or `gallery_publish` (defaults to `ai_generated: true` — keep it that way
    when the design was produced by you). `verilog_stub`/`verilog_lint` emit

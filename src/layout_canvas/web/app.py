@@ -230,6 +230,71 @@ def _import_netlist_api(payload: dict[str, Any]) -> dict[str, Any]:
     return {"status": "ok", "data": res}
 
 
+# The last /api/candidates evaluation: keeps the base design + variants so
+# /api/candidate_preview can re-render one candidate's layout on demand
+# without re-running the sweep.
+_LAST_COMPARE: dict[str, Any] | None = None
+
+
+def _candidates_api(payload: dict[str, Any]) -> dict[str, Any]:
+    """Multi-candidate comparison — design from payload or open session."""
+    global _LAST_COMPARE
+    from layout_canvas.tools.candidates import eval_candidates
+
+    raw = payload.get("ir_json")
+    if raw is not None:
+        try:
+            design = (Design.model_validate_json(raw) if isinstance(raw, str)
+                      else Design.model_validate(raw))
+        except Exception as exc:
+            return {"status": "error", "error": f"invalid IR: {exc}"}
+    elif _SESSION is not None:
+        design = _SESSION.design
+    else:
+        return {"status": "error",
+                "error": "candidates needs 'ir_json' or an open session"}
+    rep = eval_candidates(
+        design, payload.get("variants"),
+        run_sims=bool(payload.get("run_sims", True)))
+    _LAST_COMPARE = {"design": design,
+                     "variants": payload.get("variants") or []}
+    if _SESSION is not None:
+        _SESSION.record_run("candidates", {
+            "status": rep["status"],
+            "candidates": [c["name"] for c in rep["candidates"]],
+            "statuses": [c["status"] for c in rep["candidates"]],
+        })
+    return {"status": "ok", "data": rep}
+
+
+def _candidate_preview_api(payload: dict[str, Any]) -> dict[str, Any]:
+    """Render one evaluated candidate's layout — applies its edits to a
+    fresh copy of the stored base design, compiles and renders the same
+    SVG the main canvas uses."""
+    if _LAST_COMPARE is None:
+        return {"status": "error",
+                "error": "no candidate evaluation has run yet"}
+    name = str(payload.get("name") or "")
+    variant = next((v for v in _LAST_COMPARE["variants"]
+                    if isinstance(v, dict)
+                    and str(v.get("name")) == name), None)
+    if variant is None:
+        return {"status": "error",
+                "error": f"unknown candidate {name!r}"}
+    env = DesignSession(_LAST_COMPARE["design"]).transact(
+        variant.get("edits") or [], dry_run=True)
+    if not env.ok:
+        return {"status": "error",
+                "error": "edit(s) rejected: " + "; ".join(
+                    d.message for d in env.diagnostics)}
+    try:
+        design = Design.model_validate(env.data["design"])
+        data = render_svg(compile_design(design))
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+    return {"status": "ok", "data": data}
+
+
 def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Handle one API call; errors come back structured, never as a 500."""
     if action.startswith("session/"):
@@ -240,6 +305,10 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         return _import_gds_api(payload)
     if action == "import_netlist":
         return _import_netlist_api(payload)
+    if action == "candidates":
+        return _candidates_api(payload)
+    if action == "candidate_preview":
+        return _candidate_preview_api(payload)
     raw = payload.get("ir_json")
     try:
         design = (Design.model_validate_json(raw) if isinstance(raw, str)

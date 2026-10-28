@@ -232,6 +232,50 @@ class LayoutCanvasMCPServer:
                 },
             },
             {
+                "name": "candidates_eval",
+                "description": "Evaluate K design variants of one design side-by-side. Each "
+                               "variant {name, edits:[typed edit ops]} is applied to a fresh "
+                               "copy through the same transact validation as the session — a "
+                               "rejected edit list reports that candidate 'failed' with the "
+                               "diagnostics, and never aborts the others. Every valid candidate "
+                               "is compiled, PPA-measured, verified (extract/DRC/LVS + declared-"
+                               "constraint quality) and, with run_sims (default true), simulated "
+                               "on the source='schematic' testbenches — 'extracted' (PEX) benches "
+                               "are skipped as too expensive for a sweep. Returns per-candidate "
+                               "status (passed|failed|unavailable with reasons), a human-readable "
+                               "diff summary (instance.param: old→new), area/DRC/LVS/spec numbers, "
+                               "and a mechanically-sorted ranking (verify passed → specs passed → "
+                               "area — a deterministic ordering, not a quality judgment).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {
+                            "type": "string",
+                            "description": "Open session whose design is the base.",
+                        },
+                        "ir_json": {
+                            "type": ["string", "object"],
+                            "description": "Block IR design (JSON string or object) when no "
+                                           "session is used.",
+                        },
+                        "variants": {
+                            "type": "array",
+                            "items": {"type": "object"},
+                            "description": "List of {name, edits} — edits are the same typed "
+                                           "ops transact accepts (set_params, set_placement, …).",
+                        },
+                        "run_sims": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "Run schematic testbench sims per candidate "
+                                           "(default true). False = spec sections report "
+                                           "unavailable, not measured.",
+                        },
+                    },
+                    "required": ["variants"],
+                },
+            },
+            {
                 "name": "get_active_layout_info",
                 "description": "Query the currently open active layout inside the running KLayout "
                                "GUI instance (active cell, cell hierarchy, bounding box, layer "
@@ -1087,6 +1131,28 @@ class LayoutCanvasMCPServer:
                     "quality_status": res["quality"].get("status"),
                 })
             return res
+
+        elif name == "candidates_eval":
+            from layout_canvas.tools.candidates import eval_candidates
+
+            if args.get("session_id"):
+                design = self._get_session(args["session_id"]).design
+            elif args.get("ir_json") is not None:
+                design = self._parse_design(args["ir_json"])
+            else:
+                raise ValueError(
+                    "candidates_eval needs 'session_id' or 'ir_json'")
+            rep = eval_candidates(
+                design, args.get("variants"),
+                run_sims=bool(args.get("run_sims", True)))
+            if args.get("session_id"):
+                self._get_session(args["session_id"]).record_run(
+                    "candidates", {
+                        "status": rep["status"],
+                        "candidates": [c["name"] for c in rep["candidates"]],
+                        "statuses": [c["status"] for c in rep["candidates"]],
+                    })
+            return rep
 
         elif name == "probe_environment":
             from layout_canvas.tools.backends import probe_environment
