@@ -28,6 +28,27 @@ layout-canvas pdk list                             # what is registered + load e
 layout-canvas pdk dump sky130                      # a complete template to copy from
 ```
 
+## Fast authoring: `extends` + `--layermap`
+
+Two features compress onboarding from hours of JSON editing to minutes:
+
+```bash
+# inherit a base PDK wholesale (layers/extract/drc), override only deltas
+layout-canvas pdk init myprocess --extends sky130 -o myprocess.pdk.json
+
+# ingest the PDK's own stream layermap (the authoritative OA-name↔GDS
+# table shipped with every Cadence kit) — fills layers + oa_layers
+layout-canvas pdk init myprocess --extends sky130 \
+    --layermap /path/to/streamInLayermap -o myprocess.pdk.json
+```
+
+`"extends": "<base>"` deep-merges: omitted sections inherit, present
+entries override or append. The layermap parser accepts the classic
+4-column `name purpose L DT` format (NCSU CDK, SMIC `*.layermap`,
+foundry `*_layer.map`) and the Innovus/EDI variant (comma-list purposes,
+`NAME` label rows are skipped); undecodable files are GBK-fallback
+decoded for vendor files carrying CJK comments.
+
 ## What a descriptor unlocks (and what it does not)
 
 | Capability | Descriptor-only PDK | Note |

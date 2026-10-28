@@ -502,3 +502,66 @@ class TestExtendsInheritance:
         assert rep["status"] == "ok"
         assert rep["extends"] == "sky130"
         assert rep["gen_blocks"]  # inherits everything needed to unlock
+
+
+class TestLayermapIngest:
+    LAYERMAP = """\
+# Layer map for converting from GDSII to Cadence format
+# Cadence layer     Cadence layer purpose       GDSII layer
+nwell               drawing                     42  0
+active              drawing                     43  0
+poly                drawing                     46  0
+cc                  drawing                     25  0
+cc                  drawing                     47  0
+metal1              drawing                     49  0
+metal2              drawing                     51  0
+garbage row without numbers
+"""
+
+    def test_parse_stream_layermap(self):
+        from layout_canvas.pdk.layermap import parse_stream_layermap
+
+        lm = parse_stream_layermap(self.LAYERMAP)
+        assert lm["entries"] == 7
+        assert lm["skipped"] == ["garbage row without numbers"]
+        assert lm["layers"]["metal1"] == [49, 0]
+        # multi-cut 'cc' keeps the first pair, mirroring the
+        # single-purpose SKILL replay semantics
+        assert lm["oa_layers"]["25/0"] == "cc"
+
+    def test_edi_name_rows_ignored(self):
+        # Innovus/EDI .map files: purpose is a comma-list; 'NAME' rows
+        # carry text labels, not layers.
+        edi = """\
+Metal1           NET,SPNET,PIN,LEFPIN,VIA     8    0
+NAME             Metal1/PIN                   8    25
+Via1             VIA                          19   0
+"""
+        from layout_canvas.pdk.layermap import parse_stream_layermap
+
+        lm = parse_stream_layermap(edi)
+        assert "NAME" not in lm["layers"]
+        assert lm["layers"]["Metal1"] == [8, 0]
+        assert lm["oa_layers"]["19/0"] == "Via1"
+
+    def test_cli_init_with_layermap(self, tmp_path: Path,
+                                    monkeypatch: pytest.MonkeyPatch,
+                                    capsys):
+        from layout_canvas.cli import main
+
+        lm_file = tmp_path / "streamInLayermap"
+        lm_file.write_text(self.LAYERMAP, encoding="utf-8")
+        out = tmp_path / "ncsu.pdk.json"
+        monkeypatch.setattr(
+            sys, "argv",
+            ["layout-canvas", "pdk", "init", "ncsu", "--extends", "sky130",
+             "--layermap", str(lm_file), "-o", str(out)])
+        assert main() == 0
+        doc = json.loads(out.read_text(encoding="utf-8"))
+        assert doc["layers"]["metal1"] == [49, 0]
+        assert doc["oa_layers"]["49/0"] == "metal1"
+        monkeypatch.setattr(
+            sys, "argv", ["layout-canvas", "pdk", "check", str(out)])
+        assert main() == 0
+        rep = json.loads(capsys.readouterr().out)
+        assert rep["status"] == "ok"

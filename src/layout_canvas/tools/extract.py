@@ -435,7 +435,11 @@ def extract_netlist(gds_path: str | Path, tech: str = "sky130") -> ExtractionRes
             )
     l2n.extract_netlist()
     nl = l2n.netlist()
-    errors = [e.description for e in l2n.each_error()]
+    # LogEntryData's text attr is .message on current klayout (the
+    # .description spelling never shipped) — take whichever exists.
+    errors = [getattr(e, "message", None) or getattr(e, "description",
+                                                    str(e))
+              for e in l2n.each_error()]
 
     import tempfile
     sp = Path(tempfile.mkdtemp()) / "extracted.cir"

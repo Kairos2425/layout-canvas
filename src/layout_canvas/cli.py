@@ -77,6 +77,10 @@ def main() -> int:
                         "*.pdk.json path for 'check'")
     pdkp.add_argument("--extends", default="sky130",
                       help="base PDK 'init' inherits from (default sky130)")
+    pdkp.add_argument("--layermap", default=None,
+                      help="Cadence stream layermap file to ingest into "
+                           "layers + oa_layers (the authoritative "
+                           "OA-name↔GDS table shipped with real PDKs)")
     pdkp.add_argument("-o", "--output", default=None,
                       help="descriptor path for 'init' (default stdout)")
 
@@ -84,6 +88,24 @@ def main() -> int:
     tb = sub.add_parser("testbench", help="Run design testbenches and report spec results")
     tb.add_argument("input", help="Block IR JSON file")
     tb.add_argument("--name", help="Run a single named testbench (default: all)")
+
+    # candidates command
+    cand = sub.add_parser(
+        "candidates",
+        help="Evaluate K design variants side-by-side: each variant's "
+             "typed edits are applied to a fresh copy through the transact "
+             "boundary, then compiled, PPA-measured, verified "
+             "(extract/DRC/LVS/quality) and — unless --no-sim — simulated "
+             "on the schematic testbenches. One candidate's failure never "
+             "aborts the run")
+    cand.add_argument("input", help="Block IR JSON file")
+    cand.add_argument("--variants", required=True,
+                      help="JSON file: [{name, edits: [edit ops]}]")
+    cand.add_argument("--no-sim", action="store_true",
+                      help="skip testbench spec evaluation — schematic "
+                           "benches report unavailable, not measured")
+    cand.add_argument("--json", action="store_true",
+                      help="print the full report as JSON")
 
     # verilog command
     vlg = sub.add_parser(
@@ -211,7 +233,8 @@ def main() -> int:
             if not args.name:
                 print("pdk init needs a new PDK name", file=sys.stderr)
                 return 2
-            return _pdk_init(args.name, args.extends, args.output)
+            return _pdk_init(args.name, args.extends, args.output,
+                             layermap=args.layermap)
         if not args.name:
             print("pdk dump needs a PDK name (see 'layout-canvas pdk list')",
                   file=sys.stderr)
@@ -335,6 +358,9 @@ def main() -> int:
                     line += f" — {spec['reason']}"
                 print(line)
         return 0 if all(r.get("spec_status") == "pass" for r in runs) else 1
+
+    if args.cmd == "candidates":
+        return _candidates(args)
 
     if args.cmd == "verilog":
         from layout_canvas.tools.verilog import verilog_check, verilog_stub
@@ -523,6 +549,76 @@ def _bench(args) -> int:
     return mod.main(argv)
 
 
+def _candidates(args) -> int:
+    """``candidates`` — load design + variants file, run the sweep, print
+    the per-candidate table and the mechanical ranking."""
+    import json
+    from pathlib import Path
+
+    from layout_canvas.tools.candidates import eval_candidates
+
+    with open(args.input) as f:
+        design = Design.from_json(f.read())
+    import layout_canvas.blocks.generic  # noqa: F401
+    import layout_canvas.blocks.sky130  # noqa: F401
+    try:
+        import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
+    except Exception:
+        pass
+
+    try:
+        variants = json.loads(Path(args.variants).read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"candidates: cannot read variants file "
+              f"{args.variants!r} — {exc}", file=sys.stderr)
+        return 2
+    rep = eval_candidates(design, variants, run_sims=not args.no_sim)
+    if args.json:
+        print(json.dumps(rep, indent=1))
+    else:
+        n = len(rep["candidates"])
+        print(f"[candidates] {rep['design']} · pdk={rep['pdk']} · "
+              f"{n} variant(s) · run_sims={rep['run_sims']} · "
+              f"status={rep['status']}")
+        if rep.get("reason"):
+            print(f"  {rep['reason']}")
+        rows = []
+        for c in rep["candidates"]:
+            v = c.get("verify") or {}
+            sp = c.get("specs") or {}
+            area = (f"{c['area_um2']:.2f}" if c.get("area_um2") is not None
+                    else "-")
+            drc = (str(v["drc_violations"])
+                   if v.get("drc_violations") is not None else "-")
+            lvs_m = v.get("lvs_match")
+            lvs = ("match" if lvs_m is True
+                   else "MISMATCH" if lvs_m is False
+                   else (v.get("lvs_status") or "-"))
+            if sp.get("passed") is not None:
+                spec = f"{sp['passed']}/{sp['total']} {sp['status']}"
+            else:
+                spec = sp.get("status") or "-"
+            rows.append((c["name"], c["status"], area, drc, lvs, spec,
+                         c.get("reason") or ""))
+        if rows:
+            head = ("name", "status", "area_um2", "drc", "lvs", "specs")
+            widths = [max(len(str(r[i])) for r in [head, *rows])
+                      for i in range(6)]
+            print("  " + "  ".join(h.ljust(widths[i])
+                                   for i, h in enumerate(head)))
+            for r in rows:
+                line = "  " + "  ".join(str(r[i]).ljust(widths[i])
+                                        for i in range(6))
+                if r[6]:
+                    line += "  " + r[6]
+                print(line)
+        order = " > ".join(r["name"] for r in rep["ranking"])
+        print(f"  ranking (mechanical: verify → specs → area): "
+              f"{order or '-'}")
+    # Exit 1 only when the run failed — i.e. every candidate failed.
+    return 1 if rep["status"] == "fail" else 0
+
+
 def _summarize_checks(checks: list[dict]) -> str:
     tally: dict[str, int] = {}
     for c in checks:
@@ -545,13 +641,16 @@ def _pdk_template(name: str) -> dict:
     return _full_descriptor_dict(name)
 
 
-def _pdk_init(name: str, extends: str, output: str | None) -> int:
+def _pdk_init(name: str, extends: str, output: str | None,
+              layermap: str | None = None) -> int:
     """Write a minimal ``extends``-style descriptor for ``pdk init``.
 
     The file inherits the base PDK's layer map, extraction recipe and
     DRC; the author only overrides what actually differs — layer
-    numbers, leaf-device model names, OA layer names. This is the
-    minutes-not-hours onboarding path for commercial PDKs.
+    numbers, leaf-device model names, OA layer names. With
+    ``--layermap`` the Cadence stream table is ingested directly: real
+    OA layer names land in ``layers``/``oa_layers`` instead of being
+    hand-copied from PDK docs.
     """
     import json
     from pathlib import Path
@@ -564,20 +663,35 @@ def _pdk_init(name: str, extends: str, output: str | None) -> int:
         print(f"pdk init: base PDK {extends!r} unknown "
               f"(see 'layout-canvas pdk list')", file=sys.stderr)
         return 2
+    layers: dict = {}
+    oa_layers: dict = {}
+    if layermap:
+        from layout_canvas.pdk.layermap import parse_layermap_file
+
+        try:
+            lm = parse_layermap_file(layermap)
+        except Exception as exc:
+            print(f"pdk init: layermap {layermap!r} unreadable — {exc}",
+                  file=sys.stderr)
+            return 2
+        layers = lm["layers"]
+        oa_layers = lm["oa_layers"]
+        print(f"layermap: {lm['entries']} OA layers ingested, "
+              f"{len(lm['skipped'])} rows skipped", file=sys.stderr)
     doc = {
         "$doc": "inherits layers/extract/drc/oa_layers from "
                 f"'{extends}' — override only what differs; validate "
                 "with 'layout-canvas pdk check FILE'",
         "name": name,
         "extends": extends,
-        "layers": {},
+        "layers": layers,
         "extract": {
             "leaf_devices": {
                 f"{name}_nch": [f"{name}_nch", "nmos"],
                 f"{name}_pch": [f"{name}_pch", "pmos"],
             }
         },
-        "oa_layers": {},
+        "oa_layers": oa_layers,
     }
     text = json.dumps(doc, indent=2) + "\n"
     if output:

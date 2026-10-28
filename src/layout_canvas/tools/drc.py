@@ -221,8 +221,13 @@ _PYA_ENCLOSURE: dict[str, list[tuple[str, tuple[int, int], list[tuple[int, int]]
         ("via2.m3", (69, 44), [(70, 20)], 0.065),                       # met3 encloses via2
     ],
     "ihp_sg13g2": [
-        ("cnt.act", (6, 0), [(1, 0), (5, 0)], 0.07),                    # Cnt.c: act|poly enc cont
-        ("cnt.m1", (6, 0), [(8, 0)], 0.07),                             # Cnt.d: metal1 enc cont
+        # Cnt.c (Activ enc Cont 0.07) + Cnt.d (GatPoly enc Cont 0.07)
+        # share the value — a cont is always on one or the other, so the
+        # union covers both rules in one entry. There is NO Metal1
+        # enclosure rule for Cont in the official deck (its coverage is
+        # a connectivity requirement, not a DRC rule) — a fabricated
+        # cnt.m1 check produced 180 false violations on foundry QA GDS.
+        ("cnt.act", (6, 0), [(1, 0), (5, 0)], 0.07),                    # Cnt.c+Cnt.d
         ("v1.m1", (19, 0), [(8, 0)], 0.01),                             # V1.c: m1 enc via1
         ("v1.m2", (19, 0), [(10, 0)], 0.01),                            # V1.c: m2 enc via1
         ("v2.m2", (29, 0), [(10, 0)], 0.005),                           # Vn.c: m2 enc via2
