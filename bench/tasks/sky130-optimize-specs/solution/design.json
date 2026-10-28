@@ -48,7 +48,7 @@
         {
             "type": "align",
             "instances": ["LOAD", "TAIL"],
-            "edge": "top",
+            "edge": "bottom",
             "note": "Mirror cells on the same row"
         }
     ],

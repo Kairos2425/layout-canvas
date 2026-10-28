@@ -1,8 +1,8 @@
 {
   "task": "demo65-descriptor-pdk",
   "type": "verify",
-  "release_id": "layout-canvas-bench-v3",
-  "frozen_at": "2026-10-24T12:47:40Z",
+  "release_id": "layout-canvas-bench-v4",
+  "frozen_at": "2026-10-28T01:49:00Z",
   "status": "pass",
   "checks": [
     {
@@ -170,7 +170,7 @@
     }
   ],
   "provenance": {
-    "git_sha": "b71f4de4eed19a0bea1a6a1a5b42a9099f3aa26f",
+    "git_sha": "3bbe9702bdc2d973c68f62363e43aad9985dc75f",
     "platform": "Windows-10-10.0.19045-SP0",
     "python": "3.13.7",
     "tools": {

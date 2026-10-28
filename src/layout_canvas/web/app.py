@@ -333,6 +333,7 @@ def _api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
                     "passed": res["passed"],
                     "lvs_status": res["lvs"].get("status"),
                     "drc_violations": res["drc"].get("total_violations"),
+                    "quality_status": res["quality"].get("status"),
                 })
             return {"status": "ok", "data": res}
         if action == "virtuoso":

@@ -654,6 +654,16 @@ function showVerify(d) {
       ' · diff nets: <b style="color:#e03030">' +
       d.lvs.unmatched_nets.join(', ') + '</b>' : '') +
     '</td></tr>';
+  const q = d.quality || {status: 'unavailable', checks: []};
+  const qOk = q.status === 'pass' ? true :
+    (q.status === 'fail' ? false : null);
+  html += '<tr><td>quality</td><td>' +
+    badge(qOk, String(q.status).toUpperCase()) + '</td><td>' +
+    ((q.checks || []).map(c =>
+      c.id + ': ' + c.status + (c.note ? ' — ' + c.note : ''))
+      .join('<br>')) +
+    ((q.checks || []).length ? '' : (q.note || '')) +
+    '</td></tr>';
   html += '</table>';
   o.innerHTML = html;
 }

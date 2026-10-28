@@ -7,10 +7,10 @@
 # `tasks/*/results/reference.json` in the same change (see bench/README.md,
 # "Release & freeze protocol").
 
-release_id = "layout-canvas-bench-v3"
+release_id = "layout-canvas-bench-v4"
 state = "frozen"          # frozen | development — dev manifests print a warning
 metric_schema = "flat-scalar-v2"
-frozen_with = "v3 = v2 task set + slot 8 sky130-ota-aging-proxy (reliability ladder: parametric_stress rung — BSIM4 delvto/mulu0 device injection + i(v) EM budget); all eight references frozen against ngspice_con-47 in this change"
+frozen_with = "v4 = v3 task set + constraint-declaration repairs in five task inputs (the geometric checker caught declared align edges that the frozen layouts never satisfied: diffamp drops the impossible 3-member center_x align for [LOAD1,LOAD2] bottom-align; the four OTA-family tasks correct the LOAD/TAIL row align edge top->bottom); all eight references re-frozen against ngspice_con-47 in this change"
 
 # Task slots: the eval set is exactly this list, in this order.
 # A task dir that exists but is not listed here does not score.

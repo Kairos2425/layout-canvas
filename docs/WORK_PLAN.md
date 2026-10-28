@@ -92,12 +92,12 @@ ViraStack Custom Layout 第三方实测翻车点——DRC/LVS/ERC 全过但无�
 器件分散、保护环半空——正是我们 IR 约束一等公民设计对应的场景；短板是
 验收判据缺失，不是模型笨。
 
-- [ ] **P0 匹配/对称质量判据 checker**（差异化最强项）。IR `symmetric`/
+- [x] **P0 匹配/对称质量判据 checker**（差异化最强项）。IR `symmetric`/
       `match`/`order` 约束目前只声明未几何验证。补 `tools/matching.py`（或
       `verify_design` 的 `quality` 段）：指叉 pattern 校验（ABBA/共心）、
       对称轴偏差、dummy 完整性、质心偏移、guard-ring 连续性——全部机器
       可判、fail-closed；golden 样例把"匹配结构存在且正确"写成检查项。
-      对标结论："先把质量编码成判据，再谈自动化"。
+      对标结论："先把质量编码成判据，再谈自动化"。（已落本轮）
 - [ ] **P1 多候选生成+并排比较**（抄 Layout Prototypes 形态）。optimize/
       generate 出 K 个参数/摆放变体 → 并排 preview + per-candidate 摘要
       （area/hpwl/DRC/spec_status）；也是 gallery 卡片素材。

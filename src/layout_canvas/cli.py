@@ -10,6 +10,15 @@ from layout_canvas.ir.model import Design
 
 
 def main() -> int:
+    # Console-safe output: results contain µm/— which legacy code pages
+    # (cp936 GBK) cannot encode — degrade to replacement chars instead of
+    # crashing mid-report (observed: `layout-canvas verify` died printing
+    # a µm deviation on a GBK console).
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     parser = argparse.ArgumentParser(prog="layout-canvas")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -26,6 +35,15 @@ def main() -> int:
     net = sub.add_parser("netlist", help="Compile Block IR to SPICE netlist for LVS")
     net.add_argument("input", help="Block IR JSON file")
     net.add_argument("-o", "--output", required=True, help="Output SPICE (.sp / .cir) path")
+
+    # verify command
+    ver = sub.add_parser(
+        "verify",
+        help="One-shot verification: extract + DRC + LVS + declared "
+             "constraint quality (symmetric/match/order/align/abut)")
+    ver.add_argument("input", help="Block IR JSON file")
+    ver.add_argument("--json", action="store_true",
+                     help="print the full result as JSON")
 
     # import-netlist command
     imp = sub.add_parser(
@@ -215,6 +233,47 @@ def main() -> int:
         export_spice(design, args.output)
         print(f"Generated SPICE netlist {design.name} → {args.output}", file=sys.stderr)
         return 0
+
+    if args.cmd == "verify":
+        import json
+
+        with open(args.input) as f:
+            design = Design.from_json(f.read())
+        import layout_canvas.blocks.generic  # noqa: F401
+        import layout_canvas.blocks.sky130  # noqa: F401
+        try:
+            import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
+        except Exception:
+            pass
+
+        from layout_canvas.tools.verify import verify_design
+
+        res = verify_design(design)
+        if args.json:
+            print(json.dumps(res, indent=1))
+            return 0 if res["passed"] else 1
+        ext, drc, lvs, qual = (res["extract"], res["drc"],
+                               res["lvs"], res["quality"])
+        print(f"[verify] {res['design']} (pdk={res['pdk']})")
+        print(f"  extract : {ext['status']} — {ext['devices']} devices, "
+              f"{ext['nets']} nets"
+              + (f", errors: {'; '.join(ext['errors'])}"
+                 if ext["errors"] else ""))
+        print(f"  drc     : {drc.get('status')} — "
+              f"{drc.get('total_violations')} violations")
+        unmatched = lvs.get("unmatched_nets") or []
+        print(f"  lvs     : {lvs.get('status')} — match={lvs.get('match')}"
+              + (f", unmatched nets: {', '.join(unmatched)}"
+                 if unmatched else ""))
+        print(f"  quality : {qual['status']}"
+              + (f" — {qual.get('note')}" if qual.get("note") else ""))
+        for chk in qual["checks"]:
+            line = f"    {chk['id']}: {chk['status']}"
+            if chk.get("note"):
+                line += f" — {chk['note']}"
+            print(line)
+        print(f"  verdict : {'passed' if res['passed'] else 'FAILED'}")
+        return 0 if res["passed"] else 1
 
     if args.cmd == "import-netlist":
         from pathlib import Path as _Path

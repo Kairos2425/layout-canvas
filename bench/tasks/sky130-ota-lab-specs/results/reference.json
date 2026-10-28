@@ -1,8 +1,8 @@
 {
   "task": "sky130-ota-lab-specs",
   "type": "spec",
-  "release_id": "layout-canvas-bench-v3",
-  "frozen_at": "2026-10-24T12:47:40Z",
+  "release_id": "layout-canvas-bench-v4",
+  "frozen_at": "2026-10-28T01:49:00Z",
   "status": "pass",
   "checks": [
     {
@@ -278,7 +278,7 @@
     }
   ],
   "provenance": {
-    "git_sha": "b71f4de4eed19a0bea1a6a1a5b42a9099f3aa26f",
+    "git_sha": "3bbe9702bdc2d973c68f62363e43aad9985dc75f",
     "platform": "Windows-10-10.0.19045-SP0",
     "python": "3.13.7",
     "tools": {
@@ -293,7 +293,7 @@
       }
     },
     "input_sha256": {
-      "starter/design.json": "f3fe4b8079b83d4670b6ed3e5ad6a98a2e853cc38f270861d16e2347b036ce6a"
+      "starter/design.json": "050ea511f9ff6af1c83103075cbdbf6b21817a1a8dea3e287f42e349a9362545"
     }
   }
 }

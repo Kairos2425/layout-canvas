@@ -56,9 +56,14 @@ envelope shape before hand-writing calls.
    the object — fix and resubmit; do not retry blindly. `undo` is available.
 5. `compile_session` / `render_preview_svg` — look at the layout; `inspect_ppa`
    for area, bbox, device count.
-6. `verify_design` — extract + DRC + LVS in one call. Read `drc.violations`
-   (each has a layer, rule and bbox) and `lvs.unmatched_nets`; `passed` is
-   true only when DRC is 0 and LVS matches.
+6. `verify_design` — extract + DRC + LVS + `quality` in one call. Read
+   `drc.violations` (each has a layer, rule and bbox) and
+   `lvs.unmatched_nets`; `quality.checks[]` holds one verdict per declared
+   `Constraint` (symmetric/match/order/align/abut on the placed bboxes,
+   ~0.005 µm snap-grid tolerance, real deviations reported).
+   `passed` is true only when DRC is 0, LVS matches, and no declared
+   constraint evaluates `fail` (`unavailable`/`not_applicable` quality
+   verdicts are a report, not a gate).
 7. `run_testbench` — runs the design's `testbenches[]` (schematic or
    post-layout `extracted`) and evaluates `specs[]`. `spec_status` is
    `pass` / `fail` / `unavailable` / `no_specs`; every spec carries a
@@ -163,10 +168,15 @@ family from the task, not from what happens to be available:
 
 ## Verification is not the goal
 
-A clean `verify_design` means the layout is *physically legal*, not that
-it is a good analog layout. Matching, symmetry, common-centroid, dummy
-integrity, guard-ring continuity and shielding are **not yet
-machine-checked** in this release — treat them as review items you must
+A clean `verify_design` means the layout is *physically legal* and that
+any **declared** placement-level constraints hold — not that it is a
+good analog layout. The `quality` stage machine-checks `symmetric`,
+`match`, `order`, `align` and `abut` constraints against placed instance
+bboxes; it does NOT inspect intra-cell finger
+interdigitation/ABBA/dummy patterns, shared-centroid merges, parasitic
+or routing symmetry, guard-ring continuity or shielding, and a design
+with no declared constraints gets `not_applicable` — never a pass. Treat
+everything outside the declared, measured set as review items you must
 reason about and state, not as things `passed: true` covers. A design
 that passes DRC/LVS but scatters matched devices or leaves the guard
 ring open would be signed off wrongly if you equate `passed` with

@@ -75,8 +75,9 @@
         },
         {
             "type": "align",
-            "instances": ["LOAD1", "LOAD2", "DPAIR"],
-            "edge": "center_x"
+            "instances": ["LOAD1", "LOAD2"],
+            "edge": "bottom",
+            "note": "Load mirrors on the same row"
         }
     ],
     "ports": [

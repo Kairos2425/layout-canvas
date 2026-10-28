@@ -74,7 +74,7 @@ def test_cli_bench_subcommand(tmp_path, monkeypatch, capsys):
          "--check-baseline", "--out", str(tmp_path)])
     assert main() == 0
     card = json.loads((tmp_path / "scorecard.json").read_text())
-    assert card["release_id"] == "layout-canvas-bench-v3"
+    assert card["release_id"] == "layout-canvas-bench-v4"
     assert card["metric_schema"] == "flat-scalar-v2"
     assert card["coverage"] == {"runnable": 1, "total": 1}
     assert card["provenance"]["git_sha"] != "unknown"

@@ -90,6 +90,7 @@ Get each block's params/ports via
 layout-canvas compile design.json -o design.gds     # IR → GDS
 layout-canvas compile design.json -o design.oas -f oas
 layout-canvas netlist design.json -o design.sp      # IR → SPICE (LVS ref)
+layout-canvas verify design.json                     # extract + DRC + LVS + constraint quality
 layout-canvas schema                                 # full IR JSON schema
 layout-canvas web --port 8080                        # local canvas
 layout-canvas mcp                                    # MCP stdio server
@@ -105,6 +106,33 @@ layout-canvas bench --freeze                         # re-freeze baselines (see 
 layout-canvas verilog design.json                    # blackbox Verilog stub → stdout
 layout-canvas verilog design.json --lint             # iverilog compile + vvp lint
 ```
+
+`verify` prints one section per stage — `extract`, `drc`, `lvs` and
+`quality` — plus a final verdict line; exit 0 only when everything ran
+clean. The **quality** stage (`tools/matching.py`) evaluates every
+declared IR `Constraint` on the placed instance bboxes (the 0.005 µm
+snap grid is the tolerance; actual deviations are reported):
+
+- `symmetric` — members mirror about the group's centre axis (equal |dx|
+  and identical y-span for `axis: vertical`, swapped for `horizontal`);
+  an even count needs every member paired, an odd count needs exactly
+  one centroid on the axis.
+- `match` — same block with identical resolved params, congruent placed
+  bboxes and uniform adjacent-centroid pitch; the note says which of the
+  three failed and names the differing params.
+- `order` — bbox-edge order (left edge for `left_to_right`, bottom edge
+  for `bottom_to_top`) equals the listed instance order.
+- `align` — all members share the declared edge/centre coordinate.
+- `abut` — consecutive members' facing edges touch within tolerance.
+
+Per-check status is `pass`/`fail`/`unavailable` (missing `axis`/`edge`/
+`direction` or an unresolvable block reports `unavailable` with the
+reason; an unknown instance id is a `fail`). A design with no
+constraints reports `not_applicable` — never a pass. A `fail` gates the
+verdict (the designer declared it); `unavailable`/`not_applicable` do
+not. Not inspected — say so rather than claim coverage: intra-cell
+finger interdigitation/ABBA pattern/dummy devices, shared-centroid
+merges, parasitic or routing symmetry, guard-ring continuity.
 
 `verilog` emits a **blackbox module** from `design.ports` — `input`→`input`,
 `output`→`output`, every other direction (`inout`/`supply`/…) → `inout`, all
@@ -140,8 +168,10 @@ when every executed stage is green.
 `layout-canvas web` serves `http://127.0.0.1:8080` (localhost-only):
 
 - **Place/edit** — pick a block, set params, place instances, wire nets.
-- **Verify** — extract + DRC + LVS in one shot. DRC violations draw red
-  boxes at the violation bbox; LVS mismatched nets highlight in the canvas.
+- **Verify** — extract + DRC + LVS in one shot, plus the constraint
+  `quality` table (declared symmetric/match/order/align/abut checks on
+  placed bboxes). DRC violations draw red boxes at the violation bbox;
+  LVS mismatched nets highlight in the canvas.
 - **Simulate** — `source=schematic` runs the reference netlist;
   `source=extracted` runs PEX on the extracted netlist. Optional `probes`
   (internal nodes like `xd1.tail`), `analysis` (`op`/`tran`/`ac`/`dc` —
@@ -329,8 +359,12 @@ comp = compile_design(design)            # gdsfactory component
 export_gds(design, "design.gds")         # or comp.write_gds(...)
 export_spice(design, "design.sp")        # reference netlist
 
-r = verify_design(design)                # extract → DRC → LVS
-# r = {"passed": bool, "extract": {...}, "drc": {...}, "lvs": {...}}
+r = verify_design(design)                # extract → DRC → LVS → quality
+# r = {"passed": bool, "extract": {...}, "drc": {...}, "lvs": {...},
+#      "quality": {"status": pass|fail|unavailable|not_applicable,
+#                  "checks": [{id, type, instances, status, measured, note}]}}
+# passed is false when any declared constraint evaluates "fail" —
+# "unavailable"/"not_applicable" quality verdicts never flip a pass.
 
 # Schematic-level sim (auto testbench)
 res = simulate_auto(design, analysis="op", vdd=1.8)

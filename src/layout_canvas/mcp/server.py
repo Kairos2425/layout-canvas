@@ -1084,6 +1084,7 @@ class LayoutCanvasMCPServer:
                     "passed": res["passed"],
                     "lvs_status": res["lvs"].get("status"),
                     "drc_violations": res["drc"].get("total_violations"),
+                    "quality_status": res["quality"].get("status"),
                 })
             return res
 

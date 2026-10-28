@@ -1,4 +1,5 @@
-"""One-shot physical verification: extract + DRC + LVS in a single call.
+"""One-shot physical verification: extract + DRC + LVS + constraint quality
+in a single call.
 
 Shared by the web ``verify`` action and the MCP ``verify_design`` tool so
 agents and the canvas see identical, fail-closed results — an unavailable
@@ -17,15 +18,21 @@ from layout_canvas.ir.model import Design
 from layout_canvas.tools.drc import run_drc
 from layout_canvas.tools.extract import extract_netlist
 from layout_canvas.tools.lvs import run_lvs
+from layout_canvas.tools.matching import check_constraints
 
 
 def verify_design(design: Design) -> dict[str, Any]:
-    """Compile the design and run extraction, DRC and LVS.
+    """Compile the design and run extraction, DRC, LVS and the
+    declared-constraint quality check.
 
     Returns a structured dict: ``extract`` (device/net counts and
     extraction errors), ``drc`` (full DRCResult payload), ``lvs`` (full
-    LVSResult payload) and ``passed`` — true only when extraction is
-    clean, DRC reports zero violations and LVS matched.
+    LVSResult payload), ``quality`` (``check_constraints`` report on the
+    declared symmetric/match/order/align/abut constraints) and ``passed``
+    — true only when extraction is clean, DRC reports zero violations,
+    LVS matched *and* no declared constraint evaluated ``fail``.  A
+    ``quality`` verdict of ``unavailable`` or ``not_applicable`` is a
+    report, not a gate — it never flips a pass.
     """
     comp = compile_design(design)
     tmp = Path(tempfile.mkdtemp())
@@ -41,6 +48,7 @@ def verify_design(design: Design) -> dict[str, Any]:
     for k, v in list(drc_d.items()):
         if isinstance(v, Path):
             drc_d[k] = str(v)
+    quality = check_constraints(design, component=comp)
     return {
         "design": design.name,
         "pdk": design.pdk,
@@ -48,6 +56,8 @@ def verify_design(design: Design) -> dict[str, Any]:
                     "nets": ext.nets, "errors": ext.errors},
         "drc": drc_d,
         "lvs": lvs.to_dict(),
+        "quality": quality,
         "passed": bool(lvs.match) and drc.total_violations == 0
-                  and not ext.errors,
+                  and not ext.errors
+                  and quality.get("status") != "fail",
     }
