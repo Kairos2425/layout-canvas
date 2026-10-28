@@ -104,12 +104,12 @@ ViraStack Custom Layout 第三方实测翻车点——DRC/LVS/ERC 全过但无�
 - [ ] **P2 agent 协议瘦身 + 决策点确认**。snapshot 紧凑模式（摘要化历史、
       契约引用而非全文）；高影响 transact 前 decision-point 确认（对标其
       "跑方案前先确认 5 个决策点"的交互）。
-- [ ] **P1.5 黄金对照样例**（待观察#3 的反超素材 + 对外叙事硬通货）。做一个
+- [x] **P1.5 黄金对照样例**（待观察#3 的反超素材 + 对外叙事硬通货）。做一个
       common-centroid diff pair + guard ring 的 sky130 golden 样例，
       `verify_design` 输出携带 matching/quality 判据证据（对称轴偏差、
       质心偏移、dummy/护环完整性逐项 pass），gallery 卡片带验证凭据——
       直接对照 ViraStack tsmc65 翻车案例的"质量维度"。
-      来源：ViraStack对比-20261016 专项笔记 §MVP含义-2/待观察-3。
+      来源：ViraStack对比-20261016 专项笔记 §MVP含义-2/待观察-3。（已落本轮）
 - [ ] **P2 设计意图载体**（Mental Model 同构；服务 token 压缩与未来工艺
       迁移 agent）。IR `meta` 或新 `intent` 通道显式携带：匹配对（哪些
       instance 须成对）、敏感 net（高阻/低阻节点）、参数取值理由；

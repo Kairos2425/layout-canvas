@@ -1,0 +1,147 @@
+{
+  "ir_version": "0.1",
+  "name": "golden_diffpair",
+  "pdk": "sky130",
+  "instances": [
+    {
+      "id": "DP_L",
+      "block": "sky130.diff_pair",
+      "params": {"fingers": 4, "width": 2.0, "length": 0.5},
+      "placement": {"x": -15.0, "y": 0.0, "rotation": 0, "mirror": false, "relative_to": null, "relation": null, "align": null, "margin": 0.0}
+    },
+    {
+      "id": "DP_R",
+      "block": "sky130.diff_pair",
+      "params": {"fingers": 4, "width": 2.0, "length": 0.5},
+      "placement": {"x": 1.4, "y": 0.0, "rotation": 0, "mirror": false, "relative_to": null, "relation": null, "align": null, "margin": 0.0}
+    },
+    {
+      "id": "LOAD",
+      "block": "sky130.current_mirror",
+      "params": {"fingers": 4, "width": 1.5, "length": 0.5, "type": "pmos"},
+      "placement": {"x": -6.8, "y": 8.97, "rotation": 0, "mirror": false, "relative_to": null, "relation": null, "align": null, "margin": 0.0}
+    },
+    {
+      "id": "TAIL",
+      "block": "sky130.current_mirror",
+      "params": {"fingers": 4, "width": 2.0, "length": 0.5, "type": "nmos"},
+      "placement": {"x": -6.8, "y": -8.97, "rotation": 0, "mirror": false, "relative_to": null, "relation": null, "align": null, "margin": 0.0}
+    },
+    {
+      "id": "GR",
+      "block": "sky130.guard_ring",
+      "params": {"inner_width": 33.4, "inner_height": 26.51, "ring_width": 0.8, "ring_type": "ptap"},
+      "placement": {"x": 0.0, "y": 4.385, "rotation": 0, "mirror": false, "relative_to": null, "relation": null, "align": null, "margin": 0.0}
+    }
+  ],
+  "nets": [
+    {"name": "vbn", "pins": ["TAIL.in", "TAIL.gate"]},
+    {"name": "tail", "pins": ["DP_L.tail", "DP_R.tail", "TAIL.out"]},
+    {"name": "inp", "pins": ["DP_L.inp", "DP_R.inp"]},
+    {"name": "inn", "pins": ["DP_L.inn", "DP_R.inn"]},
+    {"name": "outp", "pins": ["DP_L.outp", "DP_R.outp", "LOAD.in", "LOAD.gate"]},
+    {"name": "outn", "pins": ["DP_L.outn", "DP_R.outn", "LOAD.out"]},
+    {"name": "vdd", "pins": ["LOAD.vss"]},
+    {"name": "vss", "pins": ["GR.tap"]}
+  ],
+  "constraints": [
+    {
+      "type": "symmetric",
+      "instances": ["DP_L", "DP_R"],
+      "nets": null,
+      "axis": "vertical",
+      "edge": null,
+      "direction": null,
+      "note": "pair halves mirrored about the common-centroid axis"
+    },
+    {
+      "type": "match",
+      "instances": ["DP_L", "DP_R"],
+      "nets": null,
+      "axis": null,
+      "edge": null,
+      "direction": null,
+      "note": "identical ABBA diff_pair cells: A- and B-side centroids share the axis"
+    },
+    {
+      "type": "align",
+      "instances": ["LOAD", "TAIL", "GR"],
+      "nets": null,
+      "axis": null,
+      "edge": "center_x",
+      "direction": null,
+      "note": "load, tail source and guard ring centred on the pair axis"
+    },
+    {
+      "type": "align",
+      "instances": ["DP_L", "DP_R"],
+      "nets": null,
+      "axis": null,
+      "edge": "center_y",
+      "direction": null,
+      "note": "pair halves co-located on one row"
+    },
+    {
+      "type": "order",
+      "instances": ["TAIL", "DP_L", "LOAD"],
+      "nets": null,
+      "axis": null,
+      "edge": null,
+      "direction": "bottom_to_top",
+      "note": "tail / pair / load stacked rows"
+    }
+  ],
+  "ports": [
+    {"name": "inp", "pin": "DP_L.inp", "direction": "input"},
+    {"name": "inn", "pin": "DP_L.inn", "direction": "input"},
+    {"name": "outp", "pin": "DP_L.outp", "direction": "output"},
+    {"name": "outn", "pin": "DP_L.outn", "direction": "output"},
+    {"name": "vbn", "pin": "TAIL.in", "direction": "input"},
+    {"name": "vdd", "pin": "LOAD.vss", "direction": "supply"},
+    {"name": "vss", "pin": "DP_L.vss", "direction": "supply"}
+  ],
+  "testbenches": [
+    {
+      "name": "tb_op_schematic",
+      "source": "schematic",
+      "analysis": "op",
+      "vdd": 1.8,
+      "temp": null,
+      "stress": null,
+      "stimulus": null,
+      "probes": [],
+      "specs": [
+        {"name": "vbn_op", "signal": "vbn", "measure": "final", "min": 0.5, "max": 1.2, "unit": "V", "tol": null, "on": "nominal"},
+        {"name": "outp_op", "signal": "outp", "measure": "final", "min": 0.9, "max": 1.7, "unit": "V", "tol": null, "on": "nominal"},
+        {"name": "outn_op", "signal": "outn", "measure": "final", "min": 0.9, "max": 1.7, "unit": "V", "tol": null, "on": "nominal"},
+        {"name": "ivdd_budget", "signal": "i(v_vdd)", "measure": "final", "min": null, "max": 0.0005, "unit": "A", "tol": null, "on": "nominal"}
+      ]
+    },
+    {
+      "name": "tb_op_extracted",
+      "source": "extracted",
+      "analysis": "op",
+      "vdd": 1.8,
+      "temp": null,
+      "stress": null,
+      "stimulus": "V_vdd vdd 0 1.8\nV_vss vss 0 0\nV_vbn vbn 0 0.75\nV_inp inp 0 0.9\nV_inn inn 0 0.9\n.control\nop\nwrdata waves.dat v(inp) v(inn) v(outp) v(outn) v(vbn) v(vdd) v(vss)\n.endc",
+      "probes": [],
+      "specs": [
+        {"name": "outp_pex", "signal": "outp", "measure": "final", "min": 0.4, "max": 1.0, "unit": "V", "tol": null, "on": "nominal"},
+        {"name": "outn_pex", "signal": "outn", "measure": "final", "min": 0.4, "max": 1.0, "unit": "V", "tol": null, "on": "nominal"}
+      ]
+    }
+  ],
+  "meta": {
+    "demo": "P1.5 golden common-centroid diff-pair exemplar: real DRC/LVS/ERC plus machine-checked matching evidence. Narrative counter-example to the ViraStack tsmc65 card that passed DRC/LVS with no centroid matching, scattered devices and a half-empty guard ring.",
+    "structure": "Two identical sky130.diff_pair cells (each internally ABBA-interdigitated, fingers=4) mirrored about x=0 so the A-side and B-side centroids share the axis; a sky130.current_mirror pmos load and a sky130.current_mirror nmos tail source centred on the same axis; a sky130.guard_ring ptap ring enclosing all four cells.",
+    "measured_symmetric_dev_um": 0.0,
+    "measured_match_pitch_um": "16.4 x 0",
+    "measured_match_max_dev_um": 0.0,
+    "measured_align_center_x_dev_um": 0.0,
+    "guard_ring_scope": "GR ptap ring inner cavity 33.4 x 26.51 um centred at (0, 4.385) encloses the placed bboxes of DP_L, DP_R, LOAD and TAIL with >=0.8 um clearance (asserted geometrically in tests/test_golden_sample.py). Each device cell additionally carries its own internal contacted ptap ring. Honest caveat: the guard-ring generator floods a solid psdm implant polygon across the cavity — a generator simplification outside the checked rule set; extraction and LVS are unaffected.",
+    "not_demonstrated": "Intra-cell finger interdigitation / ABBA order / dummy completeness (block-internal, not inspected by the constraint checker), parasitic or routing symmetry, guard-ring continuity under a full foundry deck, ESD clamps (none present — esd items report unavailable).",
+    "vss_note": "No routed vss net: every vss-named pin joins the global substrate net through the contacted ptap rings by construction (extraction confirms the merged vss cluster); GR.tap is declared on net vss to record the ring-bias intent.",
+    "routing_note": "nets[] declaration order puts the tall low-pin-y risers (vbn, tail) first so they claim detour channels before the crowded mid rows fill — the analog router allocates one detour channel per net."
+  }
+}

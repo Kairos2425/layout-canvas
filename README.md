@@ -38,7 +38,7 @@ Block IR (JSON) ── compile ──▶ gdsfactory ──▶ GDS
 ```bash
 pip install layout-canvas  # PyPI — or: pip install git+https://github.com/Kairos2425/layout-canvas
 pip install klayout        # in-process DRC/LVS/extraction engine
-pytest                     # 329 tests; tool-dependent tests auto-skip
+pytest                     # 341 tests; tool-dependent tests auto-skip
 ```
 
 Optional tools (probed adapters — absent tools report `unavailable`, never fake results):

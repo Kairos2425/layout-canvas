@@ -84,6 +84,24 @@ descriptor-driven, registered only when the role contract can build them.
 Get each block's params/ports via
 `layout-canvas` → MCP `list_blocks`, or `/api/blocks` on the web app.
 
+### Golden sample: `examples/golden_diffpair.json`
+
+A common-centroid diff pair whose `verify_design` output carries
+matching-quality evidence — the counter-example to a DRC/LVS-clean
+layout with no centroid intent. Two identical `sky130.diff_pair` cells
+(each internally ABBA-interdigitated) are mirrored about a vertical
+axis; a `sky130.current_mirror` pmos load, an nmos tail source and a
+`sky130.guard_ring` ptap share the axis and the ring encloses all four
+cells. Declared `symmetric`/`match`/`align`/`order` constraints all
+verify `pass` with measured deviations (axis offset, bbox/pitch deltas,
+edge alignments), extraction yields 24 devices, the pya DRC subset is
+clean and pya LVS matches; `tb_op_schematic`/`tb_op_extracted` benches
+show both outputs balancing to the same op point on reference and
+extracted netlists. `tests/test_golden_sample.py` re-checks every number
+and the ring's geometric enclosure — the check measures placed instance
+bboxes only, so intra-cell ABBA/dummy completeness and ring continuity
+are honestly *not* claimed (see `meta.not_demonstrated`).
+
 ## 3. CLI
 
 ```bash
