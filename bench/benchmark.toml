@@ -7,10 +7,10 @@
 # `tasks/*/results/reference.json` in the same change (see bench/README.md,
 # "Release & freeze protocol").
 
-release_id = "layout-canvas-bench-v4"
+release_id = "layout-canvas-bench-v5"
 state = "frozen"          # frozen | development — dev manifests print a warning
 metric_schema = "flat-scalar-v2"
-frozen_with = "v4 = v3 task set + constraint-declaration repairs in five task inputs (the geometric checker caught declared align edges that the frozen layouts never satisfied: diffamp drops the impossible 3-member center_x align for [LOAD1,LOAD2] bottom-align; the four OTA-family tasks correct the LOAD/TAIL row align edge top->bottom); all eight references re-frozen against ngspice_con-47 in this change"
+frozen_with = "v5 = v4 task set + new task type 'candidates' and slot 9 sky130-ota-candidates (multi-variant sweep on the ota_lab design: three tail-width set_params variants pass end-to-end, one ghost-instance variant pins the fail-closed transact rejection as a designed 'failed' check; per-candidate hidden DRC/LVS + spec-pass capability checks + mechanical ranking); all nine references frozen against ngspice_con-47 in this change"
 
 # Task slots: the eval set is exactly this list, in this order.
 # A task dir that exists but is not listed here does not score.
@@ -45,3 +45,7 @@ surface = "reliability ladder rung: accelerated V/T stress corner (HTOL-style pr
 [[tasks]]
 id = "sky130-ota-aging-proxy"
 surface = "reliability ladder rung: parametric device stress (BSIM4 delvto/mulu0 injection — NBTI/HCI proxy) + drift + i(v_vdd) supply-current EM budget on the OTA op point"
+
+[[tasks]]
+id = "sky130-ota-candidates"
+surface = "multi-candidate eval: 4 {name,edits} variants through transact -> compile -> verify -> schematic specs; per-candidate status gate incl. a designed-fail variant + per-candidate hidden checks + mechanical ranking"

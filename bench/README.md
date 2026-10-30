@@ -131,10 +131,12 @@ unprotected port is `fail`, no clamp at all is `unavailable`.
 | `spec` | verify pipeline + run every declared testbench; each spec entry is its own check |
 | `optimize` | `DesignSession` → `optimize_session(objective="specs")` inside `run.max_iterations`; score = `specs_passed` + `iterations` + `final_area_um2`; the tuned layout is re-verified |
 | `import` | `register_gds_cell` from `inputs/` (gds + optional spice emitter) → instantiate in parent starter → verify; the alias is unregistered afterwards |
+| `candidates` | load starter IR + `starter/variants.json` (the exact `{name, edits}` list `eval_candidates` takes) → multi-candidate sweep: each variant through transact → compile → verify → schematic benches; per-candidate `status` gate (`[candidates.expect]` pins designed-fail variants — a rejected edit list is a real `failed` verdict, not noise), spec pass counts as capability checks, mechanical ranking |
 
-All types get the hidden DRC/LVS checks once compilation succeeds.
+All types get the hidden DRC/LVS checks once compilation succeeds — for
+`candidates`, once per candidate that reaches verification.
 
-## The eight tasks
+## The nine tasks
 
 | id | capability surface |
 |---|---|
@@ -146,12 +148,13 @@ All types get the hidden DRC/LVS checks once compilation succeeds.
 | `sky130-optimize-specs` | bounded spec-driven tuning: must reach all-specs-pass ≤ 6 rounds |
 | `sky130-ota-stress-corner` | accelerated V/T corner: OTA op re-run at 1.98 V/125 °C, `on:"stress"` + `on:"drift"` specs (HTOL-style proxy, not an aging model) |
 | `sky130-ota-aging-proxy` | parametric device stress: BSIM4 `delvto`/`mulu0` injected on the stress corner (NBTI/HCI proxy) + drift + `i(v_vdd)` supply-current EM budget |
+| `sky130-ota-candidates` | multi-candidate sweep: 4 `{name, edits}` variants on the OTA tail width — 3 pass end-to-end, 1 designed-fail variant pins the fail-closed transact rejection; per-candidate hidden checks + spec counts + ranking |
 
 ## `task.toml` schema (schema_version = 1)
 
 ```toml
 id = "my-task"                    # must equal the directory name
-type = "verify"                   # verify | spec | optimize | import
+type = "verify"                   # verify | spec | optimize | import | candidates
 title = "…"
 deliverable = "starter/design.json"
 pdk = "sky130"
@@ -164,6 +167,14 @@ max_iterations = 6
 
 [import]                          # import tasks
 alias = "bench.imported_dp"; gds = "inputs/cell.gds"; spice = "inputs/cell.spice"
+
+[candidates]                      # candidates tasks
+variants = "starter/variants.json"  # optional default; {name, edits} list
+                                  # fed verbatim to eval_candidates
+[candidates.expect]               # name -> designed status (default "passed")
+ghost = "failed"
+[candidates.expect_specs]         # name -> designed spec pass count
+w080 = 3                          #   (unlisted names expect all specs to pass)
 
 [tolerances]                      # baseline-compare tolerances for sim values
 sim_rel = 0.05; sim_abs = 0.0

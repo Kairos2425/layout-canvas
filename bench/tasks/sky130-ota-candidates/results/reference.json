@@ -1,0 +1,543 @@
+{
+  "task": "sky130-ota-candidates",
+  "type": "candidates",
+  "release_id": "layout-canvas-bench-v5",
+  "frozen_at": "2026-10-30T08:18:46Z",
+  "status": "pass",
+  "checks": [
+    {
+      "id": "candidates.report",
+      "measured_value": "ok",
+      "spec": "== ok",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "candidate.w080.status",
+      "measured_value": "passed",
+      "spec": "== passed",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "hidden.drc_clean.w080",
+      "measured_value": 0,
+      "spec": "== 0 violations",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "hidden.lvs_match.w080",
+      "measured_value": true,
+      "spec": "== true",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "candidate.w080.specs_passed",
+      "measured_value": 3,
+      "spec": "== 3 of 5 spec passes",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "candidate.w100.status",
+      "measured_value": "passed",
+      "spec": "== passed",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "hidden.drc_clean.w100",
+      "measured_value": 0,
+      "spec": "== 0 violations",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "hidden.lvs_match.w100",
+      "measured_value": true,
+      "spec": "== true",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "candidate.w100.specs_passed",
+      "measured_value": 5,
+      "spec": "== 5 of 5 spec passes",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "candidate.w120.status",
+      "measured_value": "passed",
+      "spec": "== passed",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "hidden.drc_clean.w120",
+      "measured_value": 0,
+      "spec": "== 0 violations",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "hidden.lvs_match.w120",
+      "measured_value": true,
+      "spec": "== true",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "candidate.w120.specs_passed",
+      "measured_value": 4,
+      "spec": "== 4 of 5 spec passes",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": false,
+      "tol": null,
+      "tol_rel": 0.05,
+      "capability": true,
+      "evidence_level": "solver_verified"
+    },
+    {
+      "id": "candidate.ghost.status",
+      "measured_value": "failed",
+      "spec": "== failed",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "bound.candidates.passed",
+      "measured_value": 3,
+      "spec": "== 3 count",
+      "status": "pass",
+      "unit": "count",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "bound.candidates.failed",
+      "measured_value": 1,
+      "spec": "== 1 count",
+      "status": "pass",
+      "unit": "count",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "bound.candidates.unavailable",
+      "measured_value": 0,
+      "spec": "== 0 count",
+      "status": "pass",
+      "unit": "count",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "bound.candidate.w080.area_um2",
+      "measured_value": 1701.546,
+      "spec": "== 1701.546 um2",
+      "status": "pass",
+      "unit": "um2",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "bound.candidate.w100.area_um2",
+      "measured_value": 1732.026,
+      "spec": "== 1732.026 um2",
+      "status": "pass",
+      "unit": "um2",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "bound.candidate.w120.area_um2",
+      "measured_value": 1762.506,
+      "spec": "== 1762.506 um2",
+      "status": "pass",
+      "unit": "um2",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    },
+    {
+      "id": "bound.candidates.ranking_top",
+      "measured_value": "w100",
+      "spec": "== w100",
+      "status": "pass",
+      "unit": "",
+      "message": "",
+      "deterministic": true,
+      "tol": null,
+      "tol_rel": 0.0,
+      "capability": false,
+      "evidence_level": "deterministic"
+    }
+  ],
+  "metrics": [
+    {
+      "id": "candidate.ghost.area_um2",
+      "value": null,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.ghost.drc_violations",
+      "value": null,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.ghost.edits_valid",
+      "value": false,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.ghost.lvs_match",
+      "value": null,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.ghost.specs_passed",
+      "value": null,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.ghost.specs_total",
+      "value": null,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.ghost.stage",
+      "value": "edits",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.ghost.status",
+      "value": "failed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w080.area_um2",
+      "value": 1701.546,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w080.drc_violations",
+      "value": 0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w080.edits_valid",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w080.lvs_match",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w080.specs_passed",
+      "value": 3,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w080.specs_total",
+      "value": 5,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w080.stage",
+      "value": "done",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w080.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w100.area_um2",
+      "value": 1732.026,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w100.drc_violations",
+      "value": 0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w100.edits_valid",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w100.lvs_match",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w100.specs_passed",
+      "value": 5,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w100.specs_total",
+      "value": 5,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w100.stage",
+      "value": "done",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w100.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w120.area_um2",
+      "value": 1762.506,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w120.drc_violations",
+      "value": 0,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w120.edits_valid",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w120.lvs_match",
+      "value": true,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w120.specs_passed",
+      "value": 4,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w120.specs_total",
+      "value": 5,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w120.stage",
+      "value": "done",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidate.w120.status",
+      "value": "passed",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidates.count",
+      "value": 4,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidates.failed",
+      "value": 1,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidates.passed",
+      "value": 3,
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidates.ranking",
+      "value": [
+        "w100",
+        "w120",
+        "w080",
+        "ghost"
+      ],
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidates.ranking_top",
+      "value": "w100",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidates.report_status",
+      "value": "ok",
+      "unit": "",
+      "note": ""
+    },
+    {
+      "id": "candidates.unavailable",
+      "value": 0,
+      "unit": "",
+      "note": ""
+    }
+  ],
+  "provenance": {
+    "git_sha": "5633aa74ce282f78c7c67d89c4af69d405d5e859",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "python": "3.13.7",
+    "tools": {
+      "ngspice": {
+        "status": "available",
+        "version": null,
+        "binary": "E:\\Reliability-PINN-Lab\\.tmp\\ngspice47\\Spice64\\bin\\ngspice_con.exe"
+      },
+      "klayout": {
+        "version": "0.30.12",
+        "pya": true
+      }
+    },
+    "input_sha256": {
+      "starter/design.json": "050ea511f9ff6af1c83103075cbdbf6b21817a1a8dea3e287f42e349a9362545",
+      "starter/variants.json": "f90979dfedbcdbe724306c80f3cc7a038528bf9154e4d1f2cd39439957a59bea"
+    }
+  }
+}

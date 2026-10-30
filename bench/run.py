@@ -42,7 +42,7 @@ from typing import Any
 
 METRIC_SCHEMA = "flat-scalar-v2"
 BENCH_FILE = "benchmark.toml"
-TASK_TYPES = ("verify", "spec", "optimize", "import")
+TASK_TYPES = ("verify", "spec", "optimize", "import", "candidates")
 
 # Check statuses (flat-scalar-v2): pass | fail | unavailable | error
 PASS, FAIL, UNAVAILABLE, ERROR = "pass", "fail", "unavailable", "error"
@@ -81,6 +81,7 @@ class Task:
     env: dict[str, str] = field(default_factory=dict)
     run_cfg: dict[str, Any] = field(default_factory=dict)
     import_cfg: dict[str, Any] = field(default_factory=dict)
+    cand_cfg: dict[str, Any] = field(default_factory=dict)
     sim_tol_rel: float = 0.05
     sim_tol_abs: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
@@ -172,6 +173,31 @@ def load_task(task_dir: Path) -> Task:
         _req(isinstance(run_cfg.get("max_iterations"), int),
              f"{file}: type 'optimize' needs [run] max_iterations")
 
+    cand_cfg = doc.get("candidates", {})
+    _req(isinstance(cand_cfg, dict),
+         f"{file}: 'candidates' must be a table")
+    known_cand = {"variants", "expect", "expect_specs"}
+    unknown_cand = sorted(set(cand_cfg) - known_cand)
+    _req(not unknown_cand,
+         f"{file}: 'candidates' unknown keys {unknown_cand}; "
+         f"known: {sorted(known_cand)}")
+    _req(isinstance(cand_cfg.get("variants", "starter/variants.json"), str),
+         f"{file}: 'candidates.variants' must be a path string")
+    expect = cand_cfg.get("expect", {})
+    _req(isinstance(expect, dict) and all(
+        isinstance(k, str)
+        and v in ("passed", "failed", "unavailable")
+        for k, v in expect.items()),
+        f"{file}: 'candidates.expect' must map candidate names to "
+        "passed|failed|unavailable")
+    expect_specs = cand_cfg.get("expect_specs", {})
+    _req(isinstance(expect_specs, dict) and all(
+        isinstance(k, str) and isinstance(v, int)
+        and not isinstance(v, bool)
+        for k, v in expect_specs.items()),
+        f"{file}: 'candidates.expect_specs' must map candidate names "
+        "to integer spec pass counts")
+
     tolerances = doc.get("tolerances", {})
     _req(isinstance(tolerances, dict),
          f"{file}: 'tolerances' must be a table")
@@ -180,6 +206,7 @@ def load_task(task_dir: Path) -> Task:
         deliverable=deliverable, pdk=pdk, dir=task_dir,
         bounds=bounds,
         env=dict(env), run_cfg=dict(run_cfg), import_cfg=dict(import_cfg),
+        cand_cfg=dict(cand_cfg),
         sim_tol_rel=float(tolerances.get("sim_rel", 0.05)),
         sim_tol_abs=float(tolerances.get("sim_abs", 0.0)),
         raw=doc,
@@ -648,6 +675,185 @@ def _run_optimize(task: Task) -> tuple[dict[str, Any],
     return metrics, checks
 
 
+def _load_variants(task: Task) -> list[Any]:
+    """The task's variant list — the exact ``{name, edits}`` objects
+    ``eval_candidates`` consumes (default ``starter/variants.json``,
+    overridable via ``[candidates] variants``)."""
+    rel = task.cand_cfg.get("variants", "starter/variants.json")
+    file = task.dir / rel
+    if not file.is_file():
+        raise TaskError(f"{task.dir}: variants file {rel!r} not found")
+    try:
+        variants = json.loads(file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise TaskError(f"{file}: invalid JSON — {exc}") from None
+    _req(isinstance(variants, list),
+         f"{file}: top-level must be a list of {{name, edits}} objects")
+    return variants
+
+
+def _run_candidates(task: Task) -> tuple[dict[str, Any],
+                                     list[dict[str, Any]]]:
+    """candidates: K variants through the transact boundary, each
+    compiled + verified + simulated on the schematic benches, compared
+    side by side.
+
+    Fail-closed per candidate: a rejected edit list is a real ``failed``
+    verdict on that one candidate — ``[candidates.expect]`` declares the
+    status each variant is *designed* to report (default ``passed``), so
+    a designed-fail variant is a gate, not noise.  Every candidate that
+    reaches verification faces the same hidden DRC/LVS contract as a
+    compiled task; spec pass counts are capability checks (a live
+    simulator produced them — ``unavailable`` is reported, never faked).
+    """
+    from layout_canvas.tools.candidates import eval_candidates
+
+    metrics: dict[str, Any] = {}
+    checks: list[dict[str, Any]] = []
+    design = _load_design(task)
+    variants = _load_variants(task)
+    expects = task.cand_cfg.get("expect", {})
+    expect_specs = task.cand_cfg.get("expect_specs", {})
+    # Same sim policy as 'spec' tasks: always attempt the benches; a
+    # missing simulator demotes candidates to 'unavailable', which the
+    # capability-flagged checks report honestly.
+    run_sims = bool(task.run_cfg.get("run_sims", True))
+    rep = eval_candidates(design, variants, run_sims=run_sims)
+
+    cands = rep.get("candidates") or []
+    ranking = rep.get("ranking") or []
+    metrics["candidates.report_status"] = rep.get("status")
+    metrics["candidates.count"] = len(cands)
+    metrics["candidates.ranking"] = [r.get("name") for r in ranking]
+    metrics["candidates.ranking_top"] = (
+        ranking[0].get("name") if ranking else None)
+    tally = {"passed": 0, "failed": 0, "unavailable": 0}
+    for cand in cands:
+        if cand.get("status") in tally:
+            tally[cand["status"]] += 1
+    for key, val in tally.items():
+        metrics[f"candidates.{key}"] = val
+
+    # The report rollup is the headline gate: 'ok' means every variant
+    # was evaluated on its own merits (one broken variant never poisons
+    # the sweep); 'fail'/'unavailable' mean the sweep itself could not
+    # produce per-candidate verdicts.
+    rep_status = rep.get("status")
+    checks.append(_check(
+        "candidates.report", rep_status, "== ok",
+        PASS if rep_status == "ok" else (
+            UNAVAILABLE if rep_status == "unavailable" else FAIL),
+        message=("" if rep_status == "ok"
+                 else str(rep.get("reason") or f"report {rep_status!r}")),
+        deterministic=True, capability=rep_status == "unavailable",
+        evidence_level="deterministic"))
+
+    for index, cand in enumerate(cands):
+        name = str(cand.get("name") or f"variant_{index}")
+        status = cand.get("status")
+        expect = str(expects.get(name, "passed"))
+        metrics[f"candidate.{name}.status"] = status
+        metrics[f"candidate.{name}.stage"] = cand.get("stage")
+        metrics[f"candidate.{name}.edits_valid"] = cand.get("edits_valid")
+        metrics[f"candidate.{name}.area_um2"] = cand.get("area_um2")
+        ver = cand.get("verify") or {}
+        metrics[f"candidate.{name}.drc_violations"] = \
+            ver.get("drc_violations")
+        metrics[f"candidate.{name}.lvs_match"] = ver.get("lvs_match")
+        specs = cand.get("specs")
+        metrics[f"candidate.{name}.specs_passed"] = \
+            (specs or {}).get("passed")
+        metrics[f"candidate.{name}.specs_total"] = \
+            (specs or {}).get("total")
+
+        # With run_sims the verdict of an edit-valid candidate rides the
+        # spec stage too — sim presence is a capability, so the check is
+        # capability-gated (unavailable -> 'lost evidence' on baseline
+        # diff, not a silent deterministic mismatch).  A candidate
+        # rejected at the transact boundary never reaches the spec
+        # stage: its 'failed' verdict is pure deterministic evidence.
+        sim_dependent = run_sims and bool(cand.get("edits_valid"))
+        if status == "unavailable":
+            checks.append(_check(
+                f"candidate.{name}.status", status, f"== {expect}",
+                UNAVAILABLE,
+                message=cand.get("reason") or "candidate not evaluable",
+                capability=True, evidence_level="solver_verified"))
+        else:
+            checks.append(_check(
+                f"candidate.{name}.status", status, f"== {expect}",
+                PASS if status == expect else FAIL,
+                message=("" if status == expect
+                         else (cand.get("reason")
+                               or f"{status!r} != expected {expect!r}")),
+                deterministic=not sim_dependent,
+                capability=sim_dependent,
+                evidence_level=("solver_verified" if sim_dependent
+                                else "deterministic")))
+
+        # Hidden surface, per candidate that reached verification — the
+        # same drc-clean / lvs-match contract every compiled task faces.
+        if cand.get("verify") is not None:
+            dv = ver.get("drc_violations")
+            if dv is None:
+                checks.append(_check(
+                    f"hidden.drc_clean.{name}", None, "== 0 violations",
+                    UNAVAILABLE,
+                    message="drc engine "
+                            f"{ver.get('drc_status') or 'unavailable'}",
+                    deterministic=True, capability=True,
+                    evidence_level="deterministic"))
+            else:
+                checks.append(_check(
+                    f"hidden.drc_clean.{name}", dv, "== 0 violations",
+                    PASS if dv == 0 else FAIL, deterministic=True,
+                    evidence_level="deterministic"))
+            lm = ver.get("lvs_match")
+            if lm is None:
+                checks.append(_check(
+                    f"hidden.lvs_match.{name}", None, "== true",
+                    UNAVAILABLE,
+                    message="lvs engine "
+                            f"{ver.get('lvs_status') or 'unavailable'}",
+                    deterministic=True, capability=True,
+                    evidence_level="deterministic"))
+            else:
+                checks.append(_check(
+                    f"hidden.lvs_match.{name}", lm, "== true",
+                    PASS if lm is True else FAIL, deterministic=True,
+                    evidence_level="deterministic"))
+
+        # Spec pass count — a capability check: the number comes from a
+        # live simulator on the schematic benches (PEX benches are
+        # skipped in sweeps).  [candidates.expect_specs] pins the
+        # designed count; unlisted names expect every spec to pass.
+        if specs is not None:
+            passed = specs.get("passed")
+            total = specs.get("total")
+            exp = expect_specs.get(name, total)
+            spec_txt = f"== {exp} of {total} spec passes"
+            if passed is None:
+                checks.append(_check(
+                    f"candidate.{name}.specs_passed", None, spec_txt,
+                    UNAVAILABLE,
+                    message=(specs.get("reason")
+                             or "spec evaluation produced no verdict"),
+                    tol=task.sim_tol_abs or None,
+                    tol_rel=task.sim_tol_rel, capability=True,
+                    evidence_level="solver_verified"))
+            else:
+                ok = passed == exp
+                checks.append(_check(
+                    f"candidate.{name}.specs_passed", passed, spec_txt,
+                    PASS if ok else FAIL,
+                    message=("" if ok else
+                             f"{passed} spec passes != designed {exp}"),
+                    tol=task.sim_tol_abs or None,
+                    tol_rel=task.sim_tol_rel, capability=True,
+                    evidence_level="solver_verified"))
+    return metrics, checks
+
+
 def run_task(task: Task) -> dict[str, Any]:
     """Execute one task; return its scorecard fragment. Never raises for
     expected failures — they become status fail/unavailable/error."""
@@ -658,6 +864,8 @@ def run_task(task: Task) -> dict[str, Any]:
         try:
             if task.type == "optimize":
                 metrics, checks = _run_optimize(task)
+            elif task.type == "candidates":
+                metrics, checks = _run_candidates(task)
             else:
                 metrics, checks = _run_verify_like(task)
         except TaskError as exc:
@@ -842,7 +1050,8 @@ def _print_result(r: dict[str, Any]) -> None:
     interesting = ("ppa.area_um2", "extract.devices", "specs.passed",
                    "specs.total", "specs.worst_case",
                    "optimize.iterations", "optimize.final_specs",
-                   "score.final_area_um2")
+                   "score.final_area_um2", "candidates.passed",
+                   "candidates.ranking_top")
     ms = {m["id"]: m["value"] for m in r["metrics"]}
     shown = [f"{k}={ms[k]!r}" for k in interesting if ms.get(k) is not None]
     if shown:

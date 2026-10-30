@@ -1,0 +1,42 @@
+schema_version = 1
+id = "sky130-ota-candidates"
+type = "candidates"
+title = "Multi-candidate sweep: tail-width variants of the OTA evaluated side by side"
+deliverable = "starter/design.json"
+pdk = "sky130"
+
+# Baseline-compare tolerance for sim-derived values (deterministic checks
+# always compare exactly).
+[tolerances]
+sim_rel = 0.05          # ±5% of the frozen value
+sim_abs = 0.0
+
+# starter/variants.json is fed verbatim to eval_candidates — the exact
+# {name, edits} list format the tool takes.  The tables below are
+# evaluator material: they declare what each variant is DESIGNED to
+# report.  'ghost' edits a non-existent instance, so transact validation
+# must reject it — its designed status is 'failed' (fail-closed, pinned,
+# never a pass).  Unlisted names default to 'passed' / all-specs-pass.
+[candidates]
+variants = "starter/variants.json"
+
+[candidates.expect]
+ghost = "failed"
+
+[candidates.expect_specs]
+w080 = 3
+w100 = 5
+w120 = 4
+
+[bounds]
+"candidates.passed" = { equals = 3, deterministic = true, unit = "count" }
+"candidates.failed" = { equals = 1, deterministic = true, unit = "count" }
+"candidates.unavailable" = { equals = 0, deterministic = true, unit = "count" }
+# Geometry is deterministic — per-candidate areas gate on exact equality.
+"candidate.w080.area_um2" = { equals = 1701.546, deterministic = true, unit = "um2" }
+"candidate.w100.area_um2" = { equals = 1732.026, deterministic = true, unit = "um2" }
+"candidate.w120.area_um2" = { equals = 1762.506, deterministic = true, unit = "um2" }
+# Mechanical ranking sort (verify -> specs passed -> area): w100's
+# unique 5/5 spec count leads; a tie would break on area, which also
+# favours w100 over w120 — stable under single-spec drift.
+"candidates.ranking_top" = { equals = "w100", deterministic = true }

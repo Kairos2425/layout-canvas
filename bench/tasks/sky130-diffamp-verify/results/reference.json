@@ -1,8 +1,8 @@
 {
   "task": "sky130-diffamp-verify",
   "type": "verify",
-  "release_id": "layout-canvas-bench-v4",
-  "frozen_at": "2026-10-28T01:49:00Z",
+  "release_id": "layout-canvas-bench-v5",
+  "frozen_at": "2026-10-30T08:18:46Z",
   "status": "pass",
   "checks": [
     {
@@ -157,7 +157,7 @@
     }
   ],
   "provenance": {
-    "git_sha": "3bbe9702bdc2d973c68f62363e43aad9985dc75f",
+    "git_sha": "5633aa74ce282f78c7c67d89c4af69d405d5e859",
     "platform": "Windows-10-10.0.19045-SP0",
     "python": "3.13.7",
     "tools": {

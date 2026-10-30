@@ -1,0 +1,30 @@
+[
+    {
+        "name": "w080",
+        "edits": [
+            {"op": "set_params", "instance": "TAIL",
+             "params": {"width": 1.6}}
+        ]
+    },
+    {
+        "name": "w100",
+        "edits": [
+            {"op": "set_params", "instance": "TAIL",
+             "params": {"width": 2.0}}
+        ]
+    },
+    {
+        "name": "w120",
+        "edits": [
+            {"op": "set_params", "instance": "TAIL",
+             "params": {"width": 2.4}}
+        ]
+    },
+    {
+        "name": "ghost",
+        "edits": [
+            {"op": "set_params", "instance": "GHOST",
+             "params": {"width": 1.0}}
+        ]
+    }
+]

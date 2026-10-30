@@ -74,7 +74,7 @@ def test_cli_bench_subcommand(tmp_path, monkeypatch, capsys):
          "--check-baseline", "--out", str(tmp_path)])
     assert main() == 0
     card = json.loads((tmp_path / "scorecard.json").read_text())
-    assert card["release_id"] == "layout-canvas-bench-v4"
+    assert card["release_id"] == "layout-canvas-bench-v5"
     assert card["metric_schema"] == "flat-scalar-v2"
     assert card["coverage"] == {"runnable": 1, "total": 1}
     assert card["provenance"]["git_sha"] != "unknown"
@@ -278,3 +278,79 @@ def test_aging_proxy_task_unavailable_without_ngspice(bench):
     assert any(c["id"] == "spec.tb_aging.outp_aging"
                and c["evidence_level"] == "parametric_stress"
                for c in spec_checks)
+
+
+# --- Multi-candidate sweep (candidates task type) ----------------------
+
+def test_candidates_task_loads(bench):
+    task = bench.load_task(BENCH / "tasks" / "sky130-ota-candidates")
+    assert task.type == "candidates"
+    metrics = {b.metric for b in task.bounds}
+    assert {"candidates.passed", "candidates.failed",
+            "candidates.ranking_top"} <= metrics
+    # the designed-fail variant is pinned in evaluator config
+    assert task.cand_cfg["expect"]["ghost"] == "failed"
+    assert task.cand_cfg["expect_specs"]["w100"] == 5
+    # the variant file is the exact {name, edits} list the tool takes
+    variants = bench._load_variants(task)
+    assert [v["name"] for v in variants] == ["w080", "w100", "w120",
+                                           "ghost"]
+    assert all(set(v) == {"name", "edits"} for v in variants)
+
+
+@pytest.mark.skipif(not _HAS_NGSPICE, reason="ngspice not installed")
+def test_candidates_task_end_to_end(bench):
+    """Real ngspice run: 3 valid variants pass with measured spec counts,
+    the ghost variant reports its designed 'failed' status, and every
+    evaluated candidate faces the hidden DRC/LVS gate."""
+    task = bench.load_task(BENCH / "tasks" / "sky130-ota-candidates")
+    res = bench.run_task(task)
+    assert res["status"] == "pass", res["failure"]
+    ids = {c["id"]: c for c in res["checks"]}
+    assert ids["candidates.report"]["measured_value"] == "ok"
+    for name, n_specs in (("w080", 3), ("w100", 5), ("w120", 4)):
+        c = ids[f"candidate.{name}.status"]
+        assert c["status"] == "pass" and c["measured_value"] == "passed"
+        assert c["capability"] and not c["deterministic"]
+        assert ids[f"hidden.drc_clean.{name}"]["measured_value"] == 0
+        assert ids[f"hidden.lvs_match.{name}"]["measured_value"] is True
+        sp = ids[f"candidate.{name}.specs_passed"]
+        assert sp["measured_value"] == n_specs and sp["status"] == "pass"
+        assert sp["capability"]
+        assert sp["evidence_level"] == "solver_verified"
+    ghost = ids["candidate.ghost.status"]
+    # designed-fail is a real check: measured 'failed' == expected
+    assert ghost["status"] == "pass"
+    assert ghost["measured_value"] == "failed"
+    assert ghost["deterministic"] and not ghost["capability"]
+    # the rejected variant never compiled — no hidden/spec checks for it
+    assert "hidden.drc_clean.ghost" not in ids
+    assert "candidate.ghost.specs_passed" not in ids
+    # frozen numbers: deterministic areas + the mechanical ranking
+    assert ids["bound.candidate.w080.area_um2"]["measured_value"] \
+        == pytest.approx(1701.546)
+    assert ids["bound.candidate.w120.area_um2"]["measured_value"] \
+        == pytest.approx(1762.506)
+    assert ids["bound.candidates.ranking_top"]["measured_value"] == "w100"
+    metrics = {m["id"]: m["value"] for m in res["metrics"]}
+    assert metrics["candidates.ranking"] == ["w100", "w120", "w080",
+                                             "ghost"]
+
+
+@pytest.mark.skipif(_HAS_NGSPICE, reason="ngspice present — task would evaluate")
+def test_candidates_task_unavailable_without_ngspice(bench):
+    """No simulator → spec-evaluated candidates report capability
+    'unavailable'; the designed-fail ghost check still passes — the
+    fail-closed pin needs no simulator."""
+    task = bench.load_task(BENCH / "tasks" / "sky130-ota-candidates")
+    res = bench.run_task(task)
+    assert res["status"] == "unavailable"
+    ids = {c["id"]: c for c in res["checks"]}
+    for name in ("w080", "w100", "w120"):
+        c = ids[f"candidate.{name}.status"]
+        assert c["status"] == "unavailable" and c["capability"]
+        assert ids[f"candidate.{name}.specs_passed"]["status"] \
+            == "unavailable"
+    ghost = ids["candidate.ghost.status"]
+    assert ghost["status"] == "pass"
+    assert ghost["measured_value"] == "failed"
