@@ -184,7 +184,7 @@ def main() -> int:
         return 0
 
     if args.cmd == "compile":
-        with open(args.input) as f:
+        with open(args.input, encoding="utf-8") as f:
             design = Design.from_json(f.read())
 
         # Auto-import Sky130 blocks to populate registry
@@ -248,7 +248,7 @@ def main() -> int:
         return 0
 
     if args.cmd == "netlist":
-        with open(args.input) as f:
+        with open(args.input, encoding="utf-8") as f:
             design = Design.from_json(f.read())
 
         import layout_canvas.blocks.generic  # noqa: F401
@@ -260,7 +260,7 @@ def main() -> int:
     if args.cmd == "verify":
         import json
 
-        with open(args.input) as f:
+        with open(args.input, encoding="utf-8") as f:
             design = Design.from_json(f.read())
         import layout_canvas.blocks.generic  # noqa: F401
         import layout_canvas.blocks.sky130  # noqa: F401
@@ -295,6 +295,9 @@ def main() -> int:
             if chk.get("note"):
                 line += f" — {chk['note']}"
             print(line)
+        cov = qual.get("intent_coverage")
+        if cov:
+            print(f"    intent: {cov['note']}")
         print(f"  verdict : {'passed' if res['passed'] else 'FAILED'}")
         return 0 if res["passed"] else 1
 
@@ -327,7 +330,7 @@ def main() -> int:
         return 0
 
     if args.cmd == "testbench":
-        with open(args.input) as f:
+        with open(args.input, encoding="utf-8") as f:
             design = Design.from_json(f.read())
         import layout_canvas.blocks.generic  # noqa: F401
         import layout_canvas.blocks.sky130  # noqa: F401
@@ -365,7 +368,7 @@ def main() -> int:
     if args.cmd == "verilog":
         from layout_canvas.tools.verilog import verilog_check, verilog_stub
 
-        with open(args.input) as f:
+        with open(args.input, encoding="utf-8") as f:
             design = Design.from_json(f.read())
         if not args.lint:
             print(verilog_stub(design, module_name=args.module), end="")
@@ -384,7 +387,7 @@ def main() -> int:
     if args.cmd == "reliability":
         import json
 
-        with open(args.input) as f:
+        with open(args.input, encoding="utf-8") as f:
             design = Design.from_json(f.read())
         import layout_canvas.blocks.generic  # noqa: F401
         import layout_canvas.blocks.sky130  # noqa: F401
@@ -441,7 +444,7 @@ def _virtuoso_accept(args) -> int:
     from layout_canvas.compiler.netlist import compile_netlist
     from layout_canvas.tools import virtuoso_check
 
-    with open(args.input) as f:
+    with open(args.input, encoding="utf-8") as f:
         design = Design.from_json(f.read())
 
     import layout_canvas.blocks.generic  # noqa: F401
@@ -557,7 +560,7 @@ def _candidates(args) -> int:
 
     from layout_canvas.tools.candidates import eval_candidates
 
-    with open(args.input) as f:
+    with open(args.input, encoding="utf-8") as f:
         design = Design.from_json(f.read())
     import layout_canvas.blocks.generic  # noqa: F401
     import layout_canvas.blocks.sky130  # noqa: F401

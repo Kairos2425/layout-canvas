@@ -132,6 +132,29 @@
       ]
     }
   ],
+  "intent": {
+    "matched_groups": [["DP_L", "DP_R"]],
+    "sensitive_nets": [
+      {"net": "tail", "kind": "critical_bias",
+       "reason": "diff-pair tail node — carries the pair's bias current; keep it short and symmetric about the axis"},
+      {"net": "vbn", "kind": "critical_bias",
+       "reason": "tail-source bias/diode node — TAIL gate+in share the net; sets the whole tail current"},
+      {"net": "outp", "kind": "high_impedance",
+       "reason": "drain-drain output node — high impedance; parasitic imbalance here shows up as offset"},
+      {"net": "outn", "kind": "high_impedance",
+       "reason": "drain-drain output node — high impedance; mirror of outp, must stay balanced"}
+    ],
+    "param_rationale": [
+      {"target": "DP_L.width", "note": "2.0um/finger at fingers=4 — gm sized for the bias current the tail mirror delivers"},
+      {"target": "DP_L.fingers", "note": "4 fingers enables intra-cell ABBA interdigitation (common centroid)"},
+      {"target": "TAIL.width", "note": "2.0um nmos tail source — sized for the target tail current at vbn≈0.75V"},
+      {"target": "LOAD.type", "note": "pmos load mirror to vdd — the 'vss' pin is the interior source strap tied to vdd"}
+    ],
+    "notes": [
+      "DP_L/DP_R are one common-centroid pair: they must stay matched and mirrored about the vertical axis — the declared symmetric+match constraints encode exactly this intent.",
+      "LOAD, TAIL and GR share the pair axis (align center_x) so bias and shielding are symmetric about it."
+    ]
+  },
   "meta": {
     "demo": "P1.5 golden common-centroid diff-pair exemplar: real DRC/LVS/ERC plus machine-checked matching evidence. Narrative counter-example to the ViraStack tsmc65 card that passed DRC/LVS with no centroid matching, scattered devices and a half-empty guard ring.",
     "structure": "Two identical sky130.diff_pair cells (each internally ABBA-interdigitated, fingers=4) mirrored about x=0 so the A-side and B-side centroids share the axis; a sky130.current_mirror pmos load and a sky130.current_mirror nmos tail source centred on the same axis; a sky130.guard_ring ptap ring enclosing all four cells.",

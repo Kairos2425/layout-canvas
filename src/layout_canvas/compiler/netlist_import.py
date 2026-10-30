@@ -391,11 +391,15 @@ _PARAM_ALIASES = {
 
 
 def _map_params(inst: _Instance, sub: _Subckt, block, diags: list[str],
-                label: str) -> dict:
+                label: str) -> tuple[dict, list[dict]]:
     """Translate instance/subckt-default params onto block params.
 
     Only confident aliases land; anything unmappable or out-of-range is
-    dropped with a diagnostic — the IR must stay compilable.
+    dropped with a diagnostic — the IR must stay compilable.  Returns the
+    params plus ``inferred`` notes: ``{"param", "note"}`` entries for values
+    the importer *inferred* rather than read verbatim (today: device
+    ``type`` from leaf-device polarity), so the caller can record them as
+    design intent instead of scattering them through diagnostics.
     """
     pspec = {p.name: p for p in block.spec.params}
     merged = {**{k.lower(): v for k, v in sub.params.items()},
@@ -425,17 +429,28 @@ def _map_params(inst: _Instance, sub: _Subckt, block, diags: list[str],
     # mirror built from pch devices is a PMOS mirror. Its 'vss' pin is
     # then the interior source strap (often wired to vdd), not the global
     # substrate — getting this wrong produces a genuine LVS mismatch.
+    inferred: list[dict] = []
     if ("type" in pspec and "type" not in out
             and len(sub.polarities) == 1):
         pol = next(iter(sub.polarities))
         choices = pspec["type"].choices
         if choices is None or pol in choices:
             out["type"] = pol
+            inferred.append({
+                "param": "type",
+                "note": (f"type={pol} inferred from {pol} leaf devices "
+                         f"in subckt {sub.name!r}"),
+            })
     elif "type" in pspec and len(sub.polarities) > 1:
         diags.append(f"{label}: mixed device polarities "
                      f"{sorted(sub.polarities)} in subckt — 'type' left "
                      "at block default")
-    return _checked_params(block, out, diags, label)
+    good = _checked_params(block, out, diags, label)
+    # An inferred value that fails the bounds check never lands — the note
+    # must only survive when the value it describes does.
+    inferred = [n for n in inferred
+                if n["param"] in good and good[n["param"]] == out[n["param"]]]
+    return good, inferred
 
 
 def _checked_params(block, out: dict, diags: list[str], label: str) -> dict:
@@ -537,6 +552,7 @@ def import_netlist(
     instances_ir: list[dict] = []
     taken: set[str] = set()
     bindings: dict[str, dict[str, str]] = {}   # inst_id -> port -> node
+    param_rationale: list[dict] = []           # intent: inferred params
 
     for inst in top_sub.instances:
         sub = parsed.subckts.get(inst.master)
@@ -557,7 +573,10 @@ def import_netlist(
             continue
         block = blocks[block_name]
         inst_id = _sanitise_id(inst.name, taken)
-        params = _map_params(inst, sub, block, diags, inst.name)
+        params, inferred = _map_params(inst, sub, block, diags, inst.name)
+        param_rationale.extend(
+            {"target": f"{inst_id}.{n['param']}", "note": n["note"]}
+            for n in inferred)
         instances_ir.append({
             "id": inst_id,
             "block": block_name,
@@ -633,9 +652,53 @@ def import_netlist(
                     "no top-level instances mapped to blocks — nothing "
                     "to compile"]}
 
+    # ---- structured design intent -------------------------------------------
+    # What the importer actually inferred lands in ``intent`` — the
+    # structured channel — rather than only in free-text diagnostics.
+    # Every entry is derived from facts the import already established:
+    # identical master+params instances are matched pairs by construction,
+    # a net touching a 'tail' pin is a bias node, a net joining one
+    # instance's 'in'+'gate' pins is a diode-connected mirror bias node.
+    intent_ir: dict = {}
+    twins: dict[tuple, list[str]] = {}
+    for m in mapped:
+        key = (m["subckt"], tuple(sorted((m.get("params") or {}).items())))
+        twins.setdefault(key, []).append(m["instance"])
+    groups = sorted(sorted(v) for v in twins.values() if len(v) >= 2)
+    if groups:
+        intent_ir["matched_groups"] = groups
+    sensitive: list[dict] = []
+    for net in nets_ir:
+        pins = set(net["pins"])
+        port_names = {p.rsplit(".", 1)[-1] for p in pins}
+        if "tail" in port_names:
+            sensitive.append({
+                "net": net["name"], "kind": "critical_bias",
+                "reason": "diff-pair tail node — carries the pair's bias "
+                          "current"})
+            continue
+        insts = {p.rsplit(".", 1)[0] for p in pins}
+        for iid in sorted(insts):
+            if {f"{iid}.in", f"{iid}.gate"} <= pins:
+                sensitive.append({
+                    "net": net["name"], "kind": "critical_bias",
+                    "reason": f"bias/diode node — {iid} gate+in share "
+                              "the net"})
+                break
+    if sensitive:
+        intent_ir["sensitive_nets"] = sensitive
+    if param_rationale:
+        intent_ir["param_rationale"] = param_rationale
+    defaulted = [m["instance"] for m in mapped if m.get("params_defaulted")]
+    if defaulted:
+        intent_ir["notes"] = [
+            f"{iid}: params at block defaults — the netlist carried no "
+            "values" for iid in sorted(defaulted)]
+
     design = Design.model_validate({
         "name": name, "pdk": pdk,
         "instances": instances_ir, "nets": nets_ir, "ports": ports_ir,
+        "intent": intent_ir or None,
         "meta": {
             "imported_via": "netlist_import",
             "dialect": dialect,

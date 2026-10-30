@@ -90,11 +90,21 @@ def main() -> None:
     # step 3: read the electrical facts before editing
     print("conn:", m.tool("inspect_connectivity", {"session_id": sid}))
 
-    # step 4: every edit goes through transact with expected_revision
+    # step 4: every edit goes through transact with expected_revision.
+    # Decision point: a high-impact edit list (remove_instance/remove_net,
+    # or set_params on >50% of instances — here 1/1) answers
+    # "requires_confirmation" with data.impact and applies NOTHING; the
+    # caller reads the impact, then resubmits with confirm=true.
     env = m.tool("transact", {
         "session_id": sid, "expected_revision": rev,
         "edits": [{"op": "set_params", "instance": "dp",
                    "params": {"fingers": 4}}]})
+    if env.get("status") == "requires_confirmation":
+        print("confirm needed:", env["data"]["impact"]["summary"])
+        env = m.tool("transact", {
+            "session_id": sid, "expected_revision": rev, "confirm": True,
+            "edits": [{"op": "set_params", "instance": "dp",
+                       "params": {"fingers": 4}}]})
     rev = env.get("revision", rev)
     print("transact ok:", env.get("status"), "rev:", rev)
 

@@ -12,7 +12,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 Severity = Literal["error", "warning", "info"]
-Status = Literal["ok", "rejected", "error"]
+# "requires_confirmation" is the decision-point status: a high-impact edit
+# list that was *not* applied — resubmitting with confirm=True commits it.
+Status = Literal["ok", "rejected", "error", "requires_confirmation"]
 
 
 @dataclass

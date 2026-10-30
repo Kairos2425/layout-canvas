@@ -217,12 +217,24 @@ async function sessionOpen(design) {
   return true;
 }
 
-async function sessionEdit(edits) {
+async function sessionEdit(edits, opts) {
   lastViolations = [];  // layout changed — old markers are stale
   lastBadNets = new Set();
   const res = await api('session/edit',
-    {edits: edits, expected_revision: revision});
+    {edits: edits, expected_revision: revision,
+     confirm: !!(opts && opts.confirm)});
   revision = res.revision ?? revision;
+  if (res.status === 'requires_confirmation') {
+    // Decision point: the server refused to apply a high-impact edit
+    // silently — surface the impact report and resubmit with confirm.
+    const imp = (res.data && res.data.impact) || {};
+    setRev();
+    askConfirm('High-impact edit — ' + (imp.summary || 'review required') +
+      '. Apply?', async (yes) => {
+      if (yes) await sessionEdit(edits, {confirm: true});
+    });
+    return false;
+  }
   if (res.status !== 'ok') { showErr(res); setRev(); return false; }
   irBox.value = JSON.stringify(res.data.design, null, 2);
   setRev(); refresh(); return true;
@@ -361,20 +373,38 @@ async function wirePin(pinRef) {
 // Non-modal inline ask box — native prompt()/alert() pauses embedded
 // previews ("paused due to notification"), so dialogs live in the DOM.
 let askCb = null;
+let askIsConfirm = false;
 function askValue(label, initial, cb) {
+  askIsConfirm = false;
   const box = document.getElementById('askbox');
   document.getElementById('asklabel').textContent = label;
   const inp = document.getElementById('askval');
+  inp.style.display = '';
   inp.value = initial || '';
   askCb = cb;
   box.style.display = 'block';
   inp.focus(); inp.select();
 }
+// Same box in yes/no mode — the confirm dialog for high-impact edits.
+function askConfirm(label, cb) {
+  askIsConfirm = true;
+  const box = document.getElementById('askbox');
+  document.getElementById('asklabel').textContent = label;
+  document.getElementById('askval').style.display = 'none';
+  askCb = cb;
+  box.style.display = 'block';
+  document.getElementById('askok').focus();
+}
 function askDone(ok) {
   document.getElementById('askbox').style.display = 'none';
-  const v = document.getElementById('askval').value.trim();
+  const inp = document.getElementById('askval');
+  const v = inp.value.trim();
+  inp.style.display = '';
   const cb = askCb; askCb = null;
-  if (ok && cb) cb(v);
+  const wasConfirm = askIsConfirm; askIsConfirm = false;
+  if (!cb) return;
+  if (wasConfirm) { cb(ok); return; }
+  if (ok) cb(v);
 }
 document.getElementById('askok').onclick = () => askDone(true);
 document.getElementById('askcancel').onclick = () => askDone(false);
@@ -665,6 +695,7 @@ function showVerify(d) {
       c.id + ': ' + c.status + (c.note ? ' — ' + c.note : ''))
       .join('<br>')) +
     ((q.checks || []).length ? '' : (q.note || '')) +
+    (q.intent_coverage ? '<br>intent: ' + q.intent_coverage.note : '') +
     '</td></tr>';
   html += '</table>';
   o.innerHTML = html;

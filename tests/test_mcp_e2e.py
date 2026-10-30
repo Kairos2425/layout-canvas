@@ -95,11 +95,22 @@ def test_full_agent_loop(mcp, tmp_path):
     assert conn["status"] == "ok"
     assert "tail" in conn["data"]["instances"]["dp"]["unconnected"]
 
-    # revision-locked transaction
+    # revision-locked transaction — on a single-instance design every
+    # set_params retunes 100% of instances, so the decision-point gate
+    # answers requires_confirmation first and only confirm=true commits.
     err, tx = mcp.tool("transact", {
         "session_id": sid,
         "edits": [{"op": "set_params", "instance": "dp", "params": {"fingers": 8}}],
         "expected_revision": 0,
+    })
+    assert tx["status"] == "requires_confirmation"
+    assert tx["data"]["impact"]["affected_instances"] == ["dp"]
+    assert tx["revision"] == 0
+    err, tx = mcp.tool("transact", {
+        "session_id": sid,
+        "edits": [{"op": "set_params", "instance": "dp", "params": {"fingers": 8}}],
+        "expected_revision": 0,
+        "confirm": True,
     })
     assert tx["status"] == "ok" and tx["revision"] == 1
 

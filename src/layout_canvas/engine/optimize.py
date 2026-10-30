@@ -91,7 +91,9 @@ def _optimize_placement(
         if not edits:
             break
 
-        env = session.transact(edits)
+        # confirm=True: the optimize call itself is the caller's decision
+        # point — per-step margin bumps are its function, not a surprise.
+        env = session.transact(edits, confirm=True)
         if not env.ok:
             return Envelope(
                 "error",
@@ -337,6 +339,9 @@ def _optimize_specs(
                     cand = float(int(round(cand)))
                 if cand == kept:
                     continue  # clamped/rounded onto the standing value
+                # confirm=True: the caller asked for param tuning — that
+                # *is* the decision point. Without it a ≤2-instance design
+                # would gate every single-param candidate.
                 env = session.transact(
                     [{
                         "op": "set_params",
@@ -344,6 +349,7 @@ def _optimize_specs(
                         "params": {t["name"]: int(cand) if t["is_int"] else cand},
                     }],
                     expected_revision=session.revision,
+                    confirm=True,
                 )
                 if not env.ok:
                     history.append({
@@ -381,6 +387,7 @@ def _optimize_specs(
                                 t["name"]: int(kept) if t["is_int"] else kept},
                         }],
                         expected_revision=session.revision,
+                        confirm=True,
                     )
             t["value"] = kept
             if best_status == "pass":

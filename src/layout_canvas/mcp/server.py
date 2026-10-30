@@ -368,11 +368,19 @@ class LayoutCanvasMCPServer:
             {
                 "name": "snapshot",
                 "description": "Read the complete current design state and revision of a session "
-                               "— the agent's ground truth before editing.",
+                               "— the agent's ground truth before editing. compact=true collapses "
+                               "the runs journal into {kind: {count, last: {op, at, "
+                               "result_status}}} for a smaller payload.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "session_id": {"type": "string"},
+                        "compact": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Summarize runs history instead of full payloads "
+                                           "(default false — full journal).",
+                        },
                     },
                     "required": ["session_id"],
                 },
@@ -383,7 +391,11 @@ class LayoutCanvasMCPServer:
                                "expected_revision optimistic lock; use dry_run to validate "
                                "without committing. Ops: set_placement, set_params, add_instance, "
                                "remove_instance, add_net, remove_net, set_net_pins, add_port, "
-                               "remove_port, add_constraint, remove_constraint, set_meta.",
+                               "remove_port, add_constraint, remove_constraint, set_meta. "
+                               "Decision point: a high-impact edit list (removes instances/nets, "
+                               "or set_params on >50% of instances) returns "
+                               "status='requires_confirmation' with a data.impact report and "
+                               "applies nothing — resubmit with confirm=true to commit.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -403,6 +415,12 @@ class LayoutCanvasMCPServer:
                             "default": False,
                             "description": "Validate and return the resulting design without "
                                            "committing.",
+                        },
+                        "confirm": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Confirm a high-impact edit list previously answered "
+                                           "with requires_confirmation.",
                         },
                     },
                     "required": ["session_id", "edits"],
@@ -1006,7 +1024,8 @@ class LayoutCanvasMCPServer:
             }
 
         elif name == "snapshot":
-            return self._get_session(args.get("session_id")).snapshot().to_dict()
+            return self._get_session(args.get("session_id")).snapshot(
+                compact=bool(args.get("compact", False))).to_dict()
 
         elif name == "transact":
             session = self._get_session(args.get("session_id"))
@@ -1014,6 +1033,7 @@ class LayoutCanvasMCPServer:
                 edits=args.get("edits"),
                 expected_revision=args.get("expected_revision"),
                 dry_run=bool(args.get("dry_run", False)),
+                confirm=bool(args.get("confirm", False)),
             ).to_dict()
 
         elif name == "undo":

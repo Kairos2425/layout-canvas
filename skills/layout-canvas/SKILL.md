@@ -45,7 +45,13 @@ envelope shape before hand-writing calls.
    netlist instead? `import_netlist` (`{path|text, pdk, top?}`) converts
    a structural SPICE/Spectre file into a Block IR draft — subckts map
    to blocks by name + pin signature, unmapped instances come back in
-   `unresolved` — pass the returned `ir` to `open_design`.
+   `unresolved` — pass the returned `ir` to `open_design`. The importer
+   also records what it inferred (matched instance pairs, bias nodes,
+   polarity-derived params) in `ir.intent`. When *authoring* IR
+   yourself, fill `intent` too — `matched_groups` (instances that must
+   stay matched), `sensitive_nets` (`{net, kind, reason}`),
+   `param_rationale` (`{target: "<inst>.<param>", note}`), `notes` —
+   it is how the design's *why* travels with the design.
 3. `inspect_connectivity` — read the electrical facts (pin→net table,
    unconnected pins, floating nets) **before** editing.
 4. `transact` with typed edits and `expected_revision`. Known ops:
@@ -54,6 +60,15 @@ envelope shape before hand-writing calls.
    `add_constraint`, `remove_constraint`, `set_meta`, `set_testbenches`.
    A rejected transaction returns `diagnostics[]` naming the edit index and
    the object — fix and resubmit; do not retry blindly. `undo` is available.
+   Decision point: a **high-impact** edit list — any
+   `remove_instance`/`remove_net`, or `set_params` on >50% of instances —
+   returns `status:"requires_confirmation"` with `data.impact`
+   (`ops`/`affected_instances`/`affected_nets`/`summary`) and applies
+   *nothing* (revision unchanged). Read the impact summary, then resubmit
+   the same edits with `confirm:true` — never confirm blindly.
+   `snapshot` accepts `compact:true` for a smaller payload (runs journal
+   summarized as `{kind: {count, last: {op, at, result_status}}}`; the
+   design itself is never compacted).
 5. `compile_session` / `render_preview_svg` — look at the layout; `inspect_ppa`
    for area, bbox, device count.
 6. `verify_design` — extract + DRC + LVS + `quality` in one call. Read
@@ -152,7 +167,12 @@ Rules the engine enforces (do not fight them):
   and is absent from the IR — report that to the user rather than
   hand-editing IR to fake the connection. Params come from a small alias
   table (`nf`/`w`/`l`); everything else defaults and is listed under
-  `meta.params_defaulted`.
+  `meta.params_defaulted`. What the importer *did* infer (matched pairs
+  on identical masters, `tail`/mirror-diode bias nets, polarity-derived
+  `type`) lands in `ir.intent` — read it before editing.
+- `intent` refs validate like every other IR ref: matched-group members
+  must be real instance ids, sensitive nets must exist, rationale
+  targets must parse `<instance>.<param>` on a real instance.
 
 ## Before you run a tool
 

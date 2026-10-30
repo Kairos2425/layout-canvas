@@ -437,6 +437,60 @@ _EVALUATORS = {
     ConstraintType.abut: _check_abut,
 }
 
+_MATCHING_TYPES = (ConstraintType.match, ConstraintType.symmetric)
+
+
+def _intent_coverage(design: Design) -> dict[str, Any] | None:
+    """Declaration consistency between ``design.intent.matched_groups`` and
+    the declared ``match``/``symmetric`` constraints.
+
+    A report, never a gate: geometric violations are already caught by the
+    constraint checks themselves — this section is about the *declarations*
+    agreeing.  Both directions are surfaced: an intent group no matching
+    constraint covers, and a match/symmetric constraint whose members sit
+    outside every declared intent group.  Neither is a failure — they are
+    notes so a drift between stated intent and stated checks is visible.
+    Returns ``None`` when the design carries no ``intent``.
+    """
+    intent = getattr(design, "intent", None)
+    if intent is None:
+        return None
+    groups = [set(g) for g in intent.matched_groups]
+    intent_union: set[str] = set()
+    for g in groups:
+        intent_union |= g
+    matching = [c for c in design.constraints if c.type in _MATCHING_TYPES]
+    groups_without = [
+        sorted(g) for g in groups
+        if not any(g <= set(c.instances) for c in matching)
+    ]
+    constraints_without = [
+        {"type": str(c.type), "instances": list(c.instances),
+         "outside_intent": sorted(set(c.instances) - intent_union)}
+        for c in matching
+        if not set(c.instances) <= intent_union
+    ]
+    notes: list[str] = []
+    if groups_without:
+        notes.append(
+            "intent matched_groups covered by no match/symmetric "
+            f"constraint: {groups_without}")
+    if constraints_without:
+        notes.append(
+            "match/symmetric constraints not backed by any intent "
+            "matched_group: "
+            f"{[(c['type'], c['instances']) for c in constraints_without]}")
+    if not notes:
+        notes.append(
+            "every intent matched_group is covered by a match/symmetric "
+            "constraint and vice versa")
+    return {
+        "declared_groups": [sorted(g) for g in groups],
+        "groups_without_constraint": groups_without,
+        "constraints_without_intent": constraints_without,
+        "note": "; ".join(notes),
+    }
+
 
 def check_constraints(design: Design, component: Any | None = None
                       ) -> dict[str, Any]:
@@ -448,9 +502,10 @@ def check_constraints(design: Design, component: Any | None = None
     pass | fail | unavailable | not_applicable.  ``not_applicable`` means
     the design declared nothing — it is *not* a pass.
     """
+    coverage = _intent_coverage(design)
     if not design.constraints:
         return {"status": "not_applicable", "tolerance_um": TOL_UM,
-                "checks": [],
+                "checks": [], "intent_coverage": coverage,
                 "note": "no constraints declared — nothing to check"}
 
     checks: list[dict[str, Any]] = []
@@ -463,7 +518,7 @@ def check_constraints(design: Design, component: Any | None = None
                 "unavailable", {},
                 f"cannot resolve placed geometry: {exc}"))
         return {"status": "unavailable", "tolerance_um": TOL_UM,
-                "checks": checks,
+                "checks": checks, "intent_coverage": coverage,
                 "note": f"placed geometry unavailable: {exc}"}
 
     inst_map = {i.id: i for i in design.instances}
@@ -504,4 +559,4 @@ def check_constraints(design: Design, component: Any | None = None
                  + ", ".join(f"{s}×{sum(1 for c_ in checks if c_['status'] == s)}"
                              for s in sorted(statuses)))
     return {"status": status, "tolerance_um": TOL_UM,
-            "checks": checks, "note": note}
+            "checks": checks, "intent_coverage": coverage, "note": note}

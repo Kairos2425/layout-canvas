@@ -87,21 +87,28 @@ def _session_api(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             return {"status": "error", "error": f"invalid IR: {exc}"}
         _SESSION = DesignSession(design)
-        return {"status": "ok", "revision": 0, "data": _SESSION.snapshot().data}
+        return {"status": "ok", "revision": 0,
+                "data": _SESSION.snapshot(
+                    compact=bool(payload.get("compact"))).data}
     if _SESSION is None:
         return {"status": "error", "error": "no session open"}
     if action == "state":
-        return {"status": "ok", "revision": _SESSION.revision, "data": _SESSION.snapshot().data}
+        return {"status": "ok", "revision": _SESSION.revision,
+                "data": _SESSION.snapshot(
+                    compact=bool(payload.get("compact"))).data}
     if action == "edit":
         env = _SESSION.transact(
             payload.get("edits", []),
             expected_revision=payload.get("expected_revision"),
+            confirm=bool(payload.get("confirm")),
         )
+        # env.data rides along: on requires_confirmation it carries the
+        # impact report the page needs for its confirm dialog.
         return {
             "status": env.status,
             "revision": env.revision,
             "diagnostics": [d.to_dict() for d in env.diagnostics],
-            "data": {"design": _SESSION.design.model_dump()},
+            "data": {"design": _SESSION.design.model_dump(), **env.data},
         }
     if action == "undo":
         env = _SESSION.undo()

@@ -41,6 +41,66 @@ OPS = (
 )
 
 
+# Ops whose commit warrants an explicit decision point: deleting objects
+# outright, or retuning parameters across most of the design. Everything
+# else (placement, wiring, declarations, params on a minority of
+# instances) applies directly.
+HIGH_IMPACT_OPS = frozenset({"remove_instance", "remove_net"})
+# A transact is high-impact when set_params touches strictly more than
+# this fraction of the design's instances.
+PARAM_TOUCH_FRACTION = 0.5
+
+
+def classify_impact(
+        design: Design, edits: list[dict[str, Any]]) -> dict[str, Any]:
+    """Blast-radius report for an edit list — the decision-point payload.
+
+    High-impact means: any ``remove_instance``/``remove_net`` op, or
+    ``set_params`` touching more than ``PARAM_TOUCH_FRACTION`` of the
+    design's instances.  Pure classification on the (already validated)
+    edit list — nothing here mutates the design.
+    """
+    insts_hit: set[str] = set()
+    nets_hit: set[str] = set()
+    ops: list[Any] = []
+    param_touched: set[str] = set()
+    for edit in edits:
+        if not isinstance(edit, dict):
+            continue
+        op = edit.get("op")
+        ops.append(op)
+        if op == "set_params":
+            if isinstance(edit.get("instance"), str):
+                param_touched.add(edit["instance"])
+            continue
+        if op not in HIGH_IMPACT_OPS:
+            continue
+        if op == "remove_instance" and isinstance(edit.get("instance"), str):
+            insts_hit.add(edit["instance"])
+        elif op == "remove_net" and isinstance(edit.get("net"), str):
+            nets_hit.add(edit["net"])
+    reasons: list[str] = []
+    if insts_hit:
+        reasons.append(
+            f"removes {len(insts_hit)} instance(s): {sorted(insts_hit)}")
+    if nets_hit:
+        reasons.append(
+            f"removes {len(nets_hit)} net(s): {sorted(nets_hit)}")
+    n_inst = len(design.instances)
+    if n_inst and len(param_touched) / n_inst > PARAM_TOUCH_FRACTION:
+        insts_hit |= param_touched
+        reasons.append(
+            f"set_params touches {len(param_touched)}/{n_inst} instances "
+            f"(>{PARAM_TOUCH_FRACTION:.0%} of the design)")
+    return {
+        "high": bool(reasons),
+        "ops": ops,
+        "affected_instances": sorted(insts_hit),
+        "affected_nets": sorted(nets_hit),
+        "summary": "; ".join(reasons) if reasons else "low-impact edits",
+    }
+
+
 def apply_edits(
         design: Design, edits: list[dict[str, Any]]
 ) -> tuple[Design | None, list[Diagnostic]]:

@@ -102,6 +102,48 @@ and the ring's geometric enclosure — the check measures placed instance
 bboxes only, so intra-cell ABBA/dummy completeness and ring continuity
 are honestly *not* claimed (see `meta.not_demonstrated`).
 
+### Design intent (`design.intent`)
+
+Beside the free-form `meta` bag, a design may carry **structured intent**
+— the *why* in typed fields, so agents and tools consume it without
+parsing prose. References validate like every other IR ref (unknown
+instance or net, unparseable target → validation error):
+
+```json
+"intent": {
+  "matched_groups": [["DP_L", "DP_R"]],
+  "sensitive_nets": [
+    {"net": "tail", "kind": "critical_bias",
+     "reason": "carries the pair's bias current"}],
+  "param_rationale": [
+    {"target": "TAIL.width", "note": "sized for the target tail current"}],
+  "notes": ["DP_L/DP_R are one common-centroid pair"]
+}
+```
+
+- `matched_groups` — instance-id groups that must stay matched. The
+  quality stage cross-reports them (never gates): `verify`'s
+  `quality.intent_coverage` lists intent groups no `match`/`symmetric`
+  constraint covers *and* matching constraints not backed by an intent
+  group — both as notes, because geometric violations are the constraint
+  checks' job, not the declaration's.
+- `sensitive_nets` — `{net, kind, reason}`; `kind` ∈ `high_impedance |
+  low_impedance | critical_bias | clock | other`.
+- `param_rationale` — `{target: "<instance>.<param>", note}`; the
+  instance must exist, the param name is unvalidated (block schemas
+  differ).
+- `notes` — free intent lines.
+
+`import_netlist` fills intent from what it actually infers: instances
+sharing a subckt master *and* identical mapped params become
+`matched_groups`; a net touching a `tail` pin or joining one mirror's
+`in`+`gate` pins becomes a `critical_bias` sensitive net; the
+polarity-derived `type` params become `param_rationale`; params the
+netlist never carried become `notes`. Anything not inferred stays empty
+— never invented. `examples/golden_diffpair.json` carries a real intent
+block, and `gallery_publish` stores the whole `design.json`, so intent
+rides along into every gallery entry and every `gallery_fork`.
+
 ## 3. CLI
 
 ```bash
@@ -298,7 +340,24 @@ Run them via:
 
 Runs are journaled on the session (`snapshot().data.runs`, FIFO 50):
 testbench, verify and optimize calls record kind/UTC timestamp/revision/status
-summaries — never waveforms.
+summaries — never waveforms. `snapshot(compact=True)` (MCP `snapshot`'s
+`compact` param, `/api/session/state`'s `compact` field) collapses that
+journal into `{kind: {count, last: {op, at, result_status}}}` for agents
+that want the smaller payload — the design itself is never compacted
+away.
+
+**Decision-point confirmation:** a `transact` whose edit list is
+high-impact — any `remove_instance`/`remove_net` op, or `set_params`
+touching more than half the design's instances — is *not* applied
+without confirmation. The call returns
+`status: "requires_confirmation"` with `data.impact`
+(`{ops, affected_instances, affected_nets, summary}`) and an unchanged
+revision; resubmitting the same edits with `confirm=true` commits them
+(`confirm` on the MCP `transact` tool and on `/api/session/edit`).
+`dry_run` never needs it, invalid edits are still rejected outright, and
+low-impact edits apply directly as before — the gate only intercepts
+high-impact lists. The web canvas surfaces the same envelope as an
+inline confirm dialog.
 
 `optimize` accepts `objective:"specs"` to tune the design *toward* the
 specs: a coordinate descent over every instance's bounded numeric params

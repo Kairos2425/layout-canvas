@@ -130,6 +130,47 @@ def test_session_lifecycle_and_edit():
     assert app._SESSION is None
 
 
+def test_session_edit_requires_confirmation_roundtrip():
+    """High-impact web edits get the same decision point: session/edit
+    answers requires_confirmation + impact, and confirm=True resubmits."""
+    from layout_canvas.web import app
+
+    try:
+        res = _api("session/open", {"ir_json": _ir()})
+        assert res["status"] == "ok"
+        # single-instance design: set_params touches 1/1 = 100% > 50%
+        res = _api(
+            "session/edit",
+            {"edits": [{"op": "set_params", "instance": "dp",
+                        "params": {"width": 2.0}}],
+             "expected_revision": 0},
+        )
+        assert res["status"] == "requires_confirmation"
+        assert res["revision"] == 0
+        assert res["data"]["impact"]["high"] is True
+        assert res["data"]["impact"]["affected_instances"] == ["dp"]
+        # nothing applied yet — the design still has no width param
+        assert "width" not in res["data"]["design"]["instances"][0]["params"]
+
+        res = _api(
+            "session/edit",
+            {"edits": [{"op": "set_params", "instance": "dp",
+                        "params": {"width": 2.0}}],
+             "expected_revision": 0, "confirm": True},
+        )
+        assert res["status"] == "ok"
+        assert res["revision"] == 1
+        assert res["data"]["design"]["instances"][0]["params"]["width"] == 2.0
+
+        # session/state honours compact=true
+        st = _api("session/state", {"compact": True})
+        assert st["status"] == "ok"
+        assert st["data"]["compact"] is True
+    finally:
+        _api("session/close", {})
+    assert app._SESSION is None
+
+
 def test_preview_reports_instance_bboxes():
     res = _api("preview", {"ir_json": _ir()})
     assert res["status"] == "ok"

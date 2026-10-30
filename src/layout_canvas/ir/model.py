@@ -208,6 +208,45 @@ class BlockSpec(_Strict):
     version: str = "0.1"
 
 
+class SensitiveNet(_Strict):
+    """A net whose electrical role makes it layout-sensitive."""
+
+    net: str
+    kind: Literal[
+        "high_impedance", "low_impedance", "critical_bias", "clock", "other"
+    ]
+    reason: str
+
+
+class ParamRationale(_Strict):
+    """Why one parameter carries its value.
+
+    ``target`` is ``<instance_id>.<param_name>``; the instance must exist,
+    the param name is deliberately unvalidated — block schemas differ.
+    """
+
+    target: str
+    note: str
+
+
+class DesignIntent(_Strict):
+    """Structured design intent — the machine-readable sibling of ``meta``.
+
+    Where ``meta`` is a flat key→value bag, ``intent`` carries the *why* in
+    typed fields so agents and tools can consume it without parsing prose.
+    Every instance/net reference is resolved by ``Design._check_refs`` —
+    an intent entry pointing at a nonexistent object fails validation.
+    """
+
+    matched_groups: list[list[str]] = Field(
+        default_factory=list,
+        description="Groups of instance ids that must stay matched",
+    )
+    sensitive_nets: list[SensitiveNet] = Field(default_factory=list)
+    param_rationale: list[ParamRationale] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class Design(_Strict):
     ir_version: str = IR_VERSION
     name: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -218,6 +257,8 @@ class Design(_Strict):
     ports: list[Port] = Field(default_factory=list)
     testbenches: list[Testbench] = Field(default_factory=list)
     meta: dict[str, ParamValue] = Field(default_factory=dict)
+    # Structured design intent — optional; ``meta`` stays the free-form bag.
+    intent: DesignIntent | None = None
 
     @model_validator(mode="after")
     def _check_refs(self) -> Design:
@@ -235,16 +276,37 @@ class Design(_Strict):
                 check_pin(p, f"net {n.name}")
         for p in self.ports:
             check_pin(p.pin, f"port {p.name}")
+        net_names = {n.name for n in self.nets}
         for c in self.constraints:
             for i in c.instances:
                 if i not in ids:
                     raise ValueError(f"constraint {c.type}: unknown instance {i!r}")
             if c.nets is not None:
-                net_names = {n.name for n in self.nets}
                 unknown_nets = set(c.nets) - net_names
                 if unknown_nets:
                     raise ValueError(
                         f"constraint {c.type}: unknown net(s) {sorted(unknown_nets)!r}"
+                    )
+        if self.intent is not None:
+            for group in self.intent.matched_groups:
+                if not group:
+                    raise ValueError("intent matched_groups: empty group")
+                for iid in group:
+                    if iid not in ids:
+                        raise ValueError(
+                            f"intent matched_groups: unknown instance {iid!r}"
+                        )
+            for sn in self.intent.sensitive_nets:
+                if sn.net not in net_names:
+                    raise ValueError(
+                        f"intent sensitive_nets: unknown net {sn.net!r}"
+                    )
+            for pr in self.intent.param_rationale:
+                inst, sep, _param = pr.target.partition(".")
+                if not sep or not _param or inst not in ids:
+                    raise ValueError(
+                        f"intent param_rationale: bad target {pr.target!r} "
+                        "(expected '<instance>.<param>' naming a real instance)"
                     )
         tb_names = [t.name for t in self.testbenches]
         if len(set(tb_names)) != len(tb_names):

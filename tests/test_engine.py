@@ -1,5 +1,7 @@
 """Tests for the transactional edit engine and connectivity projection."""
 
+import json
+
 import pytest
 
 from layout_canvas.derived.connectivity import inspect_connectivity
@@ -111,6 +113,150 @@ class TestSession:
         )
         assert env.status == "rejected"
         assert env.diagnostics[0].code == "invalid-design"
+
+
+class TestCompactSnapshot:
+    def test_compact_collapses_runs_by_kind(self):
+        s = DesignSession(_design())
+        for _ in range(8):
+            s.record_run("verify", {"passed": True, "lvs_status": "passed"})
+        s.record_run("verify", {"passed": False, "lvs_status": "failed"})
+        s.record_run("testbench", {"spec_status": ["pass"],
+                                 "sim_status": ["passed"]})
+        snap = s.snapshot(compact=True)
+        assert snap.ok
+        runs = snap.data["runs"]
+        assert runs["verify"]["count"] == 9
+        assert runs["verify"]["last"]["op"] == "verify"
+        assert runs["verify"]["last"]["result_status"] == "failed"
+        assert runs["testbench"]["count"] == 1
+        assert snap.data["compact"] is True
+        # the design itself is never compacted away — it is ground truth
+        assert snap.data["design"]["name"] == "sess_test"
+
+    def test_compact_is_smaller_on_the_wire(self):
+        s = DesignSession(_design())
+        for _ in range(10):
+            s.record_run("verify", {"passed": True, "lvs_status": "passed",
+                                    "drc_violations": 0,
+                                    "quality_status": "pass"})
+        s.record_run("testbench", {"spec_status": ["pass"],
+                                   "sim_status": ["passed"]})
+        s.record_run("reliability", {"coverage": 0.5,
+                                   "statuses": {"htol": "pass"}})
+        full = json.dumps(s.snapshot().to_dict())
+        comp = json.dumps(s.snapshot(compact=True).to_dict())
+        assert len(comp) < len(full)
+
+    def test_full_snapshot_is_the_default(self):
+        s = DesignSession(_design())
+        s.record_run("verify", {"passed": True})
+        snap = s.snapshot()
+        assert isinstance(snap.data["runs"], list)
+        assert snap.data["runs"][0]["passed"] is True
+        assert "compact" not in snap.data
+
+
+class TestDecisionPointConfirm:
+    """High-impact edits never apply silently: the first call returns
+    requires_confirmation with an impact report; only confirm=True commits."""
+
+    def test_remove_net_requires_confirmation_then_applies(self):
+        s = DesignSession(_design())
+        edits = [{"op": "remove_net", "net": "tail"}]
+        env = s.transact(edits, expected_revision=0)
+        assert env.status == "requires_confirmation"
+        assert env.revision == 0  # revision preserved
+        assert s.revision == 0
+        assert any(n.name == "tail" for n in s.design.nets)  # not applied
+        impact = env.data["impact"]
+        assert impact["high"] is True
+        assert impact["affected_nets"] == ["tail"]
+        assert "tail" in impact["summary"]
+        # same edits + confirm=True commits at the preserved revision
+        env2 = s.transact(edits, expected_revision=0, confirm=True)
+        assert env2.ok and env2.revision == 1
+        assert all(n.name != "tail" for n in s.design.nets)
+
+    def test_remove_instance_requires_confirmation(self):
+        s = DesignSession(_design())
+        # m3 is unreferenced — add it, then removing it is high-impact
+        s.transact([{"op": "add_instance", "instance": {
+            "id": "m3", "block": "sky130.current_mirror", "params": {}}}])
+        env = s.transact([{"op": "remove_instance", "instance": "m3"}],
+                         expected_revision=1)
+        assert env.status == "requires_confirmation"
+        assert env.data["impact"]["affected_instances"] == ["m3"]
+        assert s.design.instance("m3").id == "m3"  # not applied
+        env2 = s.transact([{"op": "remove_instance", "instance": "m3"}],
+                          expected_revision=1, confirm=True)
+        assert env2.ok
+        with pytest.raises(KeyError):
+            s.design.instance("m3")
+
+    def test_set_params_majority_requires_confirmation(self):
+        s = DesignSession(_design())  # 2 instances: 2/2 > 50%
+        edits = [
+            {"op": "set_params", "instance": "m1", "params": {"fingers": 4}},
+            {"op": "set_params", "instance": "m2", "params": {"fingers": 4}},
+        ]
+        env = s.transact(edits)
+        assert env.status == "requires_confirmation"
+        assert set(env.data["impact"]["affected_instances"]) == {"m1", "m2"}
+        env2 = s.transact(edits, confirm=True)
+        assert env2.ok
+
+    def test_low_impact_edits_apply_directly(self):
+        s = DesignSession(_design())
+        # 1 of 2 instances is exactly 50% — not >50% — so it applies.
+        env = s.transact(
+            [{"op": "set_params", "instance": "m1",
+              "params": {"fingers": 4}}])
+        assert env.ok and s.design.instance("m1").params["fingers"] == 4
+        env = s.transact([{"op": "set_placement", "instance": "m1", "x": 2.0}])
+        assert env.ok
+
+    def test_invalid_high_impact_edit_is_rejected_not_confirmed(self):
+        # validation precedes the decision point — a broken edit gets
+        # diagnostics, not a pointless confirmation prompt.
+        s = DesignSession(_design())
+        env = s.transact([{"op": "remove_net", "net": "ghost"}])
+        assert env.status == "rejected"
+        assert env.diagnostics[0].code == "unknown-net"
+
+    def test_dry_run_needs_no_confirm(self):
+        s = DesignSession(_design())
+        env = s.transact([{"op": "remove_net", "net": "tail"}],
+                         dry_run=True)
+        assert env.ok and env.data["dry_run"] is True
+        assert any(n.name == "tail" for n in s.design.nets)
+
+    def test_mcp_envelope_and_compact_snapshot(self):
+        server = LayoutCanvasMCPServer()
+        opened = server.execute_tool(
+            "open_design", {"ir_json": _design().model_dump()})
+        sid = opened["session_id"]
+        server.sessions[sid].record_run("verify", {"passed": True})
+
+        res = server.execute_tool("transact", {
+            "session_id": sid,
+            "edits": [{"op": "remove_net", "net": "tail"}],
+            "expected_revision": 0})
+        assert res["status"] == "requires_confirmation"
+        assert res["data"]["impact"]["high"] is True
+        assert res["revision"] == 0
+        res2 = server.execute_tool("transact", {
+            "session_id": sid,
+            "edits": [{"op": "remove_net", "net": "tail"}],
+            "expected_revision": 0, "confirm": True})
+        assert res2["status"] == "ok" and res2["revision"] == 1
+
+        snap = server.execute_tool(
+            "snapshot", {"session_id": sid, "compact": True})
+        assert snap["data"]["compact"] is True
+        assert snap["data"]["runs"]["verify"]["count"] == 1
+        assert snap["data"]["runs"]["verify"]["last"][
+            "result_status"] == "passed"
 
 
 class TestConnectivity:
