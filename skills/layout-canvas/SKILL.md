@@ -81,14 +81,21 @@ envelope shape before hand-writing calls.
    verdicts are a report, not a gate).
 7. `run_testbench` — runs the design's `testbenches[]` (schematic or
    post-layout `extracted`) and evaluates `specs[]`. `spec_status` is
-   `pass` / `fail` / `unavailable` / `no_specs`; every spec carries a
+   `pass` / `fail` / `unavailable` / `error` / `no_specs`; every spec carries a
    human-readable `reason`. `run_simulation` with `source:"extracted"` and
    `probes:["tail"]` gives raw waveforms, including internal nodes
    (`xd1.tail`). An `analysis:"ac"` testbench drives an `ac 1` source on
    an input port and measures `db` (low-frequency gain) / `bw_3db` specs;
    `analysis:"tran"` enables `settling` (±`spec.tol` band, default 2 %),
    `slew` (max |dv/dt|) and `overshoot` (%) — all transient-only, reported
-   `unavailable` on op/ac/dc benches. A testbench may declare a `stress`
+   `unavailable` on op/ac/dc benches. A `tran` bench may also drive input
+   nodes from real Verilog: `digital:{rtl, signals:[{verilog_net, node,
+   vhi, vlo, delay}], timescale}` compiles the rtl (must be
+   self-contained — own clock/initial blocks and its own `$finish`) with
+   iverilog + `vvp`, dumps each listed net and replays it as a repeating
+   PWL source that *replaces* the node's auto-bias — fail-closed (no
+   iverilog → `unavailable`; compile/dump errors → `error`; `digital` on
+   op/ac/dc → `unavailable`). A testbench may declare a `stress`
    corner (`{"vdd":…,"temp":…}` — accelerated V/T, an HTOL-style proxy,
    not an aging model): the bench then runs nominal + stress, and
    `spec.on:"stress"` scores the stressed run while `on:"drift"` scores

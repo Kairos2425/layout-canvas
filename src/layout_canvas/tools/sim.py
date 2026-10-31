@@ -419,16 +419,26 @@ def default_stimulus(
     tran_stop: str = "5u",
     tran_step: str = "10n",
     out_file: str = "waves.dat",
+    digital_sources: dict[str, str] | None = None,
 ) -> str:
     """Auto-generated stimulus for the canvas Simulate button: instantiate
     the compiled top, bias every port by name heuristics, run .op/.tran/
-    .ac/.dc, and wrdata every port voltage for the UI to plot."""
+    .ac/.dc, and wrdata every port voltage for the UI to plot.
+
+    ``digital_sources`` maps node name → a complete source card (the PWL
+    cards from ``tools.mixed_signal.digital_stimulus``). A node present
+    there *replaces* the auto-bias for that node — the ``_bias_line`` for
+    the port (and the synthesized ``V_VDD``/``V_VSS`` rail when the rail
+    itself is digitally driven) is skipped so the node is never
+    double-driven."""
     nl = compile_netlist(design)
     m = re.search(
         rf"^\s*\.subckt\s+{re.escape(design.name)}\s+(?P<ports>.+?)\s*$",
         nl, re.MULTILINE)
     ports = m.group("ports").split() if m else [p.name for p in design.ports]
-    lines = [_bias_line(p, vdd) for p in ports]
+    dig = digital_sources or {}
+    dig_l = {n.lower() for n in dig}
+    lines = [_bias_line(p, vdd) for p in ports if p not in dig]
     # Supply-named nets *inside* the top subckt are SPICE-local nodes: the
     # auto-bias rails at top level cannot reach them unless the names are
     # declared .global (verified: without it X1.<net> pins sit at ~0 V via
@@ -449,10 +459,13 @@ def default_stimulus(
     if globals_:
         lines.insert(0, ".global " + " ".join(globals_))
     # The bias network references implicit rail nodes vdd/vss; if the design
-    # doesn't expose them as ports, source them so nothing floats.
-    if not any(p.lower() in ("vdd", "vcc") for p in ports):
+    # doesn't expose them as ports, source them so nothing floats — unless a
+    # digital source already drives that rail node.
+    if not any(p.lower() in ("vdd", "vcc") for p in ports) \
+            and not (dig_l & {"vdd", "vcc"}):
         lines.insert(0 if not globals_ else 1, f"V_VDD vdd 0 {vdd}")
-    if not any(p.lower() in ("vss", "gnd") for p in ports):
+    if not any(p.lower() in ("vss", "gnd") for p in ports) \
+            and not (dig_l & {"vss", "gnd"}):
         lines.insert(0 if not globals_ else 1, "V_VSS vss 0 0")
     drive = None
     if analysis in ("ac", "dc"):
@@ -460,6 +473,7 @@ def default_stimulus(
         if drive is not None:
             lines, drive = _apply_drive(lines, drive, vdd, analysis)
     lines.append(f"X1 {' '.join(ports)} {design.name}")
+    lines.extend(dig.values())
     lets, _labels, elems = _current_capture("\n".join(lines))
     vectors = " ".join(f"v({p})" for p in ports)
     if elems:
@@ -489,6 +503,7 @@ def simulate_auto(
     timeout: int = 120,
     workdir: str | Path | None = None,
     device_stress: dict[str, float] | None = None,
+    digital_sources: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """One-click simulation for the canvas: model prelude + auto stimulus +
     backend run + waveform extraction. Returns the SimResult fields plus
@@ -514,14 +529,38 @@ def simulate_auto(
     voltage source in the auto stimulus — the current the source
     *delivers* (positive = sourcing), so an EM-style budget is a plain
     ``max`` bound.
+
+    ``digital_sources`` (node → complete PWL/DC source card, as built by
+    ``tools.mixed_signal.digital_stimulus``) replaces the auto-bias on
+    its nodes — see ``default_stimulus``. Driveable nodes are the
+    compiled subckt's ports plus the implicit rails the stimulus can
+    synthesise (``_SUPPLY_TOKENS``); anything else is an ``error`` — a
+    digital signal must never silently drive a node that is not there.
     """
     root = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="lc_sim_"))
     root.mkdir(parents=True, exist_ok=True)
     prelude = default_model_prelude(design.pdk)
+    netlist = compile_netlist(design)
+    if digital_sources:
+        pm = re.search(
+            rf"^\s*\.subckt\s+{re.escape(design.name)}\s+(?P<ports>.+?)\s*$",
+            netlist, re.MULTILINE)
+        top_ports = pm.group("ports").split() if pm else [
+            p.name for p in design.ports]
+        allowed = set(top_ports) | set(_SUPPLY_TOKENS)
+        dead = sorted(n for n in digital_sources if n not in allowed)
+        if dead:
+            return {"status": "error",
+                    "errors": [
+                        "digital stimulus node(s) not driveable on the "
+                        "schematic deck: " + ", ".join(dead) +
+                        " — driveable nodes are the design ports ("
+                        + ", ".join(top_ports) + ") plus implicit rails "
+                        + ", ".join(sorted(_SUPPLY_TOKENS))]}
     stimulus = default_stimulus(
         design, vdd=vdd, analysis=analysis,
-        tran_stop=tran_stop, tran_step=tran_step, out_file="waves.dat")
-    netlist = compile_netlist(design)
+        tran_stop=tran_stop, tran_step=tran_step, out_file="waves.dat",
+        digital_sources=digital_sources)
     device_report: dict[str, Any] | None = None
     if device_stress:
         netlist, injected_models = _inject_device_stress(netlist, device_stress)
@@ -887,6 +926,7 @@ def simulate_extracted(
     timeout: int = 120,
     workdir: str | Path | None = None,
     device_stress: dict[str, float] | None = None,
+    digital_sources: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Post-layout simulation: compile → GDS → extract → simulate the
     extracted netlist. Fails closed on extraction errors. ``stimulus``
@@ -899,7 +939,14 @@ def simulate_extracted(
     ``device_stress``: same parametric aging-proxy keys as
     ``simulate_auto`` (``dvth_nmos``/``dvth_pmos``/``mu0_scale`` → BSIM4
     ``delvto``/``mulu0`` on the extracted MOS cards, plus the wrapper-
-    forwarding prelude patch; unwired wrappers → ``unavailable``)."""
+    forwarding prelude patch; unwired wrappers → ``unavailable``).
+
+    ``digital_sources`` (node → complete PWL/DC source card) replaces the
+    auto-bias on its nodes, exactly like ``simulate_auto`` — except the
+    driveable nodes are the *extracted* top-level nets: a node that does
+    not survive extraction is an ``error``. With a custom ``stimulus``
+    the cards are prepended to the caller text, but a custom source
+    already driving the same node is refused (never a double-drive)."""
     from layout_canvas.compiler.compile import compile_design
     from layout_canvas.tools.extract import extract_netlist
 
@@ -1022,14 +1069,45 @@ def simulate_extracted(
                 probe_vecs.append((label, vec))
     probe_names = [label for label, _ in probe_vecs]
 
+    dig = digital_sources or {}
+    dig_l = {n.lower() for n in dig}
+    if dig:
+        # Every digital node must resolve to a real top-level extracted
+        # net — a source on a phantom node drives nothing, silently.
+        dead = sorted(n for n in dig
+                      if not re.search(rf"\b{re.escape(n)}\b", top_text))
+        if dead:
+            return {"status": "error",
+                    "errors": [
+                        "digital stimulus node(s) not present as "
+                        "top-level extracted nets: " + ", ".join(dead)]}
+
     if stimulus:
         stimulus_text = stimulus.rstrip()
+        if dig:
+            # The custom text owns its sources; adding a PWL on a node it
+            # already drives would parallel two voltage sources — refuse.
+            conflicts = sorted(
+                n for n in dig
+                if re.search(rf"^[vViIrR]\S*\s+{re.escape(n)}\s",
+                             stimulus_text, re.MULTILINE))
+            if conflicts:
+                return {"status": "error",
+                        "errors": [
+                            "digital stimulus node(s) already driven by "
+                            "the custom stimulus — refusing to "
+                            "double-drive: " + ", ".join(conflicts)]}
+            stimulus_text = ("\n".join(dig.values()) + "\n"
+                             + stimulus_text)
         i_elems: list[str] = []
     else:
-        stimulus_lines = [_bias_line(p, vdd) for p in port_names]
-        if not any(p.lower() in ("vdd", "vcc") for p in port_names):
+        stimulus_lines = [_bias_line(p, vdd) for p in port_names
+                          if p not in dig]
+        if not any(p.lower() in ("vdd", "vcc") for p in port_names) \
+                and not (dig_l & {"vdd", "vcc"}):
             stimulus_lines.insert(0, f"V_VDD vdd 0 {vdd}")
-        if not any(p.lower() in ("vss", "gnd") for p in port_names):
+        if not any(p.lower() in ("vss", "gnd") for p in port_names) \
+                and not (dig_l & {"vss", "gnd"}):
             stimulus_lines.insert(0, "V_VSS vss 0 0")
         drive = None
         if analysis in ("ac", "dc"):
@@ -1037,6 +1115,8 @@ def simulate_extracted(
             if drive is not None:
                 stimulus_lines, drive = _apply_drive(
                     stimulus_lines, drive, vdd, analysis)
+        # Digital PWL sources stand in for the skipped auto-bias lines.
+        stimulus_lines += list(dig.values())
         # supply-branch currents ride the same wrdata row — i(v_<src>) is
         # the positive-sourcing current (see _supply_current_elements).
         i_elems = _supply_current_elements("\n".join(stimulus_lines))

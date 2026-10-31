@@ -262,6 +262,7 @@ A design carries named simulation testbenches with measurable specs:
   "vdd": 1.8,
   "stimulus": null,                 // extracted only
   "probes": ["tail"],               // extracted only
+  "digital": null,                  // tran only — Verilog → PWL (below)
   "specs": [
     {"name": "outp_op", "signal": "outp", "measure": "final",
      "min": 0.7, "max": 1.0, "unit": "V"},
@@ -316,6 +317,70 @@ with the same waves/status/spec_status shape (plus the applied
 `corner`); its `specs` list covers only the `stress`/`drift` entries,
 while the top-level `specs` rolls up every spec on its routed run.
 
+### Digital stimulus (mixed-signal tran)
+
+A `tran` testbench may carry a `digital` block: a self-contained Verilog
+control block is compiled with Icarus Verilog and run under `vvp` with a
+generated `_dump_tb.v`, and each listed net's transitions are replayed on
+its SPICE node as a repeating `PWL` voltage source:
+
+```json
+{"name": "tb_tran_digital", "source": "schematic", "analysis": "tran",
+ "vdd": 1.8,
+ "digital": {
+   "rtl": "module counter3; reg clk; reg [2:0] count;\n"
+          "  initial begin clk=0; count=0; forever #10 clk=~clk; end\n"
+          "  always @(posedge clk) count <= count + 1;\n"
+          "  initial begin #170; $finish; end\nendmodule\n",
+   "signals": [
+     {"verilog_net": "count[0]", "node": "inp", "vhi": 1.8, "vlo": 0.0},
+     {"verilog_net": "count[2]", "node": "inn"}],
+   "timescale": "1ns/1ps"},
+ "specs": [{"name": "outp_pp", "signal": "outp", "measure": "pp",
+            "min": 0.5, "max": 2.0, "unit": "V"}]}
+```
+
+Per-signal fields: `verilog_net` is any net/reg reachable under the rtl
+top (`count`, `count[0]`, `sub.q`) — it is digitised: `0` → `vlo`, any
+nonzero → `vhi` (use bit-selects for buses); `node` is the SPICE node the
+source drives; `vhi`/`vlo` default 1.8/0.0 V; `delay` (seconds) shifts
+every transition later. `timescale` (`"<unit>/<precision>"`, default
+`1ns/1ps`) is emitted as a `` `timescale`` directive on the written rtl
+file and the dump bench, and converts dump timestamps to seconds.
+
+**RTL contract:** the rtl must contain exactly one *top* module (a
+module no other module instantiates); it is instantiated unconnected —
+ports are legal but left floating, so the rtl must drive itself: its own
+clock/`initial` blocks and its own `$finish` end the run (a ~20 µs
+watchdog bounds runaway sims; `result["digital"]["stopped_by"]` reports
+`"rtl"` or `"watchdog"`). The generated wrapper adds no stimulus of its
+own. `x`/`z` samples hold the previous defined level (`vlo` before the
+first) and are counted in `result["digital"]["unknown_samples"]`.
+
+**Precedence:** the PWL source *replaces* whatever the auto-bias would
+have put on that node — for a port the `V_<port>`/bias line is skipped,
+for an implicit `vdd`/`vss` rail the synthesized `V_VDD`/`V_VSS` card is
+skipped — never a parallel double-drive. On an `extracted` bench with a
+custom `stimulus`, the PWL cards are prepended; a custom source already
+driving the same node is refused (`error`). The driveable set is the
+schematic deck's ports + implicit rails, resp. the extracted top-level
+nets — anything else is an `error`, because a digital source that
+silently drives nothing is forbidden.
+
+**Fail-closed:** no iverilog runner → the run and every spec report
+`unavailable` ("no verilog simulator — tried: …"); an rtl compile or
+nonzero `vvp` exit → `error` with the tool's own message; a listed
+`verilog_net` that never reaches the dump → `error` naming it. `digital`
+on an `op`/`ac`/`dc` bench reports all specs `unavailable` — "digital
+stimulus only applies to tran". `run_testbench(..., iverilog=<cmd>)`
+overrides the runner; discovery order is `LAYOUT_CANVAS_IVERILOG` →
+`iverilog` on PATH → `wsl -d <distro>` (same as `verilog --lint`).
+The run result carries `result["digital"]` with the emitted source
+lines (`lines`), the parsed per-net series (`series`) and
+`raw_dump_lines` for audit. `examples/ota_digital.json` is a working
+fixture. Spec entries may now also report status `error` (infrastructure
+failures), and `spec_status` rolls it up as `error`.
+
 **Auto-bias supplies:** the generated stimulus drives top-level `vdd`/`vss`
 nodes and emits `.global` for every supply-named net used inside the
 design subckt — SPICE subckt node names are local, so without `.global`
@@ -323,10 +388,12 @@ the interior rails would never see the bias sources. For extraction the
 compiler stamps a GDS label on each supply-named interior net, so the
 PEX netlist keeps its IR names and the same bias sources reach it.
 
-Each spec resolves to `pass` / `fail` / `unavailable` with a `reason` —
-fail-closed: a missing simulator or missing signal is `unavailable`
-(with the available signal names listed), never a silent pass. Per-bench
-rollup `spec_status`: `fail` > `unavailable` > `pass` > `no_specs`.
+Each spec resolves to `pass` / `fail` / `unavailable` / `error` with a
+`reason` — fail-closed: a missing simulator or missing signal is
+`unavailable` (with the available signal names listed), an
+infrastructure-level run failure is `error`, never a silent pass.
+Per-bench rollup `spec_status`: `error` > `fail` > `unavailable` >
+`pass` > `no_specs`.
 
 Run them via:
 

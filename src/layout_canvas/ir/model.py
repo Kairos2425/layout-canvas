@@ -114,6 +114,48 @@ class Spec(_Strict):
         return self
 
 
+class DigitalSignal(_Strict):
+    """One Verilog net converted into a SPICE PWL drive on one node."""
+
+    verilog_net: str = Field(
+        min_length=1,
+        description="Wire/reg name inside the rtl to dump — a plain net "
+                    "name or a select like 'count[0]'; may also be a "
+                    "hierarchical path under the rtl top (e.g. 'sub.q')",
+    )
+    node: str = Field(
+        min_length=1,
+        description="SPICE node the converted PWL source drives",
+    )
+    vhi: float = 1.8
+    vlo: float = 0.0
+    # Constant offset added to every transition time, in seconds.
+    delay: float = 0.0
+
+
+class DigitalStimulus(_Strict):
+    """A Verilog control block whose dumped nets drive SPICE nodes.
+
+    ``rtl`` must contain exactly one top-level (uninstantiated) module —
+    that module is instantiated unconnected by a generated dump bench, so
+    it must be **self-contained**: it provides its own clock/initial
+    blocks and ends the run with ``$finish`` (a watchdog bounds runaway
+    simulations). The wrapper adds no stimulus of its own. Digital
+    stimulus only applies to ``analysis="tran"`` testbenches.
+    """
+
+    rtl: str = Field(min_length=1, description="Verilog source text")
+    signals: list[DigitalSignal] = Field(min_length=1)
+    timescale: str = Field(
+        default="1ns/1ps",
+        pattern=r"^\s*\d+(\.\d+)?\s*(fs|ps|ns|us|ms|s)\s*/"
+                r"\s*\d+(\.\d+)?\s*(fs|ps|ns|us|ms|s)\s*$",
+        description="'<unit>/<precision>' applied to the written rtl "
+                    "file and the generated dump bench — dump timestamps "
+                    "come out in <unit> and convert to seconds",
+    )
+
+
 class Testbench(_Strict):
     """A named simulation setup: source, analysis and spec checks."""
 
@@ -140,6 +182,10 @@ class Testbench(_Strict):
     stimulus: str | None = None
     probes: list[str] = Field(default_factory=list)
     specs: list[Spec] = Field(default_factory=list)
+    # Mixed-signal stimulus: a self-contained Verilog control block whose
+    # listed nets are dumped and replayed as PWL voltage sources on the
+    # named nodes (tran only — see tools/mixed_signal.py).
+    digital: DigitalStimulus | None = None
 
     @model_validator(mode="after")
     def _check_source_args(self) -> Testbench:
@@ -152,6 +198,12 @@ class Testbench(_Strict):
             raise ValueError(
                 f"testbench {self.name}: probes only apply to source='extracted'"
             )
+        if self.digital is not None:
+            nodes = [s.node for s in self.digital.signals]
+            if len(set(nodes)) != len(nodes):
+                raise ValueError(
+                    f"testbench {self.name}: duplicate digital node(s) — "
+                    "one PWL source per node")
         names = [s.name for s in self.specs]
         if len(set(names)) != len(names):
             raise ValueError(f"testbench {self.name}: duplicate spec names")

@@ -189,6 +189,14 @@ _NO_CORNER_REASON = (
     "the testbench declared none")
 
 
+def _run_entry_status(result: dict[str, Any]) -> str:
+    """Spec-entry status when a run dict cannot produce a measurement:
+    ``error`` for infrastructure-level failures (runner crash, a digital
+    stimulus that never built), ``unavailable`` otherwise."""
+    return "error" if str(result.get("status", "")) == "error" \
+        else "unavailable"
+
+
 def evaluate_specs(
     result: dict[str, Any],
     specs: list[Spec],
@@ -234,6 +242,7 @@ def evaluate_specs(
                 continue
             value, reason = _measure_one(stress, spec, analysis=analysis)
             if reason is not None:
+                entry["status"] = _run_entry_status(stress)
                 entry["reason"] = f"stress run: {reason}"
                 out.append(entry)
                 continue
@@ -248,6 +257,11 @@ def evaluate_specs(
             n_val, n_reason = _measure_one(result, spec, analysis=analysis)
             s_val, s_reason = _measure_one(stress, spec, analysis=analysis)
             if n_reason is not None or s_reason is not None:
+                entry["status"] = (
+                    "error" if "error" in (
+                        _run_entry_status(result),
+                        _run_entry_status(stress))
+                    else "unavailable")
                 entry["reason"] = "; ".join(
                     f"{label}: {r}" for label, r in
                     (("nominal", n_reason), ("stress", s_reason)) if r)
@@ -259,6 +273,7 @@ def evaluate_specs(
         else:
             value, reason = _measure_one(result, spec, analysis=analysis)
             if reason is not None:
+                entry["status"] = _run_entry_status(result)
                 entry["reason"] = reason
                 out.append(entry)
                 continue
@@ -271,6 +286,8 @@ def _spec_status(results: list[dict[str, Any]]) -> str:
     if not results:
         return "no_specs"
     statuses = {r["status"] for r in results}
+    if "error" in statuses:
+        return "error"
     if "fail" in statuses:
         return "fail"
     if "unavailable" in statuses:
@@ -293,6 +310,7 @@ def run_testbench(
     *,
     executable: str | None = None,
     workdir: str | Path | None = None,
+    iverilog: str | None = None,
 ) -> dict[str, Any]:
     """Run one named testbench and evaluate its specs.
 
@@ -310,6 +328,19 @@ def run_testbench(
     ``on="stress"``/``"drift"`` entries. The top-level ``specs`` list
     carries every spec evaluated on its routed run and ``spec_status``
     rolls up both corners. No simulator → every entry ``unavailable``.
+
+    A testbench carrying ``digital`` (mixed-signal stimulus — see
+    ``tools/mixed_signal.py``) applies to ``analysis="tran"`` only: on
+    ``op``/``ac``/``dc`` every spec reports ``unavailable`` ("digital
+    stimulus only applies to tran"). On tran the Verilog runs first —
+    once, shared by nominal and stress legs — and its PWL sources replace
+    the auto-bias on their nodes inside ``simulate_auto``/
+    ``simulate_extracted``. Fail-closed: no iverilog → run ``unavailable``
+    and every spec ``unavailable``; a compile/vvp failure or a listed
+    net that never reached the dump → run ``error`` and every spec
+    ``error`` with the tool's own message. ``iverilog`` overrides the
+    runner the way ``executable`` overrides ngspice (else
+    ``LAYOUT_CANVAS_IVERILOG``/PATH/WSL via ``tools/verilog.py``).
     """
     from layout_canvas.tools.sim import (
         DEVICE_STRESS_KEYS,
@@ -319,6 +350,44 @@ def run_testbench(
 
     tb = _testbench(design, name)
     exe = executable or os.environ.get("LAYOUT_CANVAS_NGSPICE")
+
+    digital_lines: dict[str, str] | None = None
+    digital_info: dict[str, Any] | None = None
+    if tb.digital is not None:
+        if tb.analysis != "tran":
+            result = {
+                "status": "unavailable",
+                "errors": [
+                    f"testbench {tb.name}: digital stimulus only applies "
+                    f"to tran (analysis={tb.analysis!r})"],
+                "testbench": tb.name,
+                "log_path": None, "deck_path": None,
+                "waves": {}, "sweep": []}
+            specs = evaluate_specs(result, tb.specs, analysis=tb.analysis)
+            result["specs"] = specs
+            result["spec_status"] = _spec_status(specs)
+            return result
+        from layout_canvas.tools.mixed_signal import digital_stimulus
+        dig_dir = Path(workdir) / "digital" if workdir else None
+        dig = digital_stimulus(tb, executable=iverilog, workdir=dig_dir)
+        if dig["status"] != "ok":
+            result = {
+                "status": dig["status"],  # "unavailable" | "error"
+                "errors": [dig["reason"]],
+                "testbench": tb.name,
+                "log_path": None, "deck_path": None,
+                "waves": {}, "sweep": [],
+                "digital": dig}
+            specs = evaluate_specs(result, tb.specs, analysis=tb.analysis)
+            result["specs"] = specs
+            result["spec_status"] = _spec_status(specs)
+            return result
+        digital_lines = dig["lines"]
+        digital_info = dig
+
+    # Only keyword the digital lines when a digital bench actually ran —
+    # the plain call shape is unchanged for every other testbench.
+    _dig_kw = {"digital_sources": digital_lines} if digital_lines else {}
 
     def _run(vdd: float, temp: float | None, wdir: Any,
              device_stress: dict[str, float] | None = None) -> dict[str, Any]:
@@ -333,6 +402,7 @@ def run_testbench(
                 executable=exe,
                 workdir=wdir,
                 device_stress=device_stress,
+                **_dig_kw,
             )
         return simulate_auto(
             design,
@@ -342,6 +412,7 @@ def run_testbench(
             executable=exe,
             workdir=wdir,
             device_stress=device_stress,
+            **_dig_kw,
         )
 
     stressed = bool(tb.stress)
@@ -376,6 +447,9 @@ def run_testbench(
         if result.get(key):
             result[key] = str(result[key])
     result["testbench"] = tb.name
+    if digital_info is not None:
+        # audit trail: the emitted PWL lines + parsed transition series
+        result["digital"] = digital_info
     result["specs"] = specs
     result["spec_status"] = _spec_status(specs)
     if stress_res is not None:

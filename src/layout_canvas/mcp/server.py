@@ -1239,7 +1239,7 @@ class LayoutCanvasMCPServer:
                     "sim_status": [r.get("status") for r in runs],
                     "spec_counts": [
                         {s: sum(1 for e in r.get("specs", []) if e["status"] == s)
-                         for s in ("pass", "fail", "unavailable")}
+                         for s in ("pass", "fail", "unavailable", "error")}
                         for r in runs
                     ],
                 })

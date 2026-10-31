@@ -115,3 +115,25 @@ ViraStack Custom Layout 第三方实测翻车点——DRC/LVS/ERC 全过但无�
       instance 须成对）、敏感 net（高阻/低阻节点）、参数取值理由；
       import_netlist 已能推断 polarity/拓扑，结论落进 intent 而非散落
       diagnostics。来源：ViraStack对比-20261016 总报告 §五-2。（已落本轮）
+
+## Landed beyond queue
+
+- [x] **Mixed-signal stimulus path（数模混合激励）**。`Testbench.digital`：
+      {rtl, signals:[{verilog_net, node, vhi, vlo, delay}], timescale} ——
+      自足 Verilog（自带 clock/initial + $finish；唯一 top 由 wrapper
+      `module dut()` 空接实例化，wrapper 不产生激励，20µs 看门狗兜底）
+      经 iverilog 编译 + vvp 跑生成的 `_dump_tb.v`（t=0 快照 +
+      per-net `always @` $display → `LC_DUMP <t> <net> <v>`），解析成
+      (t,v) 序列并数字化（0→vlo、非零→vhi、x/z 沿用上值并计数）为
+      `V_dig_<node> <node> 0 PWL(... r 0)` 周期源，**替换**该节点
+      auto-bias（不并驱；extracted+自定义 stimulus 撞节点 → error）。
+      仅 tran；op/ac/dc → 全部 spec `unavailable`；无 iverilog →
+      `unavailable`；编译/vvp/漏报信号/不存在节点 → `error`（新增 spec
+      entry/spec_status 的 error 态）。iverilog 发现复用
+      tools/verilog.py `_runner_candidates` + 新共享
+      `_compile_and_run`（executable= → LAYOUT_CANVAS_IVERILOG → PATH
+      → wsl -d，/mnt 路径翻译）。tools/mixed_signal.py；
+      examples/ota_digital.json + tests/test_mixed_signal.py（21 项）。
+      实测 ngspice-47 + iverilog 12.0(wsl)：3-bit counter 0..170ns
+      周期驱动 ota inp/inn，inp 满摆 0/1.8V，outp pp=1.482V、
+      outn pp=1.520V，spec_status=pass。

@@ -1,0 +1,86 @@
+{
+    "ir_version": "0.1",
+    "name": "ota_digital",
+    "pdk": "sky130",
+    "instances": [
+        {
+            "id": "DPAIR",
+            "block": "sky130.diff_pair",
+            "params": {
+                "fingers": 4,
+                "width": 4.0,
+                "length": 1.0,
+                "tail_width": 4.0
+            },
+            "placement": {"x": 0.0, "y": 10.0, "rotation": 0, "mirror": false}
+        },
+        {
+            "id": "LOAD",
+            "block": "sky130.current_mirror",
+            "params": {
+                "fingers": 4,
+                "width": 1.5,
+                "length": 0.5,
+                "type": "pmos"
+            },
+            "placement": {"x": 5.0, "y": 20.0, "rotation": 0, "mirror": true}
+        },
+        {
+            "id": "TAIL",
+            "block": "sky130.current_mirror",
+            "params": {
+                "fingers": 4,
+                "width": 2.0,
+                "length": 0.5,
+                "type": "nmos"
+            },
+            "placement": {"x": 15.0, "y": 20.0, "rotation": 0, "mirror": true}
+        }
+    ],
+    "nets": [
+        {"name": "vdd", "pins": ["LOAD.vss", "TAIL.gate"]},
+        {"name": "outp", "pins": ["DPAIR.outp", "LOAD.in", "LOAD.gate"]},
+        {"name": "outn", "pins": ["DPAIR.outn", "LOAD.out"]},
+        {"name": "tail", "pins": ["DPAIR.tail", "TAIL.in"]},
+        {"name": "vss", "pins": ["DPAIR.vss", "TAIL.out", "TAIL.vss"]}
+    ],
+    "ports": [
+        {"name": "inp", "pin": "DPAIR.inp", "direction": "input"},
+        {"name": "inn", "pin": "DPAIR.inn", "direction": "input"},
+        {"name": "outp", "pin": "DPAIR.outp", "direction": "output"},
+        {"name": "outn", "pin": "DPAIR.outn", "direction": "output"}
+    ],
+    "testbenches": [
+        {
+            "name": "tb_tran_digital",
+            "source": "schematic",
+            "analysis": "tran",
+            "vdd": 1.8,
+            "digital": {
+                "rtl": "module counter3;\n    reg clk;\n    reg [2:0] count;\n    initial begin\n        clk = 0; count = 0;\n        forever #10 clk = ~clk;\n    end\n    always @(posedge clk) count <= count + 1;\n    initial begin #170; $finish; end\nendmodule\n",
+                "signals": [
+                    {"verilog_net": "count[0]", "node": "inp",
+                     "vhi": 1.8, "vlo": 0.0},
+                    {"verilog_net": "count[2]", "node": "inn",
+                     "vhi": 1.8, "vlo": 0.0}
+                ],
+                "timescale": "1ns/1ps"
+            },
+            "specs": [
+                {"name": "inp_reach_vhi", "signal": "inp", "measure": "max",
+                 "min": 1.79, "max": 1.81, "unit": "V"},
+                {"name": "inp_reach_vlo", "signal": "inp", "measure": "min",
+                 "min": -0.01, "max": 0.01, "unit": "V"},
+                {"name": "outp_pp", "signal": "outp", "measure": "pp",
+                 "min": 0.5, "max": 2.0, "unit": "V"},
+                {"name": "outn_pp", "signal": "outn", "measure": "pp",
+                 "min": 0.5, "max": 2.0, "unit": "V"}
+            ]
+        }
+    ],
+    "meta": {
+        "author": "layout-canvas",
+        "description": "OTA lab analog side (same instances/nets as ota_lab) driven by a mixed-signal digital testbench: a 3-bit Verilog counter is compiled with iverilog, its count[0]/count[2] transitions dumped by a generated _dump_tb.v and replayed as repeating PWL sources on ports inp/inn (auto-bias replaced).",
+        "lab_measured": "2026-11-09 ngspice_con-47 + iverilog 12.0 (wsl Ubuntu-24.04): counter pattern 0..170ns repeats every 170ns over tran 10n 5u; inp reaches 1.8/0.0 exactly; outp pp=1.482 V, outn pp=1.520 V — the digital edge trains switch the diff pair."
+    }
+}

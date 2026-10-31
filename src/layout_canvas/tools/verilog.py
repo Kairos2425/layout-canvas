@@ -251,14 +251,22 @@ def _exec_failed(proc: subprocess.CompletedProcess) -> bool:
         _EXEC_ERR.search(proc.stderr or ""))
 
 
-def _run_candidate(cand: dict, stub_path: Path, tb_path: Path,
-                   out_path: Path, timeout: int) -> dict[str, Any] | None:
-    """Run iverilog + vvp under one candidate. ``None`` = never executed."""
+def _compile_and_run(cand: dict, sources: list[Path], out_path: Path,
+                     timeout: int) -> dict[str, Any] | None:
+    """Compile ``sources`` with iverilog, then run the image under vvp.
+
+    ``None`` = the runner never executed (missing binary/distro — the
+    caller tries the next candidate). Otherwise a dict of raw results —
+    ``compile_rc``/``compile_output``/``compile_ok`` (rc 0 *and* the
+    image file exists) plus ``vvp_rc``/``vvp_output``/``vvp_ok``
+    (``vvp_rc`` stays ``None`` when the compile failed). Interpreting
+    these into a verdict is the caller's job.
+    """
     def conv(p: Path) -> str:
         return _wsl_path(p) if cand["wsl"] else str(p)
 
-    cmd = [*cand["argv"], "-o", conv(out_path), conv(stub_path),
-           conv(tb_path)]
+    cmd = [*cand["argv"], "-o", conv(out_path),
+           *[conv(s) for s in sources]]
     try:
         comp = subprocess.run(cmd, capture_output=True, text=True,
                               timeout=timeout, check=False)
@@ -266,27 +274,49 @@ def _run_candidate(cand: dict, stub_path: Path, tb_path: Path,
         return None
     if _exec_failed(comp):
         return None
-    output = comp.stdout + comp.stderr
-    if comp.returncode != 0:
-        return {"status": "fail", "reason": "iverilog compile failed",
-                "output": output.strip()}
-    if not out_path.is_file():
-        return {"status": "fail",
-                "reason": "iverilog produced no output image",
-                "output": output.strip()}
-
+    res: dict[str, Any] = {
+        "compile_rc": comp.returncode,
+        "compile_output": comp.stdout + comp.stderr,
+        "compile_ok": comp.returncode == 0 and out_path.is_file(),
+        "vvp_rc": None,
+        "vvp_output": "",
+        "vvp_ok": False,
+    }
+    if not res["compile_ok"]:
+        if comp.returncode == 0 and not out_path.is_file():
+            res["compile_output"] += "\niverilog produced no output image"
+        return res
     vcmd = [*cand["vvp"], conv(out_path)]
     try:
         run = subprocess.run(vcmd, capture_output=True, text=True,
                              timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    output += run.stdout + run.stderr
     if _exec_failed(run):
         # vvp never ran (missing binary/distro) — another candidate may
         # still work; the check as a whole is unavailable if none do.
         return None
-    if run.returncode != 0:
+    res["vvp_rc"] = run.returncode
+    res["vvp_ok"] = run.returncode == 0
+    res["vvp_output"] = run.stdout + run.stderr
+    return res
+
+
+def _run_candidate(cand: dict, stub_path: Path, tb_path: Path,
+                   out_path: Path, timeout: int) -> dict[str, Any] | None:
+    """Run iverilog + vvp under one candidate. ``None`` = never executed."""
+    res = _compile_and_run(cand, [stub_path, tb_path], out_path, timeout)
+    if res is None:
+        return None
+    if res["compile_rc"] != 0:
+        return {"status": "fail", "reason": "iverilog compile failed",
+                "output": res["compile_output"].strip()}
+    if not res["compile_ok"]:
+        return {"status": "fail",
+                "reason": "iverilog produced no output image",
+                "output": res["compile_output"].strip()}
+    output = res["compile_output"] + res["vvp_output"]
+    if not res["vvp_ok"]:
         return {"status": "fail", "reason": "vvp run failed",
                 "output": output.strip()}
     return {"status": "pass",
