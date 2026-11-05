@@ -24,10 +24,21 @@ refs in design order).  The tolerance is the layout snap grid
 (``blocks/*/geom.snap`` default 0.005 µm — one grid step); real deviations
 are always reported, never silently accepted.
 
-What this does NOT inspect: intra-cell geometry — finger
-interdigitation/ABBA patterns, dummy devices, shared-centroid merges,
-parasitic or routing symmetry, guard-ring continuity.  Those are
-block-internal or net-level properties, not instance-bbox facts.
+Intra-cell geometry is inspected too — but only for ``match``/``symmetric``
+members: ``tools/patterns.inspect_intracell`` opens the cell boundary on
+the same LayoutToNetlist extraction LVS uses and measures the finger
+interdigitation (gate-net pattern like ``ABBAABBA``), the non-supply gate
+nets' common-centroid deviation, and edge fingers on supply/unlabeled
+nets.  A *measured* centroid deviation over tolerance on a declared
+matching constraint fails the check — the same standard as every other
+measured deviation; an intra-cell inspection that cannot run
+(``unavailable``) or is inconclusive (``structural``: single gate net,
+unlabeled edge nets) never changes the verdict.
+
+What this still does NOT inspect: S/D-segment ownership order, shared-
+centroid merges, parasitic or routing symmetry, guard-ring continuity,
+and dummy fingers strapped onto a signal gate net (geometrically
+indistinguishable from active fingers — inference, not inspection).
 
 Fail-closed contract: a check that cannot be evaluated (missing axis,
 unresolved block, unpaired component) reports ``unavailable`` with the
@@ -43,6 +54,7 @@ from typing import Any
 from layout_canvas.blocks import base
 from layout_canvas.compiler.compile import compile_design
 from layout_canvas.ir.model import Constraint, ConstraintType, Design
+from layout_canvas.tools.patterns import _resolve_bboxes  # re-export
 
 # Placement/geometry is snapped to the 0.005 µm grid (blocks/*/geom.snap,
 # PDK descriptor ``grid_um``) — deviations below one grid step are "on
@@ -54,35 +66,19 @@ _NOT_CHECKED_NOTE = (
     " — not inspected (structural-level check)"
 )
 
+# Honest residue clause appended whenever the intra-cell inspection ran:
+# it bounds what the measurement does NOT cover so "intra-cell: ABBA"
+# is never read as "everything inside the cell was checked".
+_INTRACELL_RESIDUAL = (
+    "intra-cell residue: S/D-segment order, routing/parasitic symmetry "
+    "and signal-net-strapped dummies remain uninspected"
+)
+
 
 def _result(check_id: str, ctype: str, instances: list[str], status: str,
             measured: dict[str, Any], note: str) -> dict[str, Any]:
     return {"id": check_id, "type": ctype, "instances": instances,
             "status": status, "measured": measured, "note": note}
-
-
-def _resolve_bboxes(design: Design, component: Any) -> dict[str, list[float]]:
-    """Map instance ids to placed ``[left, bottom, right, top]`` in µm.
-
-    Same positional pairing as ``web/app.py::_instance_bboxes``:
-    ``compile_design`` inserts one ref per design instance in order, so
-    ``component.insts`` aligns 1:1.  A component that does not carry
-    exactly that many refs is not this design's — refuse rather than pair
-    wrongly.
-    """
-    if component is None:
-        component = compile_design(design)
-    insts = list(component.insts)
-    if len(insts) != len(design.instances):
-        raise ValueError(
-            f"component has {len(insts)} refs but design lists "
-            f"{len(design.instances)} instances — cannot pair bboxes")
-    boxes: dict[str, list[float]] = {}
-    for inst, ref in zip(design.instances, insts, strict=True):
-        bb = ref.bbox()
-        boxes[inst.id] = [float(bb.left), float(bb.bottom),
-                          float(bb.right), float(bb.top)]
-    return boxes
 
 
 # ---------------------------------------------------------------------------
@@ -492,13 +488,78 @@ def _intent_coverage(design: Design) -> dict[str, Any] | None:
     }
 
 
-def check_constraints(design: Design, component: Any | None = None
+def _attach_intracell(chk: dict[str, Any], c: Constraint,
+                      ic: dict[str, Any]) -> None:
+    """Attach ``inspect_intracell`` evidence to a match/symmetric check.
+
+    The check keeps its structural verdict; a *measured* intra-cell
+    centroid deviation beyond ``TOL_UM`` upgrades it to ``fail`` (declared
+    matching intent is provably broken — the same standard as a measured
+    pitch/mirror violation).  ``unavailable``/``structural`` evidence
+    never invents a verdict — it is attached and noted.
+    """
+    instances = ic.get("instances") or {}
+    members: dict[str, Any] = {}
+    warnings: list[str] = []
+    frags: list[str] = []
+    for iid in c.instances:
+        e = instances.get(iid)
+        if e is None:
+            e = {"instance": iid, "fingers": 0, "status": "unavailable",
+                 "note": ic.get("reason")
+                 or "instance absent from inspection report"}
+        members[iid] = e
+        dev = e.get("centroid_deviation_um")
+        pattern = e.get("pattern") or "—"
+        if dev is not None:
+            tag = "" if dev <= TOL_UM else " (EXCEEDS tol)"
+            frags.append(f"{iid} {pattern} dev={dev:.4f}µm{tag}")
+            if dev > TOL_UM:
+                warnings.append(
+                    f"{iid}: intra-cell gate-net centroid deviation "
+                    f"{dev:.4f}µm exceeds tolerance {TOL_UM}µm — "
+                    "common-centroid broken on a declared "
+                    "matching constraint")
+        elif e.get("status") == "structural":
+            frags.append(f"{iid} {pattern} no centroid pair")
+        else:
+            short = (e.get("note") or "intra-cell not determinable")[:80]
+            frags.append(f"{iid} not determinable ({short})")
+    detail: dict[str, Any] = {"status": ic.get("status", "unavailable"),
+                              "instances": members, "warnings": warnings}
+    if ic.get("unassigned_fingers"):
+        detail["unassigned_fingers"] = ic["unassigned_fingers"]
+    chk["intracell"] = detail
+    if warnings:
+        chk["status"] = "fail"
+    note = chk["note"]
+    if ic.get("status") != "ok":
+        replacement = (f"intra-cell pattern/dummy not determinable "
+                       f"({ic.get('reason', 'unavailable')})")
+        if _NOT_CHECKED_NOTE in note:
+            note = note.replace(_NOT_CHECKED_NOTE, replacement)
+        else:
+            note = f"{note}; {replacement}"
+    else:
+        summary = f"intra-cell: {'; '.join(frags)}"
+        if _NOT_CHECKED_NOTE in note:
+            note = note.replace(_NOT_CHECKED_NOTE, summary)
+        else:
+            note = f"{note}; {summary}"
+        note = f"{note}; {_INTRACELL_RESIDUAL}"
+    chk["note"] = note
+
+
+def check_constraints(design: Design, component: Any | None = None,
+                      extraction: Any | None = None
                       ) -> dict[str, Any]:
     """Evaluate every declared ``Constraint`` on the placed geometry.
 
     ``component`` may carry the already-compiled ``gf.Component`` (as
     ``verify_design`` does) — when omitted the design is compiled once
-    here.  Returns ``{status, checks, tolerance_um, note}`` with status ∈
+    here.  ``extraction`` may carry that call's ``ExtractionResult`` so
+    the intra-cell inspection reuses the same LayoutToNetlist run.  Returns
+    ``{status, checks, tolerance_um, note}`` with status ∈
     pass | fail | unavailable | not_applicable.  ``not_applicable`` means
     the design declared nothing — it is *not* a pass.
     """
@@ -510,6 +571,8 @@ def check_constraints(design: Design, component: Any | None = None
 
     checks: list[dict[str, Any]] = []
     try:
+        if component is None:
+            component = compile_design(design)
         boxes = _resolve_bboxes(design, component)
     except Exception as exc:
         for i, c in enumerate(design.constraints):
@@ -543,6 +606,22 @@ def check_constraints(design: Design, component: Any | None = None
             checks.append(_result(
                 check_id, str(c.type), list(c.instances), "unavailable",
                 {}, f"evaluation error: {exc}"))
+
+    # Intra-cell finger-pattern inspection for match/symmetric members —
+    # one extraction serves every matching check; a *measured* centroid
+    # deviation escalates the check to fail, inconclusive data is only
+    # reported (fail-closed: missing evidence never flips a pass).
+    if any(c.type in _MATCHING_TYPES for c in design.constraints):
+        try:
+            from layout_canvas.tools.patterns import inspect_intracell
+            ic = inspect_intracell(design, component=component,
+                                   extraction=extraction)
+        except Exception as exc:
+            ic = {"status": "unavailable", "instances": {},
+                  "reason": f"intra-cell inspection error: {exc}"}
+        for c, chk in zip(design.constraints, checks, strict=True):
+            if c.type in _MATCHING_TYPES:
+                _attach_intracell(chk, c, ic)
 
     statuses = {chk["status"] for chk in checks}
     if "fail" in statuses:

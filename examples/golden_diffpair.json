@@ -162,8 +162,10 @@
     "measured_match_pitch_um": "16.4 x 0",
     "measured_match_max_dev_um": 0.0,
     "measured_align_center_x_dev_um": 0.0,
+    "measured_intracell_pattern": "ABBAABBA",
+    "measured_intracell_centroid_dev_um": 0.0,
     "guard_ring_scope": "GR ptap ring inner cavity 33.4 x 26.51 um centred at (0, 4.385) encloses the placed bboxes of DP_L, DP_R, LOAD and TAIL with >=0.8 um clearance (asserted geometrically in tests/test_golden_sample.py). Each device cell additionally carries its own internal contacted ptap ring. Honest caveat: the guard-ring generator floods a solid psdm implant polygon across the cavity — a generator simplification outside the checked rule set; extraction and LVS are unaffected.",
-    "not_demonstrated": "Intra-cell finger interdigitation / ABBA order / dummy completeness (block-internal, not inspected by the constraint checker), parasitic or routing symmetry, guard-ring continuity under a full foundry deck, ESD clamps (none present — esd items report unavailable).",
+    "not_demonstrated": "Gate-finger interdigitation and common-centroid deviation ARE now inspected inside each match/symmetric member cell (intracell detail: both diff_pair cells measure ABBAABBA over inp/inn, centroid deviation 0.0000µm). Still not inspected: S/D-segment ownership order, dummies strapped to a signal gate net (geometrically indistinguishable from active fingers), parasitic or routing symmetry, guard-ring continuity under a full foundry deck, ESD clamps (none present — esd items report unavailable).",
     "vss_note": "No routed vss net: every vss-named pin joins the global substrate net through the contacted ptap rings by construction (extraction confirms the merged vss cluster); GR.tap is declared on net vss to record the ring-bias intent.",
     "routing_note": "nets[] declaration order puts the tall low-pin-y risers (vbn, tail) first so they claim detour channels before the crowded mid rows fill — the analog router allocates one detour channel per net."
   }

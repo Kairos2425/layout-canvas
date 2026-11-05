@@ -48,7 +48,7 @@ def verify_design(design: Design) -> dict[str, Any]:
     for k, v in list(drc_d.items()):
         if isinstance(v, Path):
             drc_d[k] = str(v)
-    quality = check_constraints(design, component=comp)
+    quality = check_constraints(design, component=comp, extraction=ext)
     return {
         "design": design.name,
         "pdk": design.pdk,

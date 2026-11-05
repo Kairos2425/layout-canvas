@@ -208,10 +208,16 @@ A clean `verify_design` means the layout is *physically legal* and that
 any **declared** placement-level constraints hold — not that it is a
 good analog layout. The `quality` stage machine-checks `symmetric`,
 `match`, `order`, `align` and `abut` constraints against placed instance
-bboxes; it does NOT inspect intra-cell finger
-interdigitation/ABBA/dummy patterns, shared-centroid merges, parasitic
-or routing symmetry, guard-ring continuity or shielding, and a design
-with no declared constraints gets `not_applicable` — never a pass. Treat
+bboxes; for `match`/`symmetric` members it also attaches `intracell`
+evidence measured on the extraction: the gate-finger interdigitation
+pattern verbatim (e.g. `ABBAABBA`), the non-supply gate nets'
+common-centroid deviation (a measured over-tolerance deviation *fails*
+the declared constraint) and edge fingers on supply/unlabeled nets. It
+does NOT inspect S/D-segment ownership order, shared-centroid merges,
+parasitic or routing symmetry, guard-ring continuity, shielding, or
+dummies strapped onto a signal gate net (geometrically indistinguishable
+from active fingers), and a design with no declared constraints gets
+`not_applicable` — never a pass. Treat
 everything outside the declared, measured set as review items you must
 reason about and state, not as things `passed: true` covers. A design
 that passes DRC/LVS but scatters matched devices or leaves the guard

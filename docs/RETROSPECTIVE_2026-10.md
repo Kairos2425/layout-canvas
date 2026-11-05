@@ -78,8 +78,15 @@ All numbers below are measured, not aspirational.
 - **ESD strike simulation**: clamp presence + rail connectivity are structural
   evidence only; no HBM/CDM waveform sim (compact diode models aren't
   calibrated for strike currents; no rail clamp modelled).
-- **Intra-cell quality**: finger interdigitation/ABBA order/dummy presence is
-  generated but not machine-inspected inside cells.
+- **Intra-cell quality**: partially closed — `inspect_intracell` now
+  measures each match/symmetric member's gate-finger interdigitation
+  pattern (e.g. `ABBAABBA`), non-supply gate-net common-centroid
+  deviation (a measured violation fails the declared constraint) and
+  edge fingers on supply/unlabeled nets, on the same LayoutToNetlist
+  extraction. Still open: S/D-segment ownership order, dummy *purpose*
+  inference (a dummy strapped to a signal gate net is geometrically
+  indistinguishable from an active finger), parasitic/routing symmetry,
+  guard-ring continuity.
 - **Heterogeneous processes**: extraction recipes assume planar bulk MOS;
   SOI/FinFET need a recipe adapter.
 - **Schematic editing**: we consume netlists/IR; the upstream-style schematic
@@ -91,15 +98,16 @@ The phase delivered its thesis: *verdicts only with evidence*. Three kinds of
 proof now travel together — physical (DRC/LVS/PEX), behavioral (spec matrix
 incl. stress/device-stress), and declared-intent (matching/quality/intent) —
 each refusing to fake the others' rungs. The biggest risks left are coverage
-depth (foundry decks, real Virtuoso, intra-cell inspection) rather than
-correctness of what exists.
+depth (foundry decks, real Virtuoso, remaining intra-cell axes: S/D order,
+dummy purpose, parasitic symmetry) rather than correctness of what exists.
 
 ## Next-phase candidates
 
 - Remote Virtuoso acceptance on a real EDA host (one env var away).
 - Antenna-style real-data expansion for IHP rules (needs verified numbers).
-- Intra-cell pattern inspection (ABBA/dummy) to close the quality gap the
-  checker already reports as uninspected.
+- Intra-cell depth beyond gate patterns: S/D-segment ownership
+  interdigitation, dummy-purpose inference, parasitic/routing symmetry —
+  the axes `inspect_intracell` still reports as uninspected.
 - Mixed-signal loop closure: digital side measured on iverilog waveforms too
   (currently analog-only specs).
 - SOI/FinFET recipe adapter research.

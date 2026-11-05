@@ -98,9 +98,13 @@ edge alignments), extraction yields 24 devices, the pya DRC subset is
 clean and pya LVS matches; `tb_op_schematic`/`tb_op_extracted` benches
 show both outputs balancing to the same op point on reference and
 extracted netlists. `tests/test_golden_sample.py` re-checks every number
-and the ring's geometric enclosure — the check measures placed instance
-bboxes only, so intra-cell ABBA/dummy completeness and ring continuity
-are honestly *not* claimed (see `meta.not_demonstrated`).
+and the ring's geometric enclosure. The `match`/`symmetric` checks also
+carry `intracell` evidence: on the same LayoutToNetlist extraction the
+checker reads each member cell's gate-finger interdigitation (both
+diff_pair cells measure `ABBAABBA` over `inp`/`inn` with 0.0000 µm
+gate-net centroid deviation). S/D-segment order, routing/parasitic
+symmetry, ring continuity and signal-net-strapped dummies remain
+honestly *not* claimed (see `meta.not_demonstrated`).
 
 ### Design intent (`design.intent`)
 
@@ -193,9 +197,25 @@ Per-check status is `pass`/`fail`/`unavailable` (missing `axis`/`edge`/
 reason; an unknown instance id is a `fail`). A design with no
 constraints reports `not_applicable` — never a pass. A `fail` gates the
 verdict (the designer declared it); `unavailable`/`not_applicable` do
-not. Not inspected — say so rather than claim coverage: intra-cell
-finger interdigitation/ABBA pattern/dummy devices, shared-centroid
-merges, parasitic or routing symmetry, guard-ring continuity.
+not.
+
+For `match`/`symmetric` constraints the check additionally opens the
+cell boundary (`tools/patterns.py::inspect_intracell`, on the same
+LayoutToNetlist extraction LVS uses): each member's gate fingers
+(`poly ∩ diff`) are assigned to their flat connectivity clusters and
+reported per instance — the interdigitation pattern verbatim
+(`ABBAABBA`, `AABB`, …), each gate net's finger count and area-weighted
+centroid, and the non-supply nets' common-centroid deviation in µm.
+A *measured* deviation beyond the snap tolerance fails the declared
+constraint (real evidence, same standard as a pitch violation) and lands
+in `intracell.warnings`; a cell that cannot be inspected reports
+`unavailable`/`structural` and changes nothing. Edge fingers on
+supply/bulk-named nets count as detected dummies; unlabeled edge-only
+nets are reported `unlabeled` (undetermined). Still not inspected —
+say so rather than claim coverage: S/D-segment ownership order,
+shared-centroid merges, parasitic or routing symmetry, guard-ring
+continuity, and dummies strapped onto a *signal* gate net (geometrically
+indistinguishable from active fingers).
 
 `verilog` emits a **blackbox module** from `design.ports` — `input`→`input`,
 `output`→`output`, every other direction (`inout`/`supply`/…) → `inout`, all

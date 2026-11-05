@@ -96,7 +96,14 @@ def test_match_pass_and_param_fail():
         [{"type": "match", "instances": ["m1", "m2", "m3"]}])
     res = check_constraints(d, component=compile_design(d))
     assert res["status"] == "pass"
-    assert "not inspected" in _only(res)["note"]
+    # Intra-cell inspection is attached for matching constraints: mirror
+    # cells tie all gates to one net → single-net pattern reported,
+    # honestly inconclusive for common centroid (structural, not fail).
+    note = _only(res)["note"]
+    assert "intra-cell:" in note
+    assert "AAAA" in note
+    assert _only(res)["intracell"]["instances"]["m1"]["status"] == \
+        "structural"
 
     d2 = _design(
         [_mirror("m1", 0, 0), _mirror("m2", 9, 0, {"fingers": 2, "width": 2.0}),

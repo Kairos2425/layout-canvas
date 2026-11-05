@@ -190,6 +190,15 @@ def test_meta_stamped_evidence_matches_measured(design: Design, verify_result: d
     worst_align = max(abs(m["deviation_um"]) for m in align["measured"]["members"])
     assert meta["measured_align_center_x_dev_um"] == pytest.approx(worst_align)
 
+    # intra-cell evidence: the match check's members carry the measured
+    # gate-finger pattern + common-centroid deviation.
+    match_chk = _check(verify_result["quality"], "match")
+    ic = match_chk["intracell"]["instances"]
+    for iid in ("DP_L", "DP_R"):
+        assert meta["measured_intracell_pattern"] == ic[iid]["pattern"]
+        assert meta["measured_intracell_centroid_dev_um"] == pytest.approx(
+            ic[iid]["centroid_deviation_um"])
+
 
 @pytest.mark.skipif(not _HAS_NGSPICE, reason="ngspice not installed")
 def test_schematic_testbench_specs_pass(design: Design):
