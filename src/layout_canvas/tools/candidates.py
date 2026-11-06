@@ -297,6 +297,12 @@ def _eval_specs(
     specs["status"] = _spec_status(entries)
     dead = [r for r in runs if r["sim_status"] in _NO_VERDICT + ("refused",)]
     if len(dead) == len(runs):
+        # Every bench died before producing a verdict — there is no
+        # measured count at all. `passed` must go back to None so
+        # downstream checks report 'unavailable', not a fabricated
+        # "0 specs passed" failure.
+        specs["passed"] = None
+        specs["status"] = "unavailable"
         first = dead[0]
         detail = "; ".join(first["errors"]) or first["sim_status"]
         reason = (f"spec evaluation unavailable — every schematic bench "
