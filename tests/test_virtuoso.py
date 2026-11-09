@@ -32,7 +32,7 @@ def test_skill_rebuilds_hierarchy(tmp_path: Path):
 
     # child cellview created before the parent instantiates it
     child_pos = skill.index('dbOpenCellViewByType("canvas_lib" '
-                            '"current_mirror_f2_w1_0_l0_15_nmos"')
+                            '"current_mirror_f2_w1_0_l0_15_nmos_d0"')
     inst_pos = skill.index('dbCreateInst(cv master')
     assert 0 < child_pos < inst_pos
     # real geometry: mapped OA layer names, not raw numbers

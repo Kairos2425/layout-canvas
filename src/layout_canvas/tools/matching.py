@@ -81,6 +81,38 @@ def _result(check_id: str, ctype: str, instances: list[str], status: str,
             "status": status, "measured": measured, "note": note}
 
 
+def _deviation_values(obj: Any, out: list[float]) -> None:
+    """Collect numeric ``*deviation_um`` fields — the measured-error key
+    every evaluator emits.  Positional fields (``axis_um``, ``pitch_um``,
+    ``edge_um``, ``centroids_um``) are deliberately skipped: they locate
+    geometry, they do not measure error."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k.endswith("deviation_um") and isinstance(v, (int, float)):
+                out.append(float(v))
+            elif isinstance(v, (dict, list)):
+                _deviation_values(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _deviation_values(v, out)
+
+
+def worst_deviation_um(quality: dict[str, Any]) -> float | None:
+    """Worst measured deviation across all checks, in µm.
+
+    ``None`` when nothing measurable ran (``not_applicable``, all
+    ``unavailable``) — the absence of a number is evidence, never a
+    zero.  Placement-level checks contribute dim/pitch/mirror
+    deviations; intra-cell evidence contributes gate-net centroid
+    deviations.
+    """
+    devs: list[float] = []
+    for chk in quality.get("checks") or []:
+        _deviation_values(chk.get("measured"), devs)
+        _deviation_values(chk.get("intracell"), devs)
+    return round(max(devs), 4) if devs else None
+
+
 # ---------------------------------------------------------------------------
 # Per-type evaluators.  Each returns a ``_result`` dict; each receives the
 # Constraint, the placed bboxes and the design's instance map.
@@ -567,6 +599,7 @@ def check_constraints(design: Design, component: Any | None = None,
     if not design.constraints:
         return {"status": "not_applicable", "tolerance_um": TOL_UM,
                 "checks": [], "intent_coverage": coverage,
+                "worst_deviation_um": None,
                 "note": "no constraints declared — nothing to check"}
 
     checks: list[dict[str, Any]] = []
@@ -582,6 +615,7 @@ def check_constraints(design: Design, component: Any | None = None,
                 f"cannot resolve placed geometry: {exc}"))
         return {"status": "unavailable", "tolerance_um": TOL_UM,
                 "checks": checks, "intent_coverage": coverage,
+                "worst_deviation_um": worst_deviation_um({"checks": checks}),
                 "note": f"placed geometry unavailable: {exc}"}
 
     inst_map = {i.id: i for i in design.instances}
@@ -638,4 +672,6 @@ def check_constraints(design: Design, component: Any | None = None,
                  + ", ".join(f"{s}×{sum(1 for c_ in checks if c_['status'] == s)}"
                              for s in sorted(statuses)))
     return {"status": status, "tolerance_um": TOL_UM,
-            "checks": checks, "intent_coverage": coverage, "note": note}
+            "checks": checks, "intent_coverage": coverage,
+            "worst_deviation_um": worst_deviation_um({"checks": checks}),
+            "note": note}

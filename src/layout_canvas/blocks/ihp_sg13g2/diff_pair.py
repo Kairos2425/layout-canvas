@@ -41,6 +41,13 @@ def register_diff_pair() -> None:
                 name="length", type="float", default=0.34, unit="um", min=0.13, max=5.0,
                 description="Gate length (sg13_lv min 0.13um)",
             ),
+            ParamSpec(
+                name="dummies", type="int", default=0, min=0, max=4,
+                description="Inactive edge fingers per side (gate+S/D "
+                            "strapped to vss) — matching practice wants "
+                            ">=1; they appear in extraction and the "
+                            "reference netlist alike",
+            ),
         ],
         ports=[
             PortSpec(name="inp", layer="metal2", direction="input", tap_layer="metal2"),
@@ -55,10 +62,16 @@ def register_diff_pair() -> None:
     )
 
     @register(spec, netlist=_netlist_diff_pair)
-    def _build(fingers: int, width: float, length: float) -> gf.Component:
-        c = gf.Component(name=f"ihp_diff_pair_f{fingers}_w{width}_l{length}")
+    def _build(fingers: int, width: float, length: float,
+               dummies: int = 0) -> gf.Component:
+        c = gf.Component(
+            name=f"ihp_diff_pair_f{fingers}_w{width}_l{length}_d{dummies}")
+        # 'D' entries are inactive edge dummies: same neighbourhood for
+        # the outermost real fingers, every terminal strapped to vss so
+        # extraction sees honest all-grounded devices.
         finger_pitch = snap(length + 1.2)
-        pattern = ["A", "B", "B", "A"] * (fingers // 2)
+        pattern = (["D"] * dummies + ["A", "B", "B", "A"] * (fingers // 2)
+                   + ["D"] * dummies)
         total_width = snap(finger_pitch * len(pattern))
         half_l = length / 2
         diff_h = snap(width)
@@ -81,7 +94,11 @@ def register_diff_pair() -> None:
         segs = list(zip(edges, starts, strict=False))
         seg_net = []
         for j in range(len(segs)):
-            if j == 0:
+            adjacent = (pattern[j - 1] if j > 0 else None,
+                        pattern[j] if j < len(pattern) else None)
+            if "D" in adjacent:
+                seg_net.append("vss")
+            elif j == 0:
                 seg_net.append("outp" if pattern[0] == "A" else "outn")
             elif j == len(segs) - 1:
                 seg_net.append("outp" if pattern[-1] == "A" else "outn")
@@ -89,10 +106,14 @@ def register_diff_pair() -> None:
                 seg_net.append("tail" if pattern[j - 1] != pattern[j]
                                else ("outp" if pattern[j] == "A" else "outn"))
 
-        # per-segment CONT + METAL1 stub + riser + VIA1 to METAL2 strap
+        # per-segment CONT + METAL1 stub + riser + VIA1 to METAL2 strap.
+        # vss (dummy-adjacent) segments ride a fourth strap row which
+        # runs into the guard-ring rail — no vertical risers, so nothing
+        # crosses the gate-strap rows regardless of dummies.
         strap_y = {"outp": diff_bottom + diff_h + 0.60,
                    "tail": diff_bottom + diff_h + 1.32,
-                   "outn": diff_bottom + diff_h + 2.04}
+                   "outn": diff_bottom + diff_h + 2.04,
+                   "vss": diff_bottom + diff_h + 2.76}
         for (sx0, sx1), net in zip(segs, seg_net, strict=False):
             if sx1 - sx0 < 0.4:
                 continue
@@ -112,6 +133,10 @@ def register_diff_pair() -> None:
                  cx + 0.16, y_top + 0.11)
             rect(c, layers.VIA1, cx - 0.10, y_top - 0.10,
                      cx + 0.10, y_top + 0.10)
+            rect(c, layers.METAL1, cx - 0.16, diff_bottom + diff_h / 2,
+                 cx + 0.16, y_top + 0.11)
+            rect(c, layers.VIA1, cx - 0.10, y_top - 0.10,
+                     cx + 0.10, y_top + 0.10)
         # every strap must reach its port pad 鈥?a single-segment net
         # (outn at fingers=2) otherwise leaves the pad floating
         port_x = {"outp": total_width * 0.25, "outn": total_width * 0.75,
@@ -125,6 +150,10 @@ def register_diff_pair() -> None:
                 if net in port_x:
                     x0 = min(x0, port_x[net] - 0.24)
                     x1 = max(x1, port_x[net] + 0.24)
+                if net == "vss":
+                    # reach the left ring rail (gx0=-0.9, rw=0.5 → centre
+                    # -0.65) so the strap IS the bulk net
+                    x0 = -0.65
                 rect(c, layers.METAL2, x0, y - 0.24, x1, y + 0.24)
 
         # gate strapping: A on METAL1, B stub->VIA1->METAL2 riser+strap.
@@ -140,6 +169,7 @@ def register_diff_pair() -> None:
         gy_a, gy_b = tap_y - 0.55, tap_y - 1.10
         port_y = diff_bottom + diff_h / 2
         gate_xs = {"A": [], "B": []}
+        dummy_xs: list[float] = []
         for i, side in enumerate(pattern):
             fx = finger_x[i]
             rect(c, layers.GATPOLY, fx - 0.2, tap_y - 0.17, fx + 0.2, diff_bottom - 0.005)
@@ -148,6 +178,13 @@ def register_diff_pair() -> None:
             if side == "A":
                 rect(c, layers.METAL1, fx - 0.16, gy_a, fx + 0.16,
                      tap_y + 0.16)
+            elif side == "D":
+                # dummy gate: tap pad; a shared METAL1 strap ties every
+                # dummy gate to the ring rails (drawn below)
+                rect(c, layers.METAL1, fx - 0.16, tap_y - 0.16,
+                     fx + 0.16, tap_y + 0.16)
+                dummy_xs.append(fx)
+                continue
             else:
                 rect(c, layers.METAL1, fx - 0.16, gy_a + 0.34, fx + 0.16,
                      tap_y + 0.16)
@@ -173,6 +210,19 @@ def register_diff_pair() -> None:
             rect(c, layers.METAL2, px[side] - 0.15,
                  gy_a if side == "A" else gy_b, px[side] + 0.15, port_y)
 
+        # Dummy-gate strap: one METAL1 bar per side at the tap row, from
+        # the gate pads straight into the ring rails' METAL1.  It never
+        # spans a core finger's x, so it can never touch the A/B straps.
+        mid_x = total_width / 2
+        left_d = [x for x in dummy_xs if x < mid_x]
+        right_d = [x for x in dummy_xs if x >= mid_x]
+        if left_d:
+            rect(c, layers.METAL1, -0.65, tap_y - 0.16,
+                 max(left_d) + 0.16, tap_y + 0.16)
+        if right_d:
+            rect(c, layers.METAL1, min(right_d) - 0.16, tap_y - 0.16,
+                 total_width + 0.65, tap_y + 0.16)
+
         # ports on METAL2 (the strap layer) + in-cell pads for labels
         add_port(c, "inp", layers.METAL2, (total_width * 0.25, port_y), 0.8, 180)
         add_port(c, "inn", layers.METAL2, (total_width * 0.75, port_y), 0.8, 0)
@@ -193,7 +243,7 @@ def register_diff_pair() -> None:
         # keeps Metal2 min-space 0.21 below the strap bottom (gy_b-0.15)
         # -> gy0 <= gy_b-0.86.
         gx0, gx1 = -0.9, total_width + 0.9
-        gy0, gy1 = min(0.9, gy_b - 0.86), strap_y["outn"] + 1.0
+        gy0, gy1 = min(0.9, gy_b - 0.86), strap_y["vss"] + 1.0
         rw = 0.5
         for lay in (layers.ACTIV, layers.PSDM, layers.METAL1, layers.METAL2):
             rect(c, lay, gx0, gy0, gx0 + rw, gy1)
@@ -218,11 +268,19 @@ def register_diff_pair() -> None:
         return c
 
 
-def _netlist_diff_pair(fingers: int, width: float, length: float) -> str:
-    pattern = ["A", "B", "B", "A"] * (fingers // 2)
+def _netlist_diff_pair(fingers: int, width: float, length: float,
+                       dummies: int = 0) -> str:
+    # Dummy fingers extract with every terminal on vss; written explicitly
+    # so LVS compares honest device counts (see sky130 twin).
+    pattern = (["D"] * dummies + ["A", "B", "B", "A"] * (fingers // 2)
+               + ["D"] * dummies)
 
     def seg_net(j: int) -> str:
         n = len(pattern) + 1
+        adjacent = (pattern[j - 1] if j > 0 else None,
+                    pattern[j] if j < n - 1 else None)
+        if "D" in adjacent:
+            return "vss"
         if j == 0:
             return "outp" if pattern[0] == "A" else "outn"
         if j == n - 1:
@@ -233,7 +291,7 @@ def _netlist_diff_pair(fingers: int, width: float, length: float) -> str:
 
     lines = [".subckt diff_pair inp inn outp outn tail vss"]
     for i, side in enumerate(pattern):
-        gate = "inp" if side == "A" else "inn"
+        gate = "vss" if side == "D" else ("inp" if side == "A" else "inn")
         lines.append(
             f"M{i + 1} {seg_net(i + 1)} {gate} {seg_net(i)} vss "
             f"{NMOS} w={width}u l={length}u"

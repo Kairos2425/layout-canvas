@@ -397,3 +397,128 @@ class TestDiffPairDummies:
         assert res["lvs"]["status"] == "passed", res["lvs"].get("errors")
         assert res["lvs"]["match"] is True
         assert res["passed"] is True
+
+
+def _cm_design(dummies: int, mos: str = "nmos") -> Design:
+    return Design.model_validate(
+        {
+            "name": f"cm_dum{dummies}_{mos}",
+            "pdk": "sky130",
+            "instances": [
+                {
+                    "id": "cm",
+                    "block": "sky130.current_mirror",
+                    "params": {"fingers": 2, "type": mos, "dummies": dummies},
+                }
+            ],
+            "ports": [
+                {"name": n, "pin": f"cm.{n}", "direction": "inout"}
+                for n in ["in", "out", "gate", "vss"]
+            ],
+        }
+    )
+
+
+def _ihp_dp_design(dummies: int) -> Design:
+    import layout_canvas.blocks.ihp_sg13g2  # noqa: F401
+
+    return Design.model_validate(
+        {
+            "name": f"ihp_dp_dum{dummies}",
+            "pdk": "ihp_sg13g2",
+            "instances": [
+                {
+                    "id": "dp",
+                    "block": "ihp_sg13g2.diff_pair",
+                    "params": {"fingers": 2, "dummies": dummies},
+                }
+            ],
+            "ports": [
+                {"name": n, "pin": f"dp.{n}", "direction": "inout"}
+                for n in _PINS
+            ],
+        }
+    )
+
+
+class TestArrayDummies:
+    """Dummy fingers ported across the matched-array generators; the
+    strap-row architecture (seg strap to rail, dummy-gate strap to rail,
+    no vertical crossings) is what makes multi-dummy layouts scale."""
+
+    @pytest.mark.parametrize("mos", ["nmos", "pmos"])
+    def test_current_mirror_dummies_verify_clean(self, mos):
+        pytest.importorskip("klayout.db")
+        from layout_canvas.tools.verify import verify_design
+
+        res = verify_design(_cm_design(1, mos))
+        assert res["drc"]["total_violations"] == 0
+        assert res["lvs"]["match"] is True
+        assert res["passed"] is True
+
+    @pytest.mark.parametrize("dm", [1, 2])
+    def test_ihp_diff_pair_dummies_verify_clean(self, dm):
+        pytest.importorskip("klayout.db")
+        from layout_canvas.tools.verify import verify_design
+
+        res = verify_design(_ihp_dp_design(dm))
+        assert res["drc"]["total_violations"] == 0
+        assert res["lvs"]["match"] is True, res["lvs"].get("errors")
+        assert res["passed"] is True
+
+
+class TestQualityWorstDeviation:
+    """worst_deviation_um: measured matching error as a number — the
+    MATCHGEN-style placement score that feeds candidate ranking."""
+
+    def test_report_carries_worst_deviation(self):
+        pytest.importorskip("klayout.db")
+        from layout_canvas.tools.verify import verify_design
+
+        d = Design.model_validate(
+            {
+                "name": "q_dev",
+                "pdk": "sky130",
+                "instances": [
+                    {"id": "a", "block": "sky130.diff_pair", "params": {}},
+                    {
+                        "id": "b",
+                        "block": "sky130.current_mirror",
+                        "params": {},
+                        "placement": {"relative_to": "a",
+                                      "relation": "right_of",
+                                      "margin": 2.0},
+                    },
+                ],
+                "constraints": [{"type": "symmetric", "axis": "vertical",
+                                 "instances": ["a", "b"]}],
+            }
+        )
+        res = verify_design(d)
+        dev = res["quality"].get("worst_deviation_um")
+        assert dev is not None and dev > 0
+
+    def test_no_constraints_means_no_number(self):
+        from layout_canvas.tools.matching import check_constraints
+
+        d = Design.model_validate(
+            {"name": "q_none", "pdk": "sky130", "instances": []})
+        q = check_constraints(d)
+        assert q["status"] == "not_applicable"
+        assert q["worst_deviation_um"] is None
+
+    def test_rank_key_prefers_smaller_deviation(self):
+        from layout_canvas.tools.candidates import _rank_key
+
+        base = {"verify": {"passed": True}, "specs": {"passed": 1},
+                "area_um2": 100.0, "name": "x"}
+        good = {**base, "verify": {"passed": True,
+                                   "quality_worst_dev_um": 0.001},
+                "name": "good"}
+        bad = {**base, "verify": {"passed": True,
+                                  "quality_worst_dev_um": 1.5},
+               "name": "bad"}
+        assert _rank_key(good) < _rank_key(bad)
+        # unmeasured deviation sorts after measured ones
+        none_c = {**base, "name": "none"}
+        assert _rank_key(good) < _rank_key(none_c)

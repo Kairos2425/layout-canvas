@@ -149,19 +149,16 @@ def register_diff_pair() -> None:
         # Strap spacing must clear the strap height (0.48) plus met1
         # min-space (0.14): 0.66 pitch. Tighter pitches caused both real
         # overlap (merged nets) and DRC min_space violations.
+        # vss (dummy-adjacent) segments ride a fourth strap row and the
+        # strap runs into the guard-ring rail — no vertical risers, so
+        # nothing crosses the gate-strap rows regardless of dummies.
         strap_y = {"outp": 3 + diff_h + 0.55, "tail": 3 + diff_h + 1.21,
-                   "outn": 3 + diff_h + 1.87}
-        # vss segments get no horizontal strap row: each riser drops its
-        # mcon straight onto a met1 stub that later ties into the guard
-        # ring's bottom rail once the ring exists.  The stub y sits just
-        # above the S/D array; the ring rail it must reach is drawn below.
-        # Record the risers, connect them after the ring is placed.
-        vss_risers: list[tuple[float, float]] = []
+                   "outn": 3 + diff_h + 1.87, "vss": 3 + diff_h + 2.53}
         for (sx0, sx1), net in zip(segs, seg_net, strict=False):
             if sx1 - sx0 < 0.4:
                 continue
             cx = snap((sx0 + sx1) / 2)
-            y_top = strap_y[net] if net != "vss" else 3 + diff_h / 2 + 0.55
+            y_top = strap_y[net]
             # contact array on the segment (licon -> li1 -> mcon -> met1)
             n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
             for k in range(n_con):
@@ -178,9 +175,7 @@ def register_diff_pair() -> None:
             rect(c, layers.LI, cx - 0.15, 3 + diff_h / 2, cx + 0.15, y_top + 0.1)
             rect(c, layers.MCON, cx - 0.065, y_top - 0.065,
                  cx + 0.065, y_top + 0.065)
-            if net == "vss":
-                vss_risers.append((cx, y_top))
-        # three horizontal met1 straps 鈥?each strap must reach its port
+        # four horizontal met1 straps 鈥?each strap must reach its port
         # pad: a single-segment net (e.g. outn at fingers=2) otherwise
         # leaves the port pad on a floating island and the pin never
         # attaches to the devices (invisible at cell level, fatal when
@@ -196,6 +191,10 @@ def register_diff_pair() -> None:
                 if net in port_x:
                     x0 = min(x0, port_x[net] - 0.24)
                     x1 = max(x1, port_x[net] + 0.24)
+                if net == "vss":
+                    # reach the left ring rail so the strap IS the bulk
+                    # net; x is resolved after gx0 exists below
+                    x0 = -0.65
                 rect(c, layers.MET1, x0, y - 0.24, x1, y + 0.24)
 
         # Gate strapping. Both inputs strap below the rail on DIFFERENT
@@ -212,6 +211,7 @@ def register_diff_pair() -> None:
         gy_a, gy_b = tap_y - 0.55, tap_y - 1.10       # li1 strap / met1 strap
         port_y = 3 + diff_h / 2
         gate_xs = {"A": [], "B": []}
+        dummy_xs: list[float] = []
         for i, side in enumerate(pattern):
             fx = finger_x[i]
             rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, diff_bottom - 0.005)
@@ -221,13 +221,11 @@ def register_diff_pair() -> None:
                 # li1 riser straight into the A strap
                 rect(c, layers.LI, fx - 0.15, gy_a, fx + 0.15, tap_y + 0.15)
             elif side == "D":
-                # dummy gate: tap -> li1 stub -> mcon; the met1 riser down
-                # to the vss rail is deferred until the guard ring exists
+                # dummy gate: li1 pad at the tap; a shared li1 strap ties
+                # every dummy gate to the ring rails (drawn below)
                 rect(c, layers.LI, fx - 0.15, tap_y - 0.15,
                      fx + 0.15, tap_y + 0.15)
-                rect(c, layers.MCON, fx - 0.065, tap_y - 0.065,
-                     fx + 0.065, tap_y + 0.065)
-                vss_risers.append((fx, tap_y))
+                dummy_xs.append(fx)
                 continue
             else:
                 # li1 stub at tap -> mcon -> met1 riser down to the B strap.
@@ -262,6 +260,19 @@ def register_diff_pair() -> None:
             rect(c, layers.MET1, px[side] - 0.19, gy_a if side == "A" else gy_b,
                  px[side] + 0.19, port_y)
 
+        # Dummy-gate strap: one li1 bar per side at the tap row, from the
+        # gate pads straight into the ring rails (li1 stack).  It never
+        # spans a core finger's x, so it can never touch the A/B straps.
+        mid_x = total_width / 2
+        left_d = [x for x in dummy_xs if x < mid_x]
+        right_d = [x for x in dummy_xs if x >= mid_x]
+        if left_d:
+            rect(c, layers.LI, -0.65, tap_y - 0.15,
+                 max(left_d) + 0.15, tap_y + 0.15)
+        if right_d:
+            rect(c, layers.LI, min(right_d) - 0.15, tap_y - 0.15,
+                 total_width + 0.65, tap_y + 0.15)
+
         # Ports 鈥?positioned over the geometry that carries each net so pin
         # labels and access stacks land on the right strap, never a
         # neighbouring one. Labels only attach to same-cell conductor
@@ -290,7 +301,7 @@ def register_diff_pair() -> None:
         # rail top (gy0+rw) must keep met1 min-space below the strap
         # bottom (gy_b-0.19) -> gy0 <= gy_b-0.83.
         gx0, gx1 = -0.9, total_width + 0.9
-        gy0, gy1 = min(0.9, gy_b - 0.83), strap_y["outn"] + 1.0
+        gy0, gy1 = min(0.9, gy_b - 0.83), strap_y["vss"] + 1.0
         rw = 0.5
         for lay in (layers.TAP, layers.LI, layers.MET1):
             rect(c, lay, gx0, gy0, gx0 + rw, gy1)              # left rail
@@ -314,11 +325,6 @@ def register_diff_pair() -> None:
                 y += pitch
         _ring_contacts(layers.LICON, 0.085, 0.5)
         _ring_contacts(layers.MCON, 0.065, 0.5)
-        # Deferred vss risers: dummy gates and dummy-adjacent S/D segments
-        # drop a met1 riser onto the bottom rail (vss net).  Riser x sits
-        # on edge-most geometry, outside both gate-strap spans.
-        for rx, ry in vss_risers:
-            rect(c, layers.MET1, rx - 0.19, gy0, rx + 0.19, ry + 0.1)
         add_port(c, "vss", layers.MET1, (total_width / 2, gy0 + rw / 2), 0.8, 270)
 
         return c

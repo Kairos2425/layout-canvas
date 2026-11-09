@@ -50,6 +50,17 @@ def register_current_mirror() -> None:
                 choices=["nmos", "pmos"],
                 description="Transistor type",
             ),
+            ParamSpec(
+                name="dummies",
+                type="int",
+                default=0,
+                min=0,
+                max=4,
+                description="Inactive edge fingers per side (gate+S/D "
+                            "strapped to the source rail) — matching "
+                            "practice wants >=1; they appear in "
+                            "extraction and the reference netlist alike",
+            ),
         ],
         ports=[
             PortSpec(name="in", layer="met1", direction="input", tap_layer="met1"),
@@ -62,13 +73,21 @@ def register_current_mirror() -> None:
     )
 
     @register(spec, netlist=_netlist_current_mirror)
-    def _build(fingers: int, width: float, length: float, type: str) -> gf.Component:
-        c = gf.Component(name=f"current_mirror_f{fingers}_w{width}_l{length}_{type}")
+    def _build(fingers: int, width: float, length: float, type: str,
+               dummies: int = 0) -> gf.Component:
+        c = gf.Component(
+            name=f"current_mirror_f{fingers}_w{width}_l{length}_"
+                 f"{type}_d{dummies}")
 
         # Same interdigitation discipline as the diff pair: A = input
         # (diode) side, B = output side. Geometry honours params.
+        # 'D' entries are inactive edge dummies: same poly-to-poly
+        # neighbourhood for the outermost real fingers, every terminal
+        # strapped to the source rail so extraction sees honest
+        # all-grounded devices (see diff_pair for the full rationale).
         finger_pitch = snap(length + 1.2)
-        pattern = ["A", "B", "B", "A"] * (fingers // 2)
+        pattern = (["D"] * dummies + ["A", "B", "B", "A"] * (fingers // 2)
+                   + ["D"] * dummies)
         total_width = finger_pitch * len(pattern)
 
         diff_h = snap(width)
@@ -97,7 +116,14 @@ def register_current_mirror() -> None:
         segs = list(zip(edges, starts, strict=False))
         seg_net: list[str] = []
         for j in range(len(segs)):
-            if j == 0:
+            adjacent = (pattern[j - 1] if j > 0 else None,
+                        pattern[j] if j < len(pattern) else None)
+            if "D" in adjacent:
+                # Dummy-adjacent diffusion joins the shared-source strap —
+                # the vss row already reaches the ring rail, so inactive
+                # segments ride the source net exactly like a real cell's.
+                seg_net.append("vss")
+            elif j == 0:
                 seg_net.append("in" if pattern[0] == "A" else "out")
             elif j == len(segs) - 1:
                 seg_net.append("in" if pattern[-1] == "A" else "out")
@@ -177,10 +203,20 @@ def register_current_mirror() -> None:
         gy = tap_y - 0.55
         port_y = 3 + diff_h / 2
         px_gate = total_width * 0.5
-        for fx in finger_x:
+        vss_risers: list[tuple[float, float]] = []
+        for fx, side in zip(finger_x, pattern, strict=True):
             rect(c, layers.POLY, fx - 0.2, tap_y - 0.15, fx + 0.2, diff_bottom - 0.005)
             rect(c, layers.LICON, fx - 0.085, tap_y - 0.085,
                  fx + 0.085, tap_y + 0.085)
+            if side == "D":
+                # dummy gate: tap -> li1 stub -> mcon; the met1 riser down
+                # to the bottom rail is deferred until the ring exists
+                rect(c, layers.LI, fx - 0.15, tap_y - 0.15,
+                     fx + 0.15, tap_y + 0.15)
+                rect(c, layers.MCON, fx - 0.065, tap_y - 0.065,
+                     fx + 0.065, tap_y + 0.065)
+                vss_risers.append((fx, tap_y))
+                continue
             rect(c, layers.LI, fx - 0.15, gy, fx + 0.15, tap_y + 0.15)
         rect(c, layers.LI,
              min(min(finger_x), px_gate) - 0.15, gy - 0.15,
@@ -240,18 +276,31 @@ def register_current_mirror() -> None:
         if type == "nmos":
             _ring_contacts(layers.LICON, 0.085, 0.5)
             _ring_contacts(layers.MCON, 0.065, 0.5)
+        # Deferred dummy-gate risers onto the bottom rail (source net for
+        # both flavours: real vss for nmos, the bare-met1 source ring for
+        # pmos — an inactive gate sits on its own supply rail either way).
+        for rx, ry in vss_risers:
+            rect(c, layers.MET1, rx - 0.19, gy0, rx + 0.19, ry + 0.1)
         add_port(c, "vss", layers.MET1, (total_width / 2, gy0 + rw / 2), 0.8, 270)
 
         return c
 
 
-def _netlist_current_mirror(fingers: int, width: float, length: float, type: str) -> str:
+def _netlist_current_mirror(fingers: int, width: float, length: float,
+                            type: str, dummies: int = 0) -> str:
     model = "sky130_fd_pr__nfet_01v8" if type == "nmos" else "sky130_fd_pr__pfet_01v8"
     # Finger-level reference, same ownership rules as the layout.
-    pattern = ["A", "B", "B", "A"] * (fingers // 2)
+    # Dummy fingers extract with every terminal on the source rail; they
+    # are written explicitly so LVS compares honest device counts.
+    pattern = (["D"] * dummies + ["A", "B", "B", "A"] * (fingers // 2)
+               + ["D"] * dummies)
 
     def seg_net(j: int) -> str:
         n = len(pattern) + 1
+        adjacent = (pattern[j - 1] if j > 0 else None,
+                    pattern[j] if j < n - 1 else None)
+        if "D" in adjacent:
+            return "vss"
         if j == 0:
             return "in" if pattern[0] == "A" else "out"
         if j == n - 1:
@@ -261,9 +310,10 @@ def _netlist_current_mirror(fingers: int, width: float, length: float, type: str
         return "in" if pattern[j] == "A" else "out"
 
     lines = [".subckt current_mirror in out gate vss"]
-    for i, _side in enumerate(pattern):
+    for i, side in enumerate(pattern):
+        gate = "vss" if side == "D" else "gate"
         lines.append(
-            f"M{i + 1} {seg_net(i + 1)} gate {seg_net(i)} vss "
+            f"M{i + 1} {seg_net(i + 1)} {gate} {seg_net(i)} vss "
             f"{model} w={width}u l={length}u"
         )
     lines.append(".ends")

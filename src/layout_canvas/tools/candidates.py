@@ -165,6 +165,7 @@ def _verify_summary(ver: dict[str, Any]) -> dict[str, Any]:
         "lvs_unmatched_nets": list(lvs.get("unmatched_nets") or []),
         "lvs_errors": list(lvs.get("errors") or []),
         "quality_status": qual.get("status"),
+        "quality_worst_dev_um": qual.get("worst_deviation_um"),
     }
 
 
@@ -415,15 +416,19 @@ def _eval_one(
     return cand
 
 
-def _rank_key(cand: dict[str, Any]) -> tuple[float, float, float, str]:
-    """Mechanical ordering: verify passed, then specs passed, then area."""
+def _rank_key(cand: dict[str, Any]) -> tuple[float, float, float, float, str]:
+    """Mechanical ordering: verify passed, then specs passed, then the
+    worst measured matching deviation (MATCHGEN-style placement quality
+    — smaller is better), then area."""
     verify = cand.get("verify") or {}
     specs = cand.get("specs") or {}
     verified = 1.0 if verify.get("passed") else 0.0
     # Unmeasured specs count as zero verified passes — never a credit.
     passed = float(specs["passed"]) if specs.get("passed") is not None else 0.0
+    dev = verify.get("quality_worst_dev_um")
+    deviation = float(dev) if dev is not None else float("inf")
     area = cand["area_um2"] if cand.get("area_um2") is not None else float("inf")
-    return (-verified, -passed, area, str(cand["name"]))
+    return (-verified, -passed, deviation, area, str(cand["name"]))
 
 
 def eval_candidates(
