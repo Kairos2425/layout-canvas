@@ -52,6 +52,17 @@ def register_diff_pair() -> None:
                 max=20.0,
                 description="Tail current source width",
             ),
+            ParamSpec(
+                name="dummies",
+                type="int",
+                default=0,
+                min=0,
+                max=4,
+                description="Inactive edge fingers per side (gate+S/D "
+                            "strapped to vss) — matching practice wants "
+                            ">=1; they appear in extraction and the "
+                            "reference netlist alike",
+            ),
         ],
         ports=[
             PortSpec(name="inp", layer="met1", direction="input", tap_layer="met1"),
@@ -66,14 +77,22 @@ def register_diff_pair() -> None:
     )
 
     @register(spec, netlist=_netlist_diff_pair)
-    def _build(fingers: int, width: float, length: float, tail_width: float) -> gf.Component:
-        c = gf.Component(name=f"diff_pair_f{fingers}_w{width}_l{length}")
+    def _build(fingers: int, width: float, length: float,
+               tail_width: float, dummies: int = 0) -> gf.Component:
+        c = gf.Component(
+            name=f"diff_pair_f{fingers}_w{width}_l{length}_d{dummies}")
 
         # ABBA interdigitation for common-centroid. Geometry honours the
         # params: finger poly width = gate length, diffusion height =
         # channel width, x-pitch = gate length + S/D segment width.
+        # 'D' entries are inactive edge dummies: their presence gives the
+        # outermost real fingers the same poly-to-poly neighbourhood the
+        # interior fingers see (edge-effect/WPE control), and every
+        # terminal straps to vss so extraction sees honest all-grounded
+        # devices rather than floating structures.
         finger_pitch = snap(length + 1.2)
-        pattern = ["A", "B", "B", "A"] * (fingers // 2)
+        pattern = (["D"] * dummies + ["A", "B", "B", "A"] * (fingers // 2)
+                   + ["D"] * dummies)
         total_width = finger_pitch * len(pattern)
 
         # Input pair active region
@@ -109,7 +128,13 @@ def register_diff_pair() -> None:
         segs = list(zip(edges, starts, strict=False))  # (x0, x1) per S/D segment
         seg_net: list[str] = []
         for j in range(len(segs)):
-            if j == 0:
+            # A segment touching a dummy finger is inactive diffusion —
+            # strap it to vss with the dummy gate so nothing floats.
+            adjacent = (pattern[j - 1] if j > 0 else None,
+                        pattern[j] if j < len(pattern) else None)
+            if "D" in adjacent:
+                seg_net.append("vss")
+            elif j == 0:
                 seg_net.append("outp" if pattern[0] == "A" else "outn")
             elif j == len(segs) - 1:
                 seg_net.append("outp" if pattern[-1] == "A" else "outn")
@@ -126,11 +151,17 @@ def register_diff_pair() -> None:
         # overlap (merged nets) and DRC min_space violations.
         strap_y = {"outp": 3 + diff_h + 0.55, "tail": 3 + diff_h + 1.21,
                    "outn": 3 + diff_h + 1.87}
+        # vss segments get no horizontal strap row: each riser drops its
+        # mcon straight onto a met1 stub that later ties into the guard
+        # ring's bottom rail once the ring exists.  The stub y sits just
+        # above the S/D array; the ring rail it must reach is drawn below.
+        # Record the risers, connect them after the ring is placed.
+        vss_risers: list[tuple[float, float]] = []
         for (sx0, sx1), net in zip(segs, seg_net, strict=False):
             if sx1 - sx0 < 0.4:
                 continue
             cx = snap((sx0 + sx1) / 2)
-            y_top = strap_y[net]
+            y_top = strap_y[net] if net != "vss" else 3 + diff_h / 2 + 0.55
             # contact array on the segment (licon -> li1 -> mcon -> met1)
             n_con = max(1, int((sx1 - sx0 - 0.2) / 0.34) + 1)
             for k in range(n_con):
@@ -147,6 +178,8 @@ def register_diff_pair() -> None:
             rect(c, layers.LI, cx - 0.15, 3 + diff_h / 2, cx + 0.15, y_top + 0.1)
             rect(c, layers.MCON, cx - 0.065, y_top - 0.065,
                  cx + 0.065, y_top + 0.065)
+            if net == "vss":
+                vss_risers.append((cx, y_top))
         # three horizontal met1 straps 鈥?each strap must reach its port
         # pad: a single-segment net (e.g. outn at fingers=2) otherwise
         # leaves the port pad on a floating island and the pin never
@@ -187,6 +220,15 @@ def register_diff_pair() -> None:
             if side == "A":
                 # li1 riser straight into the A strap
                 rect(c, layers.LI, fx - 0.15, gy_a, fx + 0.15, tap_y + 0.15)
+            elif side == "D":
+                # dummy gate: tap -> li1 stub -> mcon; the met1 riser down
+                # to the vss rail is deferred until the guard ring exists
+                rect(c, layers.LI, fx - 0.15, tap_y - 0.15,
+                     fx + 0.15, tap_y + 0.15)
+                rect(c, layers.MCON, fx - 0.065, tap_y - 0.065,
+                     fx + 0.065, tap_y + 0.065)
+                vss_risers.append((fx, tap_y))
+                continue
             else:
                 # li1 stub at tap -> mcon -> met1 riser down to the B strap.
                 # Stub bottom (tap_y-0.15) encloses the licon by >= 0.06 and
@@ -272,22 +314,35 @@ def register_diff_pair() -> None:
                 y += pitch
         _ring_contacts(layers.LICON, 0.085, 0.5)
         _ring_contacts(layers.MCON, 0.065, 0.5)
+        # Deferred vss risers: dummy gates and dummy-adjacent S/D segments
+        # drop a met1 riser onto the bottom rail (vss net).  Riser x sits
+        # on edge-most geometry, outside both gate-strap spans.
+        for rx, ry in vss_risers:
+            rect(c, layers.MET1, rx - 0.19, gy0, rx + 0.19, ry + 0.1)
         add_port(c, "vss", layers.MET1, (total_width / 2, gy0 + rw / 2), 0.8, 270)
 
         return c
 
 
-def _netlist_diff_pair(fingers: int, width: float, length: float, tail_width: float) -> str:
+def _netlist_diff_pair(fingers: int, width: float, length: float,
+                       tail_width: float, dummies: int = 0) -> str:
     # Finger-level reference: the layout draws every finger as a physical
     # device, so the schematic is written at finger granularity (extraction
     # yields one device per finger 鈥?comparing logical nf= devices would
     # need device combination and hides real connectivity faults).
     # Segment ownership mirrors the layout: segment between different-device
     # fingers is the shared source, between same-device fingers the drain.
-    pattern = ["A", "B", "B", "A"] * (fingers // 2)
+    # Dummy fingers extract as real devices with every terminal on vss;
+    # they are written explicitly so LVS compares honest device counts.
+    pattern = (["D"] * dummies + ["A", "B", "B", "A"] * (fingers // 2)
+               + ["D"] * dummies)
 
     def seg_net(j: int) -> str:
         n = len(pattern) + 1
+        adjacent = (pattern[j - 1] if j > 0 else None,
+                    pattern[j] if j < n - 1 else None)
+        if "D" in adjacent:
+            return "vss"
         if j == 0:
             return "outp" if pattern[0] == "A" else "outn"
         if j == n - 1:
@@ -298,7 +353,7 @@ def _netlist_diff_pair(fingers: int, width: float, length: float, tail_width: fl
 
     lines = [".subckt diff_pair inp inn outp outn tail vss"]
     for i, side in enumerate(pattern):
-        gate = "inp" if side == "A" else "inn"
+        gate = "vss" if side == "D" else ("inp" if side == "A" else "inn")
         # extraction assigns D to the right-hand segment, S to the left
         lines.append(
             f"M{i + 1} {seg_net(i + 1)} {gate} {seg_net(i)} vss "

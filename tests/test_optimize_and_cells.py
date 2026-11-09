@@ -347,3 +347,53 @@ class TestMCPNewTools:
             assert base.get("cells.mcp").spec.name == "cells.mcp"
         finally:
             del base._REGISTRY["cells.mcp"]
+
+_PINS = ["inp", "inn", "outp", "outn", "tail", "vss"]
+
+
+def _dp_design(dummies: int) -> Design:
+    return Design.model_validate(
+        {
+            "name": f"dp_dum{dummies}",
+            "pdk": "sky130",
+            "instances": [
+                {
+                    "id": "dp",
+                    "block": "sky130.diff_pair",
+                    "params": {"fingers": 2, "width": 1.0, "dummies": dummies},
+                }
+            ],
+            "ports": [
+                {"name": n, "pin": f"dp.{n}", "direction": "inout"}
+                for n in _PINS
+            ],
+        }
+    )
+
+
+class TestDiffPairDummies:
+    """Edge dummy fingers (MATCHGEN-parity): inactive fingers strapped
+    all-terminals to vss must extract as real all-vss devices, stay
+    DRC-clean, and match an honest reference netlist in LVS."""
+
+    def test_dummies_extract_as_vss_devices(self, tmp_path):
+        pytest.importorskip("klayout.db")
+        from layout_canvas.tools.extract import extract_netlist
+
+        comp = compile_design(_dp_design(1))
+        gds = tmp_path / "d.gds"
+        comp.write_gds(str(gds))
+        res = extract_netlist(str(gds), "sky130")
+        assert res.devices == 6  # 4 active ABBA + 2 edge dummies
+        assert "M$1 vss vss vss vss" in res.netlist_text
+        assert "M$6 vss vss vss vss" in res.netlist_text
+
+    def test_dummies_verify_clean(self):
+        pytest.importorskip("klayout.db")
+        from layout_canvas.tools.verify import verify_design
+
+        res = verify_design(_dp_design(1))
+        assert res["drc"]["total_violations"] == 0
+        assert res["lvs"]["status"] == "passed", res["lvs"].get("errors")
+        assert res["lvs"]["match"] is True
+        assert res["passed"] is True
