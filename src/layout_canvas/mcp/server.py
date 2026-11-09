@@ -163,6 +163,40 @@ class LayoutCanvasMCPServer:
                 },
             },
             {
+                "name": "inspect_geometry",
+                "description": "Read-only geometry inspection of a GDS/OAS file via the "
+                               "in-process KLayout engine — the agent-side 'dimension "
+                               "picker'. Reports top cell, hierarchy size, per-layer "
+                               "shape/area/bbox census, an optional box_um measure "
+                               "query (per-shape bbox dimensions), and an optional "
+                               "spacing_layers min-gap measurement.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "gds_path": {"type": "string",
+                                     "description": "Path to the GDS/OAS file."},
+                        "layers": {
+                            "type": "array",
+                            "items": {"type": "array", "items": {"type": "integer"},
+                                      "minItems": 2, "maxItems": 2},
+                            "description": "Optional [[layer,datatype],...] filter."},
+                        "box_um": {
+                            "type": "array", "items": {"type": "number"},
+                            "minItems": 4, "maxItems": 4,
+                            "description": "Optional [x1,y1,x2,y2] micron window; "
+                                           "returns per-shape bbox dimensions."},
+                        "spacing_layers": {
+                            "type": "array",
+                            "items": {"type": "array", "items": {"type": "integer"},
+                                      "minItems": 2, "maxItems": 2},
+                            "minItems": 2, "maxItems": 2,
+                            "description": "Optional [[l1,d1],[l2,d2]] pair for "
+                                           "min edge-to-edge gap."},
+                    },
+                    "required": ["gds_path"],
+                },
+            },
+            {
                 "name": "generate_netlist",
                 "description": "Generate a golden SPICE/CDL netlist from a Block IR JSON "
                                "specification for LVS verification.",
@@ -1473,6 +1507,15 @@ class LayoutCanvasMCPServer:
             if result.status == "ok" and args.get("output_path"):
                 Path(args["output_path"]).write_text(result.netlist_text, encoding="utf-8")
             return result.to_dict()
+
+        elif name == "inspect_geometry":
+            from layout_canvas.tools.inspect import inspect_geometry
+            return inspect_geometry(
+                args["gds_path"],
+                layers=args.get("layers"),
+                box_um=args.get("box_um"),
+                spacing_layers=args.get("spacing_layers"),
+            )
 
         elif name == "generate_netlist":
             raw_ir = args["ir_json"]
